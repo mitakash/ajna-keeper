@@ -9,7 +9,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "@ajna-finance/sdk": "^0.4.6",
+    "@ajna-finance/sdk": "^0.4.7",
     "@inquirer/prompts": "^7.2.3",
     "graphql": "^16.10.0",
     "graphql-request": "6.1",

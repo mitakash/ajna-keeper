@@ -2,10 +2,10 @@
 # yarn lockfile v1
 
 
-"@ajna-finance/sdk@^0.4.6":
-  version "0.4.6"
-  resolved "https://registry.yarnpkg.com/@ajna-finance/sdk/-/sdk-0.4.6.tgz#54cadf06fb546866dce835ae63eb301085d7ca4f"
-  integrity sha512-eb/HUiN+jKyvhFjpi4RRdeZ0lA4cdDKi5rXcWVuv4CurUBF0f5iHg3OV8wgePK02Y50Qm9eqxQr0v5/c0Blrdg==
+"@ajna-finance/sdk@^0.4.7":
+  version "0.4.7"
+  resolved "https://registry.yarnpkg.com/@ajna-finance/sdk/-/sdk-0.4.7.tgz#a30f9bc373f9d3f581f4627a6971fb027bf911fa"
+  integrity sha512-CCSdtpxNPGUqSrYCnJjOY0clQaV75ko2UdPR4DsSc8ztGrt5byiARF1gVgUXYMlzHts6pIjslJh8GfbknG68mA==
   dependencies:
     "@ethersproject/abi" "^5.7.0"
     "@ethersproject/providers" "^5.7.2"
