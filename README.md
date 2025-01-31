@@ -25,7 +25,7 @@ When auction price drops a configurable percentage below the highest price bucke
 
 ## Installation and Prerequisites
 You'll need `node` and related tools (`npm`, `yarn`).  This was developed with node v18.20.x but should work with later versions.
-```
+```bash
 yarn --frozen-lockfile
 ```
 
@@ -38,9 +38,22 @@ yarn --frozen-lockfile
 If the price source only has quote token priced in collateral, you may add `"invert": true` to `price` config to invert the configured price.
 
 ## Execution
-```
+```bash
 yarn start --config my-config.json
 ```
+
+## Testing
+
+### Running tests
+In one terminal run:
+```bash
+npx hardhat node
+```
+In a second terminal run:
+```bash
+npx hardhat test
+```
+
 
 ## Disclaimer
 User assumes all risk of data presented and transactions placed by this keeper.

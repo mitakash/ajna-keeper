@@ -1,12 +1,17 @@
 import { BigNumber, providers, Wallet } from 'ethers'
 import { promises as fs } from 'fs'
 import { password } from '@inquirer/prompts'
-// import { getMulticall } from 'ethcall'
+import { FungiblePool } from '@ajna-finance/sdk'
+import { KeeperConfig } from './config'
 
 async function addAccountFromKeystore(
   keystorePath: string,
   provider: providers.JsonRpcProvider
 ): Promise<Wallet> {
+  // TODO: connect actual wallet.
+  let wallet = Wallet.createRandom()
+  return wallet.connect(provider)
+
   // read the keystore file, confirming it exists
   const jsonKeystore = (await fs.readFile(keystorePath)).toString()
 
@@ -21,37 +26,33 @@ async function addAccountFromKeystore(
   } catch (error) {
     console.error('Error decrypting keystore:', error)
     console.error('This keeper will not create transactions')
-    return undefined
   }
 }
 
-// Monkeypatch ethcall's multicall for chains unsupported by the ethcall compatible with AjnaSDK
-export async function configureMulticall(provider: providers.JsonRpcProvider, chainConfig) {
-  if ('multicallAddress' in chainConfig && 'multicallBlock' in chainConfig) {
-    const chainId = (await provider.getNetwork()).chainId
-    console.log('forcing multicall for chain', chainId, 'to', chainConfig.multicallAddress)
-    const forceMulticall = (chainId: number) => {
-      return {
-        address: chainConfig.multicallAddress,
-        block: chainConfig.multicallBlock,
-      }
+export function overrideMulticall(fungiblePool: FungiblePool, chainConfig: KeeperConfig): void {
+  if (chainConfig?.multicallAddress && chainConfig?.multicallBlock != undefined) {
+    fungiblePool.ethcallProvider.multicall3 = {
+      address: chainConfig.multicallAddress,
+      block: chainConfig.multicallBlock
     }
-    // FIXME: can't monkeypatch because the ethcall provider is not exported
-    // ???getMulticall = forceMulticall
   }
 }
 
 export async function delay(seconds: number) {
-  return new Promise(res => setTimeout(res, seconds * 1000))
+  return new Promise(res => setTimeout(res, seconds * 1000));
 }
 
-export function priceToNumber(price: BigNumber) {
-  return price.div(1e12).toNumber() / 1e6
+export function bigNumberToWad(price: BigNumber): number {
+  return price.div(1e12).toNumber() / 1e6;
+}
+
+export function wadToBigNumber(price: number): BigNumber {
+  return BigNumber.from(price * 1e6).mul(1e12);
 }
 
 export async function getProviderAndSigner(keystorePath: string, rpcUrl: string) {
-  const provider = new providers.JsonRpcProvider(rpcUrl)
-  const signer = await addAccountFromKeystore(keystorePath, provider)
+  const provider = new providers.JsonRpcProvider(rpcUrl);
+  const signer = await addAccountFromKeystore(keystorePath, provider);
 
-  return { provider, signer }
+  return { provider, signer };
 }

@@ -11,6 +11,7 @@
   "dependencies": {
     "@ajna-finance/sdk": "^0.4.7",
     "@inquirer/prompts": "^7.2.3",
+    "ethers": "5.7.2",
     "graphql": "^16.10.0",
     "graphql-request": "6.1",
     "ts-node": "^10.9.2",
@@ -19,6 +20,12 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
-    "@types/node": "^22.10.10"
+    "@types/chai": "^5.0.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.10.10",
+    "chai": "^5.1.2",
+    "dotenv": "^16.4.7",
+    "ethereum-waffle": "*",
+    "hardhat": "^2.22.18"
   }
 }

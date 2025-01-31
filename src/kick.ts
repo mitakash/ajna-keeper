@@ -1,36 +1,60 @@
-import { Pool } from '@ajna-finance/sdk'
+import { Address, Pool, Signer } from '@ajna-finance/sdk'
 import { getLoans } from './subgraph';
-import { delay, priceToNumber } from './utils';
+import { delay, bigNumberToWad, wadToBigNumber } from './utils';
+import { PoolConfig } from './config';
+import { approveErc20 } from './erc20';
+
+const APPROVAL_AMOUNT_FACTOR = 1.10
 
 export async function handleKicks(
   pool: Pool,
-  poolConfig,
+  poolConfig: PoolConfig,
   price: number,
   subgraphUrl: string,
-  delayBetweenLoans: number
+  delayBetweenLoans: number,
+  signer: Signer,
+  dryRun: boolean,
 ) {
-  const loans = await getLoans(subgraphUrl, pool.poolAddress)
+  const {pool: {lup}, loans} = await getLoans(subgraphUrl, pool.poolAddress)
   for(const loanFromSubgraph of loans) {
-    const loanFromSDK = await pool.getLoan(loanFromSubgraph.borrower)
-    const debt = priceToNumber(loanFromSDK.debt)
+    const {borrower, inLiquidation, thresholdPrice} = loanFromSubgraph
+    if (inLiquidation) continue
+    if (thresholdPrice > lup) continue
 
-    // if loan debt is lowered than configured fixed value (denominated in quote token), skip it
-    if (debt < poolConfig.kick.minDebt) continue
+    const loanFromSDK = await pool.getLoan(borrower)
+    const {neutralPrice, liquidationBond} = loanFromSDK
+    const debt = bigNumberToWad(loanFromSDK.debt)
+
+    // if loan debt is lower than configured fixed value (denominated in quote token), skip it
+    if (debt < poolConfig.kick!.minDebt) continue
 
     // if threshold price below this, kick if not already under liquidation
-    const comparisonPrice = price * poolConfig.kick.priceFactor
+    const comparisonPrice = price * poolConfig.kick!.priceFactor
 
+    // TODO: Make sure that user has enough QT to fund Liquidation Bond. 
+    //    Note: If two kicks happen simultaneously, make sure they do not overdraft.
     if (price < comparisonPrice) {
-      console.log(poolConfig.name, 'loan', loanFromSubgraph.borrower, 'may be kickable')
-      // TODO: check for active liquidation, synchronously kick if not already under liquidation
-    } else {
-      console.debug(poolConfig.name, 'loan', loanFromSubgraph.borrower,
-        'with threshold price', loanFromSubgraph.thresholdPrice,
-        'and debt', debt,
-        'and feed price',
-      )
+      if (!dryRun) {
+        console.log(`Kicking loan - pool: ${pool.name}, borrower: ${borrower}, thresholdPrice: ${thresholdPrice}, debt: ${debt}, feedPrice: ${price}`);
+        await kick(signer, pool, borrower, bigNumberToWad(liquidationBond));
+      }else {
+        console.log(`DryRun - Would kick loan - pool: ${pool.name}, borrower: ${borrower}, thresholdPrice: ${thresholdPrice}, debt: ${debt}, feedPrice: ${price}`);
+      }
     }
 
     await delay(delayBetweenLoans);
+  }
+}
+
+export async function kick(signer: Signer, pool: Pool, borrower: Address, liquidationBond: number) {
+  try {
+    await approveErc20(signer, pool.quoteAddress, pool.poolAddress, wadToBigNumber(liquidationBond * APPROVAL_AMOUNT_FACTOR));
+    const wrappedTransaction = await pool.kick(signer, borrower);  // TODO: Add limitIndex?
+    console.log(`Kicking loan for borrower ${borrower}`);
+    const tx = await wrappedTransaction.submit();
+    console.log(`Kick transaction confirmed for borrower ${borrower}`);
+  } catch (error) {
+    console.error(`Failed to kick loan for borrower ${borrower}:`, error);
+    throw error;
   }
 }

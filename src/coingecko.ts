@@ -1,4 +1,10 @@
-export async function getPrice(query: string, apiKey: string) {
+interface CoinGeckoRespone {
+  [coinName: string]: {
+    usd: number;
+  }
+}
+
+export async function getPrice(query: string, apiKey: string): Promise<number> {
   const url = 'https://api.coingecko.com/api/v3/simple/' + query;
   const options = {
     method: 'GET',
@@ -7,9 +13,10 @@ export async function getPrice(query: string, apiKey: string) {
 
   try {
     const res = await fetch(url, options)
-    const resJson = await res.json()
+    const resJson: CoinGeckoRespone = await res.json()
     return Object.values(Object.values(resJson)[0])[0]
   } catch (error) {
     console.error('Error fetching price from CoinGecko:', error)
   }
+  return NaN
 }
