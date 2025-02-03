@@ -1,9 +1,9 @@
 {
-    "compilerOptions": {
-        "strict": true,
-        "target": "es5",
-        "sourceMap": true,
-        "esModuleInterop": true,
-        "resolveJsonModule": true,
-    }
+  "compilerOptions": {
+    "strict": true,
+    "target": "es5",
+    "sourceMap": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  }
 }

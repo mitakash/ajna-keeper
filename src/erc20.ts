@@ -1,26 +1,21 @@
-import { Signer } from "@ajna-finance/sdk";
-import { BigNumber, Contract, ContractReceipt, ContractTransaction, providers } from 'ethers';
+import { Signer } from '@ajna-finance/sdk';
+import { BigNumber, Contract, ContractTransaction, providers } from 'ethers';
+import IERC20Minimal from '@uniswap/v3-core/artifacts/contracts/interfaces/IERC20Minimal.sol/IERC20Minimal.json';
 
-export const ERC20_ABI = [
-    'function name() public view returns (string)',
-    'function symbol() public view returns (string)',
-    'function decimals() public view returns (uint8)',
-    'function totalSupply() public view returns (uint256)',
-    'function balanceOf(address _owner) public view returns (uint256 balance)',
-    'function transfer(address _to, uint256 _value) public returns (bool success)',
-    'function transferFrom(address _from, address _to, uint256 _value) public returns (bool success)',
-    'function approve(address _spender, uint256 _value) public returns (bool success)',
-    'function allowance(address _owner, address _spender) public view returns (uint256 remaining)',
-];
+// export async function getDecimalsErc20(
+//   provider: providers.JsonRpcProvider,
+//   tokenAddress: string,
+// ) {
+//   const contract = new Contract(tokenAddress, IERC20Minimal.abi, provider);
+//   const decimals = await contract.decimals();
+//   return decimals;
+// }
 
-export async function approveErc20(
-    signer: Signer,
-    tokenAddress: string,
-    spenderAddress: string,
-    amount: BigNumber,
-): Promise<ContractReceipt> {
-    console.log(`Approving funds transfer token address:${tokenAddress} spender address:${spenderAddress} amount:${amount}`)
-    const contract = new Contract(tokenAddress, ERC20_ABI, signer);
-    const contractTx: ContractTransaction = await contract.approve(spenderAddress, amount);
-    return await contractTx.wait();
+export async function getBalanceOfErc20(
+  signer: Signer,
+  tokenAddress: string
+): Promise<BigNumber> {
+  const contract = new Contract(tokenAddress, IERC20Minimal.abi, signer);
+  const ownerAddress = await signer.getAddress();
+  return await contract.balanceOf(ownerAddress);
 }

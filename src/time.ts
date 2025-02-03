@@ -1,4 +1,4 @@
-import { providers } from "ethers";
+import { providers } from 'ethers';
 
 export function getTime() {
   /** Time since Epoch in seconds */

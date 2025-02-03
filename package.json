@@ -4,14 +4,20 @@
   "description": "keeper bot for Ajna lending protocol",
   "main": "index.ts",
   "scripts": {
-    "start": "./node_modules/ts-node/dist/bin.js src/index.ts"
+    "start": "./node_modules/ts-node/dist/bin.js src/index.ts",
+    "format": "prettier --write .",
+    "unit-tests": "npx mocha --require ts-node/register 'src/unit-tests/**/*.test.ts'",
+    "integration-tests": "npx hardhat test"
   },
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@ajna-finance/sdk": "^0.4.7",
     "@inquirer/prompts": "^7.2.3",
-    "ethers": "5.7.2",
+    "@uniswap/sdk-core": "^7.5.0",
+    "@uniswap/v3-core": "^1.0.1",
+    "@uniswap/v3-sdk": "^3.24.0",
+    "ethers": "^5.7.2",
     "graphql": "^16.10.0",
     "graphql-request": "6.1",
     "ts-node": "^10.9.2",
@@ -25,7 +31,7 @@
     "@types/node": "^22.10.10",
     "chai": "^5.1.2",
     "dotenv": "^16.4.7",
-    "ethereum-waffle": "*",
-    "hardhat": "^2.22.18"
+    "hardhat": "^2.22.18",
+    "prettier": "^3.4.2"
   }
 }

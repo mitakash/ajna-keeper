@@ -1,35 +1,53 @@
-import { gql, request } from "graphql-request";
+import { gql, request } from 'graphql-request';
 
-export async function getLoans(subgraphUrl: string, poolAddress: string) {
+export interface GetLoanResponse {
+  pool: {
+    lup: number;
+    hpb: number;
+  };
+  loans: {
+    borrower: string;
+    thresholdPrice: number;
+  }[];
+}
+
+async function getLoans(subgraphUrl: string, poolAddress: string) {
   const query = gql`
     query {
       pool (id: "${poolAddress}") {
         lup
+        hpb
       }
-      loans (where: {poolAddress: "${poolAddress}"}){
+      loans (where: {inLiquidation: false, poolAddress: "${poolAddress}"}){
         borrower
-        inLiquidation
         thresholdPrice
       }
     }
-  `
+  `;
 
-  const result: {
-    pool: {
-      lup: number;  // TODO: use big number
-    },
-    loans: {
-      borrower: string;
-      inLiquidation: boolean;
-      thresholdPrice: number; // TODO: use bigNumber
-    }[] 
-    }
-    = await request(subgraphUrl, query)
-  return result
+  const result: GetLoanResponse = await request(subgraphUrl, query);
+  return result;
 }
 
+export interface GetLiquidationResponse {
+  pool: {
+    hpb: number;
+    hpbIndex: number;
+    liquidationAuctions: {
+      borrower: string;
+      collateralRemaining: number;
+      kickTime: number;
+      referencePrice: number;
+    }[];
+  };
+}
 
-export async function getLiquidations(subgraphUrl: string, poolAddress: string, minCollateral: number) {
+async function getLiquidations(
+  subgraphUrl: string,
+  poolAddress: string,
+  minCollateral: number
+) {
+  // TODO: Should probably sort auctions by kickTime so that we kick the most profitable auctions first.
   const query = gql`
     query {
       pool (id: "${poolAddress}") {
@@ -43,19 +61,11 @@ export async function getLiquidations(subgraphUrl: string, poolAddress: string, 
         }
       }
     }
-  `
+  `;
 
-  const result: {
-    pool: {
-      hpb: number;
-      hpbIndex: number;
-      liquidationAuctions: {
-        borrower: string;
-        collateralRemaining: number;
-        kickTime: number;
-        referencePrice: number;
-      }[]
-    }
-  } = await request(subgraphUrl, query);
+  const result: GetLiquidationResponse = await request(subgraphUrl, query);
   return result;
 }
+
+// Exported as default module to enable mocking in tests.
+export default { getLoans, getLiquidations };
