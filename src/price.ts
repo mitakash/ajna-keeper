@@ -4,7 +4,7 @@ import {
   PriceOriginSource,
 } from './config';
 import { getPrice as getPriceCoinGecko } from './coingecko';
-import { weiToEth, ethToWei } from './utils';
+import { weiToDecimaled, ethToWei } from './utils';
 import { Pool } from '@ajna-finance/sdk';
 
 // Retrieves the market price using the configured source
@@ -61,7 +61,7 @@ export async function getPoolPrice(
       `Unable to get price for ${pool.poolAddress} - ${reference}`
     );
   }
-  return weiToEth(price);
+  return weiToDecimaled(price);
 }
 
 // function bucketToPrice(index: number) {
@@ -72,26 +72,4 @@ export async function getPoolPrice(
 export function priceToBucket(price: number, pool: Pool): number {
   return pool.getBucketsByPriceRange(ethToWei(price), ethToWei(price))[0].index;
   // return Math.round(Math.log(price) / Math.log(1.005));
-}
-
-const HALVING_DURATIONS: number[] = [
-  ...Array(6).fill(20 * 60),
-  ...Array(6).fill(2 * 60 * 60),
-  ...Array(58).fill(60 * 60),
-];
-export function getAuctionPrice(
-  referencePrice: number,
-  elapsedSeconds: number
-) {
-  let halvingStartTime = 0;
-  for (let i = 0; i < HALVING_DURATIONS.length; i++) {
-    const duration = HALVING_DURATIONS[i];
-    if (elapsedSeconds < halvingStartTime + duration) {
-      const durationPctCompleted =
-        (elapsedSeconds - halvingStartTime) / duration;
-      return (256 * referencePrice * 2) ^ -(i + durationPctCompleted);
-    }
-    halvingStartTime += duration;
-  }
-  return 0;
 }

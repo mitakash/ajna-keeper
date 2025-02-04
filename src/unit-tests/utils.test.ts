@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 import { BigNumber, utils } from 'ethers';
-import { ethToWei, weiToEth } from '../utils';
+import { ethToWei, weiToDecimaled } from '../utils';
 
 describe('bigToWadNumber', () => {
   const convertsWeiToEth = (inStr: string, out: number) => {
     it(`converts wei:${inStr} to Eth:${out.toString()}`, () => {
-      expect(weiToEth(BigNumber.from(inStr))).to.equal(out);
+      expect(weiToDecimaled(BigNumber.from(inStr))).to.equal(out);
     });
   };
 

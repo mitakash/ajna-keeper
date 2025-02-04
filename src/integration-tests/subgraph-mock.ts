@@ -9,7 +9,9 @@ import subgraphModule, {
   GetLoanResponse,
 } from '../subgraph';
 import { getProvider } from './test-utils';
-import { weiToEth } from '../utils';
+import { weiToDecimaled } from '../utils';
+import { EventFilter } from 'ethers';
+import { MAINNET_CONFIG } from './test-config';
 
 export function overrideGetLoans(
   fn: typeof subgraphModule.getLoans
@@ -34,17 +36,31 @@ export const makeGetLoansFromSdk = (pool: FungiblePool) => {
       .filter(([_, { isKicked }]) => !isKicked)
       .map(([borrower, { thresholdPrice }]) => ({
         borrower,
-        thresholdPrice: weiToEth(thresholdPrice),
+        thresholdPrice: weiToDecimaled(thresholdPrice),
       }));
     return {
       pool: {
-        lup: weiToEth(lup),
-        hpb: weiToEth(hpb),
+        lup: weiToDecimaled(lup),
+        hpb: weiToDecimaled(hpb),
       },
       loans,
     };
   };
 };
+
+async function getLoansMap(pool: FungiblePool): Promise<Map<string, Loan>> {
+  const { loansCount } = await pool.getStats();
+  const poolContract = ERC20Pool__factory.connect(
+    pool.poolAddress,
+    getProvider()
+  );
+  const borrowers: string[] = [];
+  for (let i = 1; i < loansCount + 1; i++) {
+    const [borrower] = await poolContract.loanInfo(i);
+    borrowers.push(borrower);
+  }
+  return await pool.getLoans(borrowers);
+}
 
 export function overrideGetLiquidations(
   fn: typeof subgraphModule.getLiquidations
@@ -64,63 +80,43 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
     minCollateral: number
   ): Promise<GetLiquidationResponse> => {
     const { hpb, hpbIndex } = await pool.getPrices();
-    console.log('getting borrowers');
-    const loansMap = await getLoansMap(pool);
-    console.log('getting pool info utils');
-    const poolInfoUtils = PoolInfoUtils__factory.connect(
+    const poolContract = ERC20Pool__factory.connect(
       pool.poolAddress,
       getProvider()
     );
+    const events = await poolContract.queryFilter(
+      poolContract.filters.Kick(),
+      MAINNET_CONFIG.BLOCK_NUMBER
+    );
+    const borrowers: string[] = [];
+    for (const evt of events) {
+      const { borrower } = evt.args;
+      borrowers.push(borrower);
+    }
     const liquidationAuctions: GetLiquidationResponse['pool']['liquidationAuctions'] =
       [];
-    console.log('getting auctionStatuses');
-    for (const borrower of Object.keys(loansMap)) {
-      const loan = loansMap.get(borrower);
-      if (loan?.isKicked) {
-        console.log(
-          `getting auction status for borrower: ${borrower}, poolAddress: ${pool.poolAddress}`
-        );
-        const [
-          kickTime,
-          collateral,
-          debtToCover,
-          isCollateralized,
-          price,
-          neutralPrice,
-          referencePrice,
-          debtToCollateral,
-          bondFactor,
-        ] = await poolInfoUtils.auctionStatus(pool.poolAddress, borrower);
-        if (weiToEth(collateral) >= minCollateral) {
+    for (const borrower of borrowers) {
+      try {
+        const liquidation = await pool.getLiquidation(borrower);
+        const liquidationStatus = await liquidation.getStatus();
+        if (weiToDecimaled(liquidationStatus.collateral) > minCollateral) {
           liquidationAuctions.push({
             borrower,
-            collateralRemaining: weiToEth(collateral),
-            kickTime: parseInt(kickTime.toString()),
-            referencePrice: weiToEth(referencePrice),
           });
         }
+      } catch (e) {
+        console.debug(
+          `Failed to find auction for borrower: ${borrower}, pool: ${pool.name}`
+        );
       }
     }
+
     return {
       pool: {
-        hpb: weiToEth(hpb),
+        hpb: weiToDecimaled(hpb),
         hpbIndex,
         liquidationAuctions,
       },
     };
   };
-}
-
-async function getLoansMap(pool: FungiblePool): Promise<Map<string, Loan>> {
-  const { loansCount } = await pool.getStats();
-  const poolContract = ERC20Pool__factory.connect(
-    pool.poolAddress,
-    getProvider()
-  );
-  const borrowers: string[] = [];
-  for (let i = 1; i < loansCount + 1; i++) {
-    const [borrower] = await poolContract.loanInfo(i);
-    borrowers.push(borrower);
-  }
-  return await pool.getLoans(borrowers);
 }
