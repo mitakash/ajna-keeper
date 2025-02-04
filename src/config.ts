@@ -78,8 +78,8 @@ export interface PoolConfig {
   name: string;
   address: Address;
   price: PriceOrigin;
-  kick?: KickSettings;
-  take?: TakeSettings;
+  kick: KickSettings;
+  take: TakeSettings;
   dexSettings?: DexConfig; // Only set this value if you want winnings sent to dex and traded for L2 token.
 }
 
