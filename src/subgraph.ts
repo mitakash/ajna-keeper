@@ -35,9 +35,6 @@ export interface GetLiquidationResponse {
     hpbIndex: number;
     liquidationAuctions: {
       borrower: string;
-      collateralRemaining: number;
-      kickTime: number;
-      referencePrice: number;
     }[];
   };
 }
@@ -55,9 +52,6 @@ async function getLiquidations(
         hpbIndex
         liquidationAuctions (where: {collateralRemaining_gt: "${minCollateral}"}) {
           borrower
-          collateralRemaining
-          kickTime
-          referencePrice
         }
       }
     }

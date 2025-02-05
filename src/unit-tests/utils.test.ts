@@ -1,16 +1,16 @@
 import { FungiblePool } from '@ajna-finance/sdk';
 import { expect } from 'chai';
-import { BigNumber, providers, utils } from 'ethers';
+import { BigNumber, providers } from 'ethers';
 import sinon from 'sinon';
 import { KeeperConfig } from '../config';
-import { ethToWei, getProviderAndSigner, overrideMulticall, weiToEth } from '../utils';
+import { ethToWei, getProviderAndSigner, overrideMulticall, weiToDecimaled } from '../utils';
 
 const mockAddress = '0x123456abcabc123456abcabcd123456abcdabcd1';
 
 describe('bigToWadNumber', () => {
   const convertsWeiToEth = (inStr: string, out: number) => {
     it(`converts wei:${inStr} to Eth:${out.toString()}`, () => {
-      expect(weiToEth(BigNumber.from(inStr))).to.equal(out);
+      expect(weiToDecimaled(BigNumber.from(inStr))).to.equal(out);
     });
   };
 

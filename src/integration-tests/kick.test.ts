@@ -90,7 +90,7 @@ describe('getLoansToKick', () => {
     );
     overrideGetLoans(makeGetLoansFromSdk(pool));
 
-    increaseTime(3.154e7 * 10); // Increase timestamp by 10 years.
+    await increaseTime(3.154e7 * 2); // Increase timestamp by 10 years.
 
     const loansToKick = await getLoansToKick({
       pool,
@@ -119,7 +119,7 @@ describe('kick', () => {
       MAINNET_CONFIG.WBTC_USDC_POOL.quoteWhaleAddress
     );
     overrideGetLoans(makeGetLoansFromSdk(pool));
-    increaseTime(3.154e7 * 2); // Increase timestamp by 10 years.
+    await increaseTime(3.154e7 * 2); // Increase timestamp by 10 years.
     const loansToKick = await getLoansToKick({
       pool,
       poolConfig: MAINNET_CONFIG.WBTC_USDC_POOL.poolConfig,

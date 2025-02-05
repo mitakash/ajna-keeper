@@ -1,21 +1,34 @@
 import { Signer } from '@ajna-finance/sdk';
-import { BigNumber, Contract, ContractTransaction, providers } from 'ethers';
-import IERC20Minimal from '@uniswap/v3-core/artifacts/contracts/interfaces/IERC20Minimal.sol/IERC20Minimal.json';
+import { BigNumber, Contract, providers } from 'ethers';
+import { weiToDecimaled } from './utils';
+import Erc20Abi from './abis/erc20.abi.json';
 
-// export async function getDecimalsErc20(
-//   provider: providers.JsonRpcProvider,
-//   tokenAddress: string,
-// ) {
-//   const contract = new Contract(tokenAddress, IERC20Minimal.abi, provider);
-//   const decimals = await contract.decimals();
-//   return decimals;
-// }
+const cachedDecimals: Map<string, number> = new Map(); // Map of address to int decimals.
+export async function getDecimalsErc20(signer: Signer, tokenAddress: string) {
+  if (!cachedDecimals.has(tokenAddress)) {
+    const decimals = await _getDecimalsErc20(signer, tokenAddress);
+    cachedDecimals.set(tokenAddress, decimals);
+  }
+  return cachedDecimals.get(tokenAddress)!;
+}
 
+async function _getDecimalsErc20(signer: Signer, tokenAddress: string) {
+  const contract = new Contract(tokenAddress, Erc20Abi, signer);
+  const decimals = await contract.decimals();
+  console.debug(`Got ${decimals} decimals for contract: ${tokenAddress}`);
+  return decimals;
+}
+
+/**
+ * @param signer
+ * @param tokenAddress
+ * @returns The balance signer has at tokenAddress in units after conversion from wei using tokenAddress' decimals.
+ */
 export async function getBalanceOfErc20(
   signer: Signer,
   tokenAddress: string
 ): Promise<BigNumber> {
-  const contract = new Contract(tokenAddress, IERC20Minimal.abi, signer);
+  const contract = new Contract(tokenAddress, Erc20Abi, signer);
   const ownerAddress = await signer.getAddress();
   return await contract.balanceOf(ownerAddress);
 }

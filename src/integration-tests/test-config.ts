@@ -66,14 +66,14 @@ export const MAINNET_CONFIG = {
         value: 1,
       } as PriceOrigin,
       kick: {
-        minDebt: 1,
+        minDebt: 0,
         priceFactor: 0.9,
-      } as KickSettings,
+      },
       take: {
         minCollateral: 0,
-        priceFactor: 1,
         withdrawRewardLiquidity: true,
-      } as TakeSettings,
+        priceFactor: 0.99,
+      },
     } as RequireFields<PoolConfig, 'kick' | 'take'>,
   },
 };

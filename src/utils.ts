@@ -50,9 +50,26 @@ export async function delay(seconds: number) {
   return new Promise((res) => setTimeout(res, seconds * 1000));
 }
 
-// TODO: Fix the conversions to and from BigNumber
-export function weiToEth(wei: BigNumber): number {
-  return parseFloat(utils.formatEther(wei));
+function bigToScientific(bn: BigNumber): {
+  mantissa: number;
+  exponent10: number;
+} {
+  const bnStr = bn.toString();
+  const numbStart = bnStr.startsWith('-') ? 1 : 0;
+  const mantissa = parseFloat(
+    bnStr.slice(0, numbStart + 1) + '.' + bnStr.slice(numbStart + 1, 14)
+  );
+  const exponent10 = bnStr.length - (1 + numbStart);
+  return { mantissa, exponent10 };
+}
+
+export function weiToDecimaled(
+  bn: BigNumber,
+  tokenDecimals: number = 18
+): number {
+  const scientific = bigToScientific(bn);
+  scientific.exponent10 -= tokenDecimals;
+  return parseFloat(scientific.mantissa + 'e' + scientific.exponent10);
 }
 
 export function ethToWei(dec: number): BigNumber {
