@@ -1,10 +1,12 @@
 import { FungiblePool, Signer } from '@ajna-finance/sdk';
-import subgraph from './subgraph';
-import { delay, ethToWei, RequireFields, weiToDecimaled } from './utils';
+import { FeeAmount } from '@uniswap/v3-sdk';
+import { BigNumber, ethers } from 'ethers';
 import { KeeperConfig, PoolConfig } from './config';
 import { getBalanceOfErc20, getDecimalsErc20 } from './erc20';
-import { BigNumber } from 'ethers';
 import { priceToBucket } from './price';
+import subgraph from './subgraph';
+import { exchangeForNative } from './uniswap';
+import { delay, ethToWei, RequireFields, weiToDecimaled } from './utils';
 
 interface HandleKickParams {
   pool: FungiblePool;
@@ -163,6 +165,19 @@ export async function kick({
     console.log(
       `Kick transaction confirmed. pool: ${pool.name}, borrower: ${borrower}`
     );
+
+    // Swap winnings
+    const tokenBalance = await getBalanceOfErc20(signer, pool.collateralAddress);
+    if (tokenBalance.gt(ethers.utils.parseEther("0.01"))) {
+      console.log(`Swapping winnings: ${weiToDecimaled(tokenBalance)} ${pool.collateralSymbol} for native token`);
+
+      await exchangeForNative(
+        signer,
+        pool.collateralAddress,
+        FeeAmount.MEDIUM,
+        weiToDecimaled(tokenBalance)
+      );
+    }
   } catch (error) {
     console.error(
       `Failed to kick loan. pool: ${pool.name}, borrower: ${borrower}. Error: `,
