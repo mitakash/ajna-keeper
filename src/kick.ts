@@ -1,10 +1,9 @@
 import { FungiblePool, Signer } from '@ajna-finance/sdk';
 import subgraph from './subgraph';
-import { delay, ethToWei, RequireFields, weiToDecimaled } from './utils';
+import { delay, decimaledToWei, RequireFields, weiToDecimaled } from './utils';
 import { KeeperConfig, PoolConfig } from './config';
 import { getBalanceOfErc20, getDecimalsErc20 } from './erc20';
 import { BigNumber } from 'ethers';
-import { priceToBucket } from './price';
 
 interface HandleKickParams {
   pool: FungiblePool;
@@ -147,17 +146,19 @@ export async function kick({
     console.log(
       `Approving liquidationBond for kick. pool: ${pool.name}, borrower: ${borrower}, bond: ${liquidationBond}, balance: ${quoteBalance}`
     );
-    const bondWithMargin = ethToWei(
+    const bondWithMargin = decimaledToWei(
       liquidationBond * (1 + LIQUIDATION_BOND_MARGIN)
     );
     const approveTx = await pool.quoteApprove(signer, bondWithMargin);
     await approveTx.verifyAndSubmit();
 
-    const limitIndex = !!price ? priceToBucket(price, pool) : undefined;
+    const limitIndex =
+      price > 0
+        ? pool.getBucketByPrice(decimaledToWei(price)).index
+        : undefined;
     console.log(
       `Sending kick transaction. pool: ${pool.name}, borrower: ${borrower}`
     );
-    // const wrappedTransaction = await pool.kick(signer, borrower, limitIndex);
     const kickTx = await pool.kick(signer, borrower, limitIndex);
     await kickTx.verifyAndSubmit();
     console.log(

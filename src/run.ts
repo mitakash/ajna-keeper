@@ -1,9 +1,15 @@
 import { AjnaSDK, FungiblePool, Signer } from '@ajna-finance/sdk';
 import { configureAjna, KeeperConfig, PoolConfig } from './config';
-import { delay, getProviderAndSigner, overrideMulticall } from './utils';
+import {
+  delay,
+  getProviderAndSigner,
+  overrideMulticall,
+  RequireFields,
+} from './utils';
 import { handleKicks } from './kick';
 import { handleArbTakes } from './take';
 import { getPrice } from './price';
+import { handleCollect } from './collect';
 
 type PoolMap = Map<string, FungiblePool>;
 
@@ -62,7 +68,7 @@ async function keepPool(
   );
   console.debug(poolConfig.name, `${poolConfig.price.source} price`, price);
 
-  if (poolConfig.kick) {
+  if (hasKickSettings(poolConfig)) {
     handleKicks({
       pool,
       poolConfig,
@@ -72,7 +78,7 @@ async function keepPool(
     });
   }
 
-  if (poolConfig.take) {
+  if (hasTakeSettings(poolConfig)) {
     handleArbTakes({
       pool,
       poolConfig,
@@ -80,4 +86,26 @@ async function keepPool(
       config,
     });
   }
+
+  if (hasCollectSettings(poolConfig)) {
+    handleCollect({ pool, poolConfig, signer, config });
+  }
+}
+
+function hasKickSettings(
+  config: PoolConfig
+): config is RequireFields<PoolConfig, 'kick'> {
+  return !!config.kick;
+}
+
+function hasTakeSettings(
+  config: PoolConfig
+): config is RequireFields<PoolConfig, 'take'> {
+  return !!config.take;
+}
+
+function hasCollectSettings(
+  config: PoolConfig
+): config is RequireFields<PoolConfig, 'collect'> {
+  return !!config.collect;
 }

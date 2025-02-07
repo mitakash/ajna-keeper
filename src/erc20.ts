@@ -1,10 +1,14 @@
-import { Signer } from '@ajna-finance/sdk';
+import { Signer, SignerOrProvider } from '@ajna-finance/sdk';
 import { BigNumber, Contract, providers } from 'ethers';
 import { weiToDecimaled } from './utils';
 import Erc20Abi from './abis/erc20.abi.json';
 
+// TODO: Remove caching. This performance improvement is not worth the complexity.
 const cachedDecimals: Map<string, number> = new Map(); // Map of address to int decimals.
-export async function getDecimalsErc20(signer: Signer, tokenAddress: string) {
+export async function getDecimalsErc20(
+  signer: SignerOrProvider,
+  tokenAddress: string
+) {
   if (!cachedDecimals.has(tokenAddress)) {
     const decimals = await _getDecimalsErc20(signer, tokenAddress);
     cachedDecimals.set(tokenAddress, decimals);
@@ -12,10 +16,12 @@ export async function getDecimalsErc20(signer: Signer, tokenAddress: string) {
   return cachedDecimals.get(tokenAddress)!;
 }
 
-async function _getDecimalsErc20(signer: Signer, tokenAddress: string) {
+async function _getDecimalsErc20(
+  signer: SignerOrProvider,
+  tokenAddress: string
+) {
   const contract = new Contract(tokenAddress, Erc20Abi, signer);
   const decimals = await contract.decimals();
-  console.debug(`Got ${decimals} decimals for contract: ${tokenAddress}`);
   return decimals;
 }
 

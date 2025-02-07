@@ -72,8 +72,21 @@ export function weiToDecimaled(
   return parseFloat(scientific.mantissa + 'e' + scientific.exponent10);
 }
 
-export function ethToWei(dec: number): BigNumber {
-  return utils.parseEther(dec.toString());
+export function decimaledToWei(
+  dec: number,
+  tokenDecimals: number = 18
+): BigNumber {
+  const scientificStr = dec.toExponential();
+  const [mantissaStr, exponent10Str] = scientificStr
+    .replace('.', '')
+    .split('e');
+  let weiStrLength = 1;
+  if (mantissaStr.includes('.')) weiStrLength += 1;
+  if (mantissaStr.startsWith('-')) weiStrLength += 1;
+  const exponent10 = parseInt(exponent10Str) + tokenDecimals;
+  weiStrLength += exponent10;
+  const weiStr = mantissaStr.slice(0, weiStrLength).padEnd(weiStrLength, '0');
+  return BigNumber.from(weiStr);
 }
 
 export async function getProviderAndSigner(

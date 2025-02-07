@@ -66,8 +66,13 @@ export interface KickSettings {
 
 export interface TakeSettings {
   minCollateral: number;
-  priceFactor: number;
+  priceFactor: number; // Will only arbTake when auctionPrice < hpb * priceFactor.
   withdrawRewardLiquidity: boolean;
+}
+
+export interface CollectSettings {
+  collectLiquidity: boolean; // If true collects arbTake rewards as well as all deposits for this pool.
+  collectBonds: boolean; // If true collects bonds from pool.
 }
 
 interface DexConfig {
@@ -81,6 +86,7 @@ export interface PoolConfig {
   kick: KickSettings;
   take: TakeSettings;
   dexSettings?: DexConfig; // Only set this value if you want winnings sent to dex and traded for L2 token.
+  collect?: CollectSettings;
 }
 
 export interface KeeperConfig {

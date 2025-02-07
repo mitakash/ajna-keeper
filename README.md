@@ -11,6 +11,8 @@ A console application for automating interactions with the Ajna decentralized le
 - Each instance of the keeper may unlock only a single wallet using a JSON keystore file. As such, if running multiple keepers on the same chain, different accounts should be used for each keeper to avoid nonce conflicts.
 - For simplicity, price sources are configured per-pool, not separately for each action. This means if you will `kick` and `arbtake` the same pool, both actions must be based upon the same configured price.
 
+<!-- TODO: Add section explaining config. Call out collectRewards.withdrawLiquidity side effects. -->
+
 ## Requirements
 
 For each desired chain:
