@@ -166,18 +166,6 @@ export async function kick({
       `Kick transaction confirmed. pool: ${pool.name}, borrower: ${borrower}`
     );
 
-    // Swap winnings
-    const tokenBalance = await getBalanceOfErc20(signer, pool.collateralAddress);
-    if (tokenBalance.gt(ethers.utils.parseEther("0.01"))) {
-      console.log(`Swapping winnings: ${weiToDecimaled(tokenBalance)} ${pool.collateralSymbol} for native token`);
-
-      await exchangeForNative(
-        signer,
-        pool.collateralAddress,
-        FeeAmount.MEDIUM,
-        weiToDecimaled(tokenBalance)
-      );
-    }
   } catch (error) {
     console.error(
       `Failed to kick loan. pool: ${pool.name}, borrower: ${borrower}. Error: `,
