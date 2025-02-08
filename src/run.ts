@@ -8,8 +8,6 @@ import {
 } from './utils';
 import { handleKicks } from './kick';
 import { handleArbTakes } from './take';
-import { getPrice } from './price';
-import { handleCollect } from './collect';
 
 type PoolMap = Map<string, FungiblePool>;
 
@@ -21,20 +19,10 @@ export async function startKeeperFromConfig(config: KeeperConfig) {
   configureAjna(config.ajna);
   const ajna = new AjnaSDK(provider);
   console.log('...and pools:');
-  const pools = await getPoolsFromConfig(ajna, config);
+  const poolMap = await getPoolsFromConfig(ajna, config);
 
-  while (true) {
-    for (const poolConfig of config.pools) {
-      try {
-        const pool = pools.get(poolConfig.address)!;
-        keepPool(poolConfig, pool, config, signer); // not awaiting here; we want these calls dispatched in parallel
-      } catch (error) {
-        console.error(`Error keeping pool ${poolConfig.address}:`, error);
-      }
-    }
-    console.log('\n');
-    await delay(config.delayBetweenRuns);
-  }
+  kickPoolsLoop({ poolMap, config, signer });
+  arbTakePoolsLoop({ poolMap, config, signer });
 }
 
 async function getPoolsFromConfig(
@@ -48,47 +36,48 @@ async function getPoolsFromConfig(
     const fungiblePool = await ajna.fungiblePoolFactory.getPoolByAddress(
       pool.address
     );
+    // TODO: Should this be a per-pool multicall?
     overrideMulticall(fungiblePool, config);
     pools.set(pool.address, fungiblePool);
   }
   return pools;
 }
 
-async function keepPool(
-  poolConfig: PoolConfig,
-  pool: FungiblePool,
-  config: KeeperConfig,
-  signer: Signer
-) {
-  let price: number;
-  price = await getPrice(
-    pool,
-    poolConfig.price,
-    config.pricing.coinGeckoApiKey
-  );
-  console.debug(poolConfig.name, `${poolConfig.price.source} price`, price);
+interface KeepPoolParams {
+  poolMap: PoolMap;
+  config: KeeperConfig;
+  signer: Signer;
+}
 
-  if (hasKickSettings(poolConfig)) {
-    handleKicks({
-      pool,
-      poolConfig,
-      price,
-      signer,
-      config,
-    });
+async function kickPoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
+  const poolsWithKickSettings = config.pools.filter(hasKickSettings);
+  while (true) {
+    for (const poolConfig of poolsWithKickSettings) {
+      const pool = poolMap.get(poolConfig.address)!;
+      await handleKicks({
+        pool,
+        poolConfig,
+        signer,
+        config,
+      });
+    }
+    await delay(config.delayBetweenRuns);
   }
+}
 
-  if (hasTakeSettings(poolConfig)) {
-    handleArbTakes({
-      pool,
-      poolConfig,
-      signer,
-      config,
-    });
-  }
-
-  if (hasCollectSettings(poolConfig)) {
-    handleCollect({ pool, poolConfig, signer, config });
+async function arbTakePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
+  const poolsWithTakeSettings = config.pools.filter(hasTakeSettings);
+  while (true) {
+    for (const poolConfig of poolsWithTakeSettings) {
+      const pool = poolMap.get(poolConfig.address)!;
+      await handleArbTakes({
+        pool,
+        poolConfig,
+        signer,
+        config,
+      });
+    }
+    await delay(config.delayBetweenRuns);
   }
 }
 
@@ -104,8 +93,8 @@ function hasTakeSettings(
   return !!config.take;
 }
 
-function hasCollectSettings(
-  config: PoolConfig
-): config is RequireFields<PoolConfig, 'collect'> {
-  return !!config.collect;
-}
+// function hasCollectSettings(
+//   config: PoolConfig
+// ): config is RequireFields<PoolConfig, 'collect'> {
+//   return !!config.collect;
+// }

@@ -19,7 +19,7 @@ import {
 import { expect } from 'chai';
 import { arbTakeLiquidation, getLiquidationsToArbTake } from '../take';
 import { Wallet } from 'ethers';
-import { decimaledToWei, weiToDecimaled } from '../utils';
+import { arrayFromAsync, decimaledToWei, weiToDecimaled } from '../utils';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 
 const setup = async () => {
@@ -43,14 +43,16 @@ const setup = async () => {
     collateralToPledge: 14,
   });
   await increaseTime(3.154e7 * 2);
-  const loansToKick = await getLoansToKick({
-    pool,
-    poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-    price: 0,
-    config: {
-      subgraphUrl: '',
-    },
-  });
+  const loansToKick = await arrayFromAsync(
+    getLoansToKick({
+      pool,
+      poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+      price: 0,
+      config: {
+        subgraphUrl: '',
+      },
+    })
+  );
   const signer = await impersonateSigner(
     MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
   );

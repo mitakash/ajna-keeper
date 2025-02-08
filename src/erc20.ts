@@ -25,11 +25,6 @@ async function _getDecimalsErc20(
   return decimals;
 }
 
-/**
- * @param signer
- * @param tokenAddress
- * @returns The balance signer has at tokenAddress in units after conversion from wei using tokenAddress' decimals.
- */
 export async function getBalanceOfErc20(
   signer: Signer,
   tokenAddress: string
@@ -37,4 +32,14 @@ export async function getBalanceOfErc20(
   const contract = new Contract(tokenAddress, Erc20Abi, signer);
   const ownerAddress = await signer.getAddress();
   return await contract.balanceOf(ownerAddress);
+}
+
+export async function getAllowanceOfErc20(
+  signer: Signer,
+  tokenAddress: string,
+  allowedAddress: string
+): Promise<BigNumber> {
+  const contract = new Contract(tokenAddress, Erc20Abi, signer);
+  const signerAddress = await signer.getAddress();
+  return await contract.allowance(signerAddress, allowedAddress);
 }

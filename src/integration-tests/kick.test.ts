@@ -13,6 +13,7 @@ import {
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import { makeGetLoansFromSdk, overrideGetLoans } from './subgraph-mock';
 import { expect } from 'chai';
+import { arrayFromAsync } from '../utils';
 
 describe('getLoansToKick', () => {
   beforeEach(async () => {
@@ -39,14 +40,16 @@ describe('getLoansToKick', () => {
       collateralToPledge: 14,
     });
 
-    const loansToKick = await getLoansToKick({
-      pool,
-      poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-      price: 0.01,
-      config: {
-        subgraphUrl: '',
-      },
-    });
+    const loansToKick = await arrayFromAsync(
+      getLoansToKick({
+        pool,
+        poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        price: 0.01,
+        config: {
+          subgraphUrl: '',
+        },
+      })
+    );
     expect(loansToKick).to.be.empty;
   });
 
@@ -71,14 +74,16 @@ describe('getLoansToKick', () => {
     });
     await increaseTime(3.154e7 * 2);
 
-    const loansToKick = await getLoansToKick({
-      pool,
-      poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-      price: 0,
-      config: {
-        subgraphUrl: '',
-      },
-    });
+    const loansToKick = await arrayFromAsync(
+      getLoansToKick({
+        pool,
+        poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        price: 0,
+        config: {
+          subgraphUrl: '',
+        },
+      })
+    );
     expect(loansToKick.length).equals(1);
     expect(loansToKick[0].borrower).equals(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress
@@ -111,14 +116,16 @@ describe('kick', () => {
       collateralToPledge: 14,
     });
     await increaseTime(3.154e7 * 2);
-    const loansToKick = await getLoansToKick({
-      pool,
-      poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-      price: 0,
-      config: {
-        subgraphUrl: '',
-      },
-    });
+    const loansToKick = await arrayFromAsync(
+      getLoansToKick({
+        pool,
+        poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        price: 0,
+        config: {
+          subgraphUrl: '',
+        },
+      })
+    );
     const signer = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );

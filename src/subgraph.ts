@@ -1,10 +1,6 @@
 import { gql, request } from 'graphql-request';
 
 export interface GetLoanResponse {
-  pool: {
-    lup: number;
-    hpb: number;
-  };
   loans: {
     borrower: string;
     thresholdPrice: number;
@@ -14,10 +10,6 @@ export interface GetLoanResponse {
 async function getLoans(subgraphUrl: string, poolAddress: string) {
   const query = gql`
     query {
-      pool (id: "${poolAddress}") {
-        lup
-        hpb
-      }
       loans (where: {inLiquidation: false, poolAddress: "${poolAddress}"}){
         borrower
         thresholdPrice

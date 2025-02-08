@@ -3,6 +3,7 @@ import { promises as fs } from 'fs';
 import { password } from '@inquirer/prompts';
 import { FungiblePool } from '@ajna-finance/sdk';
 import { KeeperConfig } from './config';
+import { SWAP_ROUTER_02_ADDRESSES } from '@uniswap/sdk-core';
 
 export type RequireFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
 
@@ -89,6 +90,22 @@ export function decimaledToWei(
   return BigNumber.from(weiStr);
 }
 
+export function tokenChangeDecimals(
+  tokenWei: BigNumber,
+  currDecimals: number,
+  targetDecimals: number = 18
+) {
+  const tokenWeiStr = tokenWei.toString();
+  if (currDecimals < targetDecimals) {
+    const zeroes = '0'.repeat(targetDecimals - currDecimals);
+    return BigNumber.from(tokenWeiStr + zeroes);
+  } else if (currDecimals > targetDecimals) {
+    return BigNumber.from(tokenWeiStr.slice(0, targetDecimals - currDecimals));
+  } else {
+    return BigNumber.from(tokenWei.toString());
+  }
+}
+
 export async function getProviderAndSigner(
   keystorePath: string,
   rpcUrl: string
@@ -97,4 +114,14 @@ export async function getProviderAndSigner(
   const signer = await addAccountFromKeystore(keystorePath, provider);
 
   return { provider, signer };
+}
+
+export async function arrayFromAsync<T>(
+  gen: AsyncGenerator<T>
+): Promise<Array<T>> {
+  const result: Array<T> = [];
+  for await (const elem of gen) {
+    result.push(elem);
+  }
+  return result;
 }

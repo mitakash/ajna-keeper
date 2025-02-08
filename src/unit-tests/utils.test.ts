@@ -8,6 +8,7 @@ import {
   overrideMulticall,
   decimaledToWei,
   weiToDecimaled,
+  tokenChangeDecimals,
 } from '../utils';
 
 const mockAddress = '0x123456abcabc123456abcabcd123456abcdabcd1';
@@ -138,4 +139,26 @@ describe('getProviderAndSigner', () => {
     expect(signer).to.have.property('address').that.is.a('string');
     expect(signer).to.have.property('signMessage').that.is.a('function');
   });
+});
+
+describe.only('tokenChangeDecimals', () => {
+  const testConvertDecimals = (
+    tokenWei: string,
+    currDecimals: number,
+    targetDecimals: number,
+    expectedStr: string
+  ) => {
+    return it(`Converts ${tokenWei} with ${currDecimals} decimals to ${expectedStr} with ${targetDecimals} decimals`, () => {
+      const result = tokenChangeDecimals(
+        BigNumber.from(tokenWei),
+        currDecimals,
+        targetDecimals
+      );
+      expect(result.toString()).equals(expectedStr);
+    });
+  };
+
+  testConvertDecimals('1000000', 6, 18, '1000000000000000000');
+  testConvertDecimals('1000000000000000000', 18, 6, '1000000');
+  testConvertDecimals('1000000000000000000', 18, 18, '1000000000000000000');
 });
