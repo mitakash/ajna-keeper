@@ -47,9 +47,11 @@ const setup = async () => {
     getLoansToKick({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-      price: 0,
       config: {
         subgraphUrl: '',
+        pricing: {
+          coinGeckoApiKey: '',
+        },
       },
     })
   );
@@ -67,7 +69,6 @@ const setup = async () => {
     config: {
       dryRun: false,
     },
-    price: 0,
   });
 
   return pool;

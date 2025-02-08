@@ -44,9 +44,11 @@ describe('getLoansToKick', () => {
       getLoansToKick({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-        price: 0.01,
         config: {
           subgraphUrl: '',
+          pricing: {
+            coinGeckoApiKey: '',
+          },
         },
       })
     );
@@ -78,9 +80,11 @@ describe('getLoansToKick', () => {
       getLoansToKick({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-        price: 0,
         config: {
           subgraphUrl: '',
+          pricing: {
+            coinGeckoApiKey: '',
+          },
         },
       })
     );
@@ -120,9 +124,11 @@ describe('kick', () => {
       getLoansToKick({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
-        price: 0,
         config: {
           subgraphUrl: '',
+          pricing: {
+            coinGeckoApiKey: '',
+          },
         },
       })
     );
@@ -141,7 +147,6 @@ describe('kick', () => {
       config: {
         dryRun: false,
       },
-      price: 0,
     });
     const loan = await pool.getLoan(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress

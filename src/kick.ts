@@ -124,7 +124,7 @@ export async function* getLoansToKick({
       limitPrice
     ) {
       console.debug(
-        `Not kicking loan since (NP * Factor < Price). pool: ${pool.name}, borrower: ${borrower}, NP: ${neutralPrice}, Price: ${price}`
+        `Not kicking loan since (NP * Factor < Price). pool: ${pool.name}, borrower: ${borrower}, NP: ${neutralPrice}, Price: ${limitPrice}`
       );
       continue;
     }
