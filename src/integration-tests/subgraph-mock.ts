@@ -29,7 +29,6 @@ export const makeGetLoansFromSdk = (pool: FungiblePool) => {
     subgraphUrl: string,
     poolAddress: string
   ): Promise<GetLoanResponse> => {
-    const { lup, hpb } = await pool.getPrices();
     const loansMap = await getLoansMap(pool);
     const borrowerLoanTuple = Array.from(loansMap.entries());
     const loans = borrowerLoanTuple
@@ -39,10 +38,6 @@ export const makeGetLoansFromSdk = (pool: FungiblePool) => {
         thresholdPrice: weiToDecimaled(thresholdPrice),
       }));
     return {
-      pool: {
-        lup: weiToDecimaled(lup),
-        hpb: weiToDecimaled(hpb),
-      },
       loans,
     };
   };

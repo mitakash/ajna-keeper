@@ -3,7 +3,13 @@ import { expect } from 'chai';
 import { BigNumber, providers } from 'ethers';
 import sinon from 'sinon';
 import { KeeperConfig } from '../config';
-import { ethToWei, getProviderAndSigner, overrideMulticall, weiToDecimaled } from '../utils';
+import {
+  getProviderAndSigner,
+  overrideMulticall,
+  decimaledToWei,
+  weiToDecimaled,
+  tokenChangeDecimals,
+} from '../utils';
 
 const mockAddress = '0x123456abcabc123456abcabcd123456abcdabcd1';
 
@@ -16,26 +22,54 @@ describe('bigToWadNumber', () => {
 
   convertsWeiToEth('0', 0);
   convertsWeiToEth('10000000000000', 1e-5);
+  convertsWeiToEth('11000000000000', 1.1e-5);
   convertsWeiToEth('100000000000000000', 0.1);
+  convertsWeiToEth('110000000000000000', 0.11);
   convertsWeiToEth('1000000000000000000', 1);
-  convertsWeiToEth('1000000000000000000', 1);
+  convertsWeiToEth('1100000000000000000', 1.1);
   convertsWeiToEth('10000000000000000000', 10);
+  convertsWeiToEth('11000000000000000000', 11);
   convertsWeiToEth('100000000000000000000000', 1e5);
+  convertsWeiToEth('110000000000000000000000', 1.1e5);
+  convertsWeiToEth('-10000000000000', -1e-5);
+  convertsWeiToEth('-11000000000000', -1.1e-5);
+  convertsWeiToEth('-100000000000000000', -0.1);
+  convertsWeiToEth('-110000000000000000', -0.11);
+  convertsWeiToEth('-1000000000000000000', -1);
+  convertsWeiToEth('-1100000000000000000', -1.1);
+  convertsWeiToEth('-10000000000000000000', -10);
+  convertsWeiToEth('-11000000000000000000', -11);
+  convertsWeiToEth('-110000000000000000000000', -1.1e5);
+  convertsWeiToEth('-111111111111100000000000', -1.111111111111e5);
 });
 
-describe('ethToWei', () => {
+describe('weiToDecimaled', () => {
   const convertsEthToWei = (inNumb: number, outStr: string) => {
     it(`converts Eth:${inNumb.toString()} to wei:${outStr}`, () => {
-      expect(ethToWei(inNumb).toString()).to.equal(outStr);
+      expect(decimaledToWei(inNumb).toString()).to.equal(outStr);
     });
   };
 
   convertsEthToWei(0, '0');
   convertsEthToWei(1e-5, '10000000000000');
+  convertsEthToWei(1.1e-5, '11000000000000');
   convertsEthToWei(0.1, '100000000000000000');
+  convertsEthToWei(0.11, '110000000000000000');
   convertsEthToWei(1, '1000000000000000000');
+  convertsEthToWei(1.1, '1100000000000000000');
   convertsEthToWei(10, '10000000000000000000');
+  convertsEthToWei(11, '11000000000000000000');
   convertsEthToWei(1e5, '100000000000000000000000');
+  convertsEthToWei(1.1e5, '110000000000000000000000');
+  convertsEthToWei(-1e-5, '-10000000000000');
+  convertsEthToWei(-1.1e-5, '-11000000000000');
+  convertsEthToWei(-0.1, '-100000000000000000');
+  convertsEthToWei(-0.11, '-110000000000000000');
+  convertsEthToWei(-1, '-1000000000000000000');
+  convertsEthToWei(-1.1, '-1100000000000000000');
+  convertsEthToWei(-10, '-10000000000000000000');
+  convertsEthToWei(-11, '-11000000000000000000');
+  convertsEthToWei(-1.1e5, '-110000000000000000000000');
 });
 
 describe('overrideMulticall', () => {
@@ -65,10 +99,14 @@ describe('overrideMulticall', () => {
   });
 
   it('should not modify multicall3 if chainConfig is missing required fields', () => {
-    const originalMulticall = { ...mockFungiblePool.ethcallProvider.multicall3 };
+    const originalMulticall = {
+      ...mockFungiblePool.ethcallProvider.multicall3,
+    };
     overrideMulticall(mockFungiblePool, {} as KeeperConfig);
 
-    expect(mockFungiblePool.ethcallProvider.multicall3).deep.equal(originalMulticall);
+    expect(mockFungiblePool.ethcallProvider.multicall3).deep.equal(
+      originalMulticall
+    );
   });
 });
 
@@ -101,4 +139,26 @@ describe('getProviderAndSigner', () => {
     expect(signer).to.have.property('address').that.is.a('string');
     expect(signer).to.have.property('signMessage').that.is.a('function');
   });
+});
+
+describe.only('tokenChangeDecimals', () => {
+  const testConvertDecimals = (
+    tokenWei: string,
+    currDecimals: number,
+    targetDecimals: number,
+    expectedStr: string
+  ) => {
+    return it(`Converts ${tokenWei} with ${currDecimals} decimals to ${expectedStr} with ${targetDecimals} decimals`, () => {
+      const result = tokenChangeDecimals(
+        BigNumber.from(tokenWei),
+        currDecimals,
+        targetDecimals
+      );
+      expect(result.toString()).equals(expectedStr);
+    });
+  };
+
+  testConvertDecimals('1000000', 6, 18, '1000000000000000000');
+  testConvertDecimals('1000000000000000000', 18, 6, '1000000');
+  testConvertDecimals('1000000000000000000', 18, 18, '1000000000000000000');
 });

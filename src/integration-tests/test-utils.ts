@@ -1,7 +1,14 @@
-import { providers } from 'ethers';
+import { providers, Signer, Wallet } from 'ethers';
 import { HARDHAT_RPC_URL, MAINNET_CONFIG } from './test-config';
+import { FungiblePool } from '@ajna-finance/sdk';
+import { getDecimalsErc20 } from '../erc20';
+import { decimaledToWei } from '../utils';
 
-export const getProvider = () => new providers.JsonRpcProvider(HARDHAT_RPC_URL);
+let _provider: providers.JsonRpcProvider | undefined = undefined;
+export const getProvider = () => {
+  if (!_provider) _provider = new providers.JsonRpcProvider(HARDHAT_RPC_URL);
+  return _provider;
+};
 
 export const resetHardhat = () =>
   getProvider().send('hardhat_reset', [
@@ -19,7 +26,7 @@ export const setBalance = (address: string, balance: string) =>
 export const getBalance = (address: string) =>
   getProvider().send('eth_getBalance', [address]);
 
-const impersonateAccount = (address: string) =>
+export const impersonateAccount = (address: string) =>
   getProvider().send('hardhat_impersonateAccount', [address]);
 
 export const impersonateSigner = async (address: string) => {

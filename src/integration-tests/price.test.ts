@@ -12,7 +12,7 @@ describe('getPoolPrice', () => {
   let ajna: AjnaSDK;
   let fungiblePool: Pool;
 
-  before(async () => {
+  beforeEach(async () => {
     await resetHardhat();
     provider = getProvider();
     configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -22,33 +22,33 @@ describe('getPoolPrice', () => {
 
   it('should find price for hpb', async () => {
     const hpbPrice = await getPoolPrice(
-      fungiblePool,
+      await fungiblePool.getPrices(),
       PriceOriginPoolReference.HPB
     );
-    expect(hpbPrice).to.equal(59726.377253);
+    expect(hpbPrice).to.equal(59726.377253304);
   });
 
   it('should find price for htp', async () => {
     const htpPrice = await getPoolPrice(
-      fungiblePool,
+      await fungiblePool.getPrices(),
       PriceOriginPoolReference.HTP
     );
-    expect(htpPrice).to.equal(38336.040159);
+    expect(htpPrice).to.equal(38336.04015947);
   });
 
   it('should find price for lup', async () => {
     const lupPrice = await getPoolPrice(
-      fungiblePool,
+      await fungiblePool.getPrices(),
       PriceOriginPoolReference.LUP
     );
-    expect(lupPrice).to.equal(52988.385953);
+    expect(lupPrice).to.equal(52988.385953918);
   });
 
   it('should find price for llb', async () => {
     const llbPrice = await getPoolPrice(
-      fungiblePool,
+      await fungiblePool.getPrices(),
       PriceOriginPoolReference.LLB
     );
-    expect(llbPrice).to.equal(1004968987.606512);
+    expect(llbPrice).to.equal(1004968987.6065);
   });
 });

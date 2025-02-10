@@ -4,14 +4,14 @@ import {
   PriceOriginSource,
 } from './config';
 import { getPrice as getPriceCoinGecko } from './coingecko';
-import { weiToDecimaled, ethToWei } from './utils';
-import { Pool } from '@ajna-finance/sdk';
+import { weiToDecimaled } from './utils';
+import { PriceInfo } from '@ajna-finance/sdk';
 
 // Retrieves the market price using the configured source
 export async function getPrice(
-  pool: Pool,
   priceOrigin: PriceOrigin,
-  coinGeckoApiKey: string = ''
+  coinGeckoApiKey: string = '',
+  poolPrices: PriceInfo
 ) {
   let price: number;
   switch (priceOrigin.source) {
@@ -22,7 +22,7 @@ export async function getPrice(
       price = priceOrigin.value;
       break;
     case PriceOriginSource.POOL:
-      price = await getPoolPrice(pool, priceOrigin.reference);
+      price = await getPoolPrice(poolPrices, priceOrigin.reference);
       break;
     default:
       throw new Error('Unknown price provider:' + (priceOrigin as any).source);
@@ -35,10 +35,9 @@ export async function getPrice(
 }
 
 export async function getPoolPrice(
-  pool: Pool,
+  poolPrices: PriceInfo,
   reference: PriceOriginPoolReference
 ): Promise<number> {
-  const poolPrices = await pool.getPrices();
   let price;
   switch (reference) {
     case PriceOriginPoolReference.HPB:
@@ -56,20 +55,5 @@ export async function getPoolPrice(
     default:
       throw new Error('Unknown pool price reference:' + reference);
   }
-  if (price == undefined) {
-    throw new Error(
-      `Unable to get price for ${pool.poolAddress} - ${reference}`
-    );
-  }
   return weiToDecimaled(price);
-}
-
-// function bucketToPrice(index: number) {
-//   // Note: Bucket index range is [-3232, 4155]
-//   return 1.005 ^ (index);
-// }
-
-export function priceToBucket(price: number, pool: Pool): number {
-  return pool.getBucketsByPriceRange(ethToWei(price), ethToWei(price))[0].index;
-  // return Math.round(Math.log(price) / Math.log(1.005));
 }
