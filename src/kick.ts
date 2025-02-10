@@ -1,20 +1,20 @@
-import { FungiblePool, Loan, Signer } from '@ajna-finance/sdk';
-import subgraph from './subgraph';
-import {
-  delay,
-  decimaledToWei,
-  RequireFields,
-  weiToDecimaled,
-  tokenChangeDecimals,
-} from './utils';
+import { FungiblePool, Signer } from '@ajna-finance/sdk';
+import { BigNumber } from 'ethers';
 import { KeeperConfig, PoolConfig } from './config';
 import {
   getAllowanceOfErc20,
   getBalanceOfErc20,
   getDecimalsErc20,
 } from './erc20';
-import { BigNumber } from 'ethers';
 import { getPrice } from './price';
+import subgraph from './subgraph';
+import {
+  decimaledToWei,
+  delay,
+  RequireFields,
+  tokenChangeDecimals,
+  weiToDecimaled,
+} from './utils';
 
 interface HandleKickParams {
   pool: FungiblePool;
@@ -220,6 +220,7 @@ export async function kick({ pool, signer, config, loanToKick }: KickParams) {
     console.log(
       `Kick transaction confirmed. pool: ${pool.name}, borrower: ${borrower}`
     );
+
   } catch (error) {
     console.error(
       `Failed to kick loan. pool: ${pool.name}, borrower: ${borrower}. Error: `,
