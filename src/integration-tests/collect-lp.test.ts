@@ -1,11 +1,5 @@
 import './subgraph-mock';
-import {
-  AjnaSDK,
-  ERC20Pool__factory,
-  FungiblePool,
-  getBlockTime,
-  Signer,
-} from '@ajna-finance/sdk';
+import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import { configureAjna, TokenToCollect } from '../config';
 import {
@@ -21,9 +15,8 @@ import {
   overrideGetLoans,
 } from './subgraph-mock';
 import { expect } from 'chai';
-import { delay, weiToDecimaled } from '../utils';
+import { delay } from '../utils';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
-import { collectBondFromPool } from '../collect-bond';
 import { handleKicks } from '../kick';
 import { handleArbTakes } from '../take';
 import { LpCollector } from '../collect-lp';
@@ -80,7 +73,7 @@ describe('LpCollector subscription', () => {
   it('Tracks taker reward after BucketTake', async () => {
     const pool = await setup();
     const signer = await impersonateSigner(
-      MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress3
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress2
     );
     const lpCollector = new LpCollector(
       pool,
@@ -166,7 +159,7 @@ describe('LpCollector subscription', () => {
     await lpCollector.startSubscription();
     await delay(5);
     const takerSigner = await impersonateSigner(
-      MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress3
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress2
     );
     await handleArbTakes({
       pool,

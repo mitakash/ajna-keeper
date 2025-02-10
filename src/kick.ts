@@ -157,7 +157,6 @@ async function approveBalanceForLoanToKick({
   const { liquidationBond, estimatedRemainingBond } = loanToKick;
   const balanceNative = await getBalanceOfErc20(signer, pool.quoteAddress);
   const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
-  // TODO: Convert balance to wad.
   const balanceWad = tokenChangeDecimals(balanceNative, quoteDecimals);
   if (balanceWad < liquidationBond) {
     return false;

@@ -41,10 +41,21 @@ interface PriceOriginFixed {
   value: number;
 }
 
-interface PriceOriginCoinGecko {
+// See: https://docs.coingecko.com/reference/simple-price for reference.
+export interface PriceOriginCoinGeckoQuery {
   source: PriceOriginSource.COINGECKO;
-  query: string;
+  query: string; // The query used for the token price in Coingecko.  example: "price?ids=ethereum&vs_currencies=usd"
 }
+
+export interface PriceOriginCoinGeckoTokenIds {
+  source: PriceOriginSource.COINGECKO;
+  quoteId: string; // Id of quote token as seen in Coingecko api. example: "ethereum"
+  collateralId: string; // Id of collateral token as seen in Coingecko api. example: "solana"
+}
+
+export type PriceOriginCoinGecko =
+  | PriceOriginCoinGeckoQuery
+  | PriceOriginCoinGeckoTokenIds;
 
 interface PriceOriginPool {
   source: PriceOriginSource.POOL;

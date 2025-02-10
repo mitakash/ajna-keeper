@@ -3,7 +3,7 @@ import {
   PriceOriginPoolReference,
   PriceOriginSource,
 } from './config';
-import { getPrice as getPriceCoinGecko } from './coingecko';
+import { getPriceCoinGecko } from './coingecko';
 import { weiToDecimaled } from './utils';
 import { PriceInfo } from '@ajna-finance/sdk';
 
@@ -16,7 +16,7 @@ export async function getPrice(
   let price: number;
   switch (priceOrigin.source) {
     case PriceOriginSource.COINGECKO:
-      price = await getPriceCoinGecko(priceOrigin.query, coinGeckoApiKey);
+      price = await getPriceCoinGecko(priceOrigin, coinGeckoApiKey);
       break;
     case PriceOriginSource.FIXED:
       price = priceOrigin.value;

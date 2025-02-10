@@ -1,9 +1,8 @@
-import { BigNumber, providers, Wallet, utils } from 'ethers';
+import { BigNumber, providers, Wallet } from 'ethers';
 import { promises as fs } from 'fs';
 import { password } from '@inquirer/prompts';
 import { FungiblePool } from '@ajna-finance/sdk';
 import { KeeperConfig } from './config';
-import { SWAP_ROUTER_02_ADDRESSES } from '@uniswap/sdk-core';
 import { logger } from './logging';
 
 export type RequireFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
@@ -12,10 +11,6 @@ async function addAccountFromKeystore(
   keystorePath: string,
   provider: providers.JsonRpcProvider
 ): Promise<Wallet> {
-  // TODO: connect actual wallet.
-  let wallet = Wallet.createRandom();
-  return wallet.connect(provider);
-
   // read the keystore file, confirming it exists
   const jsonKeystore = (await fs.readFile(keystorePath)).toString();
 
@@ -30,6 +25,8 @@ async function addAccountFromKeystore(
   } catch (error) {
     logger.error('Error decrypting keystore:', error);
     logger.error('This keeper will not create transactions');
+    let wallet = Wallet.createRandom();
+    return wallet.connect(provider);
   }
 }
 
