@@ -1,17 +1,12 @@
-import {
-  ERC20Pool__factory,
-  FungiblePool,
-  Loan,
-  PoolInfoUtils__factory,
-} from '@ajna-finance/sdk';
+import { ERC20Pool__factory, FungiblePool, Loan } from '@ajna-finance/sdk';
 import subgraphModule, {
   GetLiquidationResponse,
   GetLoanResponse,
 } from '../subgraph';
 import { getProvider } from './test-utils';
 import { weiToDecimaled } from '../utils';
-import { EventFilter } from 'ethers';
 import { MAINNET_CONFIG } from './test-config';
+import { logger } from '../logging';
 
 export function overrideGetLoans(
   fn: typeof subgraphModule.getLoans
@@ -100,7 +95,7 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
           });
         }
       } catch (e) {
-        console.debug(
+        logger.debug(
           `Failed to find auction for borrower: ${borrower}, pool: ${pool.name}`
         );
       }

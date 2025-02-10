@@ -4,6 +4,7 @@ import { password } from '@inquirer/prompts';
 import { FungiblePool } from '@ajna-finance/sdk';
 import { KeeperConfig } from './config';
 import { SWAP_ROUTER_02_ADDRESSES } from '@uniswap/sdk-core';
+import { logger } from './logging';
 
 export type RequireFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
 
@@ -27,8 +28,8 @@ async function addAccountFromKeystore(
     let wallet = Wallet.fromEncryptedJsonSync(jsonKeystore, pswd);
     return wallet.connect(provider);
   } catch (error) {
-    console.error('Error decrypting keystore:', error);
-    console.error('This keeper will not create transactions');
+    logger.error('Error decrypting keystore:', error);
+    logger.error('This keeper will not create transactions');
   }
 }
 

@@ -1,14 +1,8 @@
-import { providers, Signer, Wallet } from 'ethers';
+import { providers } from 'ethers';
 import { HARDHAT_RPC_URL, MAINNET_CONFIG } from './test-config';
-import { FungiblePool } from '@ajna-finance/sdk';
-import { getDecimalsErc20 } from '../erc20';
-import { decimaledToWei } from '../utils';
+import { delay } from '../utils';
 
-let _provider: providers.JsonRpcProvider | undefined = undefined;
-export const getProvider = () => {
-  if (!_provider) _provider = new providers.JsonRpcProvider(HARDHAT_RPC_URL);
-  return _provider;
-};
+export const getProvider = () => new providers.JsonRpcProvider(HARDHAT_RPC_URL);
 
 export const resetHardhat = () =>
   getProvider().send('hardhat_reset', [
@@ -52,4 +46,13 @@ export const increaseTime = async (seconds: number) => {
   await getProvider().send('evm_setNextBlockTimestamp', [nextTimestamp]);
   await mine();
   return await latestBlockTimestamp();
+};
+
+export const waitForConditionToBeTrue = async (
+  fn: () => Promise<boolean>,
+  pollingTime: number = 0.2
+) => {
+  while (!(await fn())) {
+    await delay(pollingTime);
+  }
 };

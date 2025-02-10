@@ -2,16 +2,13 @@
 
 ## Purpose
 
-A console application for automating interactions with the Ajna decentralized lending protocol.
+A bot to automate liquidations on the Ajna platform.
 
 ## Design
 
 - Each instance of the keeper connects to exactly one chain using a single RPC endpoint. The same keeper instance may interact with multiple pools on that chain.
-- Pool addresses must be configured. Allowing them to be configured via token name (via subgraph) introduces risk, as a bad actor could create a pool using fake tokens with the same name.
+- Pool addresses must be explicitly configured.
 - Each instance of the keeper may unlock only a single wallet using a JSON keystore file. As such, if running multiple keepers on the same chain, different accounts should be used for each keeper to avoid nonce conflicts.
-- For simplicity, price sources are configured per-pool, not separately for each action. This means if you will `kick` and `arbtake` the same pool, both actions must be based upon the same configured price.
-
-<!-- TODO: Add section explaining config. Call out collectRewards.withdrawLiquidity side effects. -->
 
 ## Requirements
 
@@ -24,23 +21,36 @@ For each desired chain:
 
 ## Features
 
-### TODO: kick
+### Kick
 
 Starts a liquidation when a loan's threshold price exceeds the lowest utilized price in the pool by a configurable percentage.
 
-### TODO: arbtake
+### Arbtake
 
 When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
 
+### collect LiquidationBond
+
+Collects liquidation bonds (which were used to kick loans) once they are fully claimable. Note: This does not settle auctions.
+
+### collect Reward LP
+
+Redeems rewarded LP for either Quote or Collateral based on config. Note: This will only collect LP rewarded while the bot is running and will not collect deposits.
+
 ## Installation and Prerequisites
 
-You'll need `node` and related tools (`npm`, `yarn`). This was developed with node v18.20.x but should work with later versions.
+You'll need `node` and related tools (`npm`, `yarn`). This was developed with node v22 but should work with later versions.
 
 ```bash
 yarn --frozen-lockfile
 ```
 
 ## Configuration
+
+### Configuration file
+
+While `*.json` config files are supported, it is recommended to use `*.ts` config files so that you get the benefits of type checking.
+See `example-config.ts` for reference.
 
 ### Price sources
 
@@ -53,7 +63,7 @@ If the price source only has quote token priced in collateral, you may add `"inv
 ## Execution
 
 ```bash
-yarn start --config my-config.json
+yarn start --config my-config.ts
 ```
 
 ## Testing

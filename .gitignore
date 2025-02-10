@@ -6,10 +6,15 @@
 # Hardhat
 /cache
 
+# logging
+/logs
+
 # misc
 .DS_Store
 config*.json
+config*.ts
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 _archivepackage-lock.json
+/local

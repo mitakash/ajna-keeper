@@ -141,7 +141,7 @@ describe('getProviderAndSigner', () => {
   });
 });
 
-describe.only('tokenChangeDecimals', () => {
+describe('tokenChangeDecimals', () => {
   const testConvertDecimals = (
     tokenWei: string,
     currDecimals: number,

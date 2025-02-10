@@ -1,3 +1,5 @@
+import { logger } from './logging';
+
 interface CoinGeckoRespone {
   [coinName: string]: {
     usd: number;
@@ -16,7 +18,7 @@ export async function getPrice(query: string, apiKey: string): Promise<number> {
     const resJson: CoinGeckoRespone = await res.json();
     return Object.values(Object.values(resJson)[0])[0];
   } catch (error) {
-    console.error('Error fetching price from CoinGecko:', error);
+    logger.error('Error fetching price from CoinGecko:', error);
   }
   return NaN;
 }

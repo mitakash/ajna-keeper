@@ -2,6 +2,7 @@ import { Signer, FungiblePool } from '@ajna-finance/sdk';
 import subgraph from './subgraph';
 import { delay, RequireFields, weiToDecimaled } from './utils';
 import { KeeperConfig, PoolConfig } from './config';
+import { logger } from './logging';
 
 interface HandleArbParams {
   signer: Signer;
@@ -58,12 +59,12 @@ export async function getLiquidationsToArbTake({
     const price = weiToDecimaled(liquidationStatus.price);
     // TODO: Add price factor.
     if (price < hpb * poolConfig.take.priceFactor) {
-      console.debug(
+      logger.debug(
         `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hpb}.`
       );
       result.push({ borrower, hpbIndex });
     } else {
-      console.debug(
+      logger.debug(
         `Not taking liquidation since price is too high. price: ${price} hpb: ${hpb}`
       );
     }
@@ -88,36 +89,25 @@ export async function arbTakeLiquidation({
   const { dryRun } = config;
 
   if (dryRun) {
-    console.log(
+    logger.info(
       `DryRun - would ArbTake - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
     );
   } else {
-    // TODO: should we loop through this step until collateral remaining is zero?
-    console.log(
-      `Sending ArbTake Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}, hpbIndex: ${hpbIndex}`
-    );
-    const liquidationSdk = pool.getLiquidation(borrower);
-    const arbTakeTx = await liquidationSdk.arbTake(signer, hpbIndex);
-    await arbTakeTx.verifyAndSubmit();
-    console.log(
-      `ArbTake successful - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
-    );
-
-    // withdraw liquidity.
-    // if (poolConfig.take.withdrawRewardLiquidity) {
-    //   const signerAddress = await signer.getAddress();
-    //   const bucket = pool.getBucketByIndex(hpbIndex);
-    //   const lpBalance = await bucket.lpBalance(signerAddress);
-    //   // console.log('approving transferor');
-    //   // const approveTx = await pool.approveLenderHelperLPTransferor(signer);
-    //   // await approveTx.verifyAndSubmit();
-    //   // console.log('transferor approved');
-    //   console.log(
-    //     `Withdrawing lidquidity after arbTake. pool: ${pool.name}, lpBalance: ${weiToDecimaled(lpBalance)}`
-    //   );
-    //   const withdrawTx = await pool.withdrawLiquidity(signer, [hpbIndex]);
-    //   await withdrawTx.verifyAndSubmit();
-    //   console.log(`Withdrawing lidquidity successful. pool: ${pool.name}`);
-    // }
+    try {
+      logger.debug(
+        `Sending ArbTake Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}, hpbIndex: ${hpbIndex}`
+      );
+      const liquidationSdk = pool.getLiquidation(borrower);
+      const arbTakeTx = await liquidationSdk.arbTake(signer, hpbIndex);
+      await arbTakeTx.verifyAndSubmit();
+      logger.info(
+        `ArbTake successful - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
+      );
+    } catch (error) {
+      logger.error(
+        `Failed to ArbTake. pool: ${pool.name}, borrower: ${borrower}`,
+        error
+      );
+    }
   }
 }
