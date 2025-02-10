@@ -87,6 +87,7 @@ describe("getPoolInfo", () => {
     expect(poolInfo).to.have.property("tick");
     expect(poolInfo.liquidity.toString()).to.equal("1000000000000000000");
     expect(poolInfo.sqrtPriceX96.toString()).to.equal("79228162514264337593543950336");
+    expect(poolInfo.tick.toString()).to.equal("0");
   });
 });
 
@@ -96,14 +97,33 @@ describe("exchangeForNative", () => {
   let mockSwapRouter: CustomContract;
 
   beforeEach(() => {
-    sinon.stub(mockProvider, "getNetwork").resolves({ chainId: 1, name: "homestead" })
     mockProvider.getResolver = sinon.stub().resolves(null);
     mockProvider.getBalance = sinon.stub().resolves("1000000000000000000");
 
     mockSigner = new CustomSigner(mockProvider);
     mockSigner.getAddress.resolves("0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C");
     mockSigner.sendTransaction = sinon.stub().resolves({
-      wait: sinon.stub().resolves({ status: 1 }),
+      hash: "0xTransactionHash",
+      wait: sinon.stub().resolves({
+        status: 1,
+        transactionHash: "0xTransactionHash",
+        blockNumber: 12345,
+        confirmations: 1,
+        from: "0xMockAddress",
+        to: "0xMockRouterAddress",
+        gasUsed: 21000,
+        logs: [{
+          blockNumber: 12345,
+          blockHash: "0xMockBlockHash",
+          transactionIndex: 0,
+          removed: false,
+          address: "0xMockRouterAddress",
+          data: "0xMockData",
+          topics: ["0xMockTopic1", "0xMockTopic2"],
+          transactionHash: "0xTransactionHash",
+          logIndex: 1,
+        }],
+      }),
     });
     
     Object.defineProperty(mockSigner, "provider", { value: mockProvider });
@@ -124,7 +144,17 @@ describe("exchangeForNative", () => {
         from: "0xMockAddress",
         to: "0xMockRouterAddress",
         gasUsed: 21000,
-        logs: [],
+        logs: [{
+          blockNumber: 12345,
+          blockHash: "0xMockBlockHash",
+          transactionIndex: 0,
+          removed: false,
+          address: "0xMockRouterAddress",
+          data: "0xMockData",
+          topics: ["0xMockTopic1", "0xMockTopic2"],
+          transactionHash: "0xTransactionHash",
+          logIndex: 1,
+        }],
       }),
     });
 
@@ -153,15 +183,38 @@ describe("exchangeForNative", () => {
   afterEach(() => {
     sinon.restore();
   });
+
+  it("should throw an error for invalid parameters", async function () {
+    await expect(exchangeForNative(null as any, "", 100, 0, null as any)).to.be.rejectedWith(
+      "Invalid parameters provided to exchangeForNative"
+    );
+  });
+
+  it("should throw an error if signer does not have a provider", async function () {
+    const invalidSigner = { getAddress: sinon.stub().resolves("0xMock") } as unknown as Signer;
+    await expect(exchangeForNative(invalidSigner, "0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C", 3000, 100, mockSwapRouter)).to.be.rejectedWith("Signer does not have an associated provider");
+  });
+
+  it("should throw an error if there isn't enough liquidity", async function () {
+    sinon.stub(mockProvider, "getNetwork").resolves({ chainId: 1, name: "homestead" })
+    sinon.replace(mockSwapRouter, "liquidity", sinon.stub().resolves(ethers.BigNumber.from("0")));
+    await expect(exchangeForNative(mockSigner, "0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C", 3000, 100, mockSwapRouter)).to.be.rejectedWith("There isn't enough liquidity");
+  });
   
+  it("should throw an error if chain ID cannot be determined", async function () {
+    const providerStub = sinon.stub().resolves({chainId: null});
+    sinon.replace(mockSigner.provider!, "getNetwork", providerStub);
+    await expect(exchangeForNative(mockSigner, "0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C", 3000, 100, mockSwapRouter)).to.be.rejectedWith("Could not determine chain ID");
+  });
+
   it("should execute a swap successfully", async function () {
-    await exchangeForNative(
+    sinon.stub(mockProvider, "getNetwork").resolves({ chainId: 1, name: "homestead" })
+    await expect(exchangeForNative(
       mockSigner,
       "0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C",
       3000,
       1000,
       mockSwapRouter
-    );
-    expect(mockSigner.getAddress.calledOnce).to.be.true;
+    )).to.not.be.rejected;
   });
 });

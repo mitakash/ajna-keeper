@@ -40,13 +40,27 @@ export async function getPoolInfo(
 export async function exchangeForNative(
   signer: Signer, erc20Address: string, fee: FeeAmount, amount: number, poolContract: Contract
 ) {
+    if (!signer || !erc20Address || !fee || !amount || !poolContract) {
+        throw new Error("Invalid parameters provided to exchangeForNative");
+    }
     const provider = signer.provider as providers.JsonRpcProvider;
+    if (!provider) {
+        throw new Error("Signer does not have an associated provider");
+    }
+
     const { chainId } = await provider.getNetwork();
+    if (!chainId) {
+        throw new Error("Could not determine chain ID");
+    }
     
     const decimals = await getDecimalsErc20(signer, erc20Address);
     
     const erc20Token = new Token(chainId, erc20Address, decimals);
     const wethAddress = WETH9[chainId]?.address;
+    if (!wethAddress) {
+        throw new Error("WETH address not found for chain ID");
+    }
+
     const nativeToken = new Token(chainId, wethAddress, 18, "WETH", "Wrapped Ether");
 
     const poolInfo = await getPoolInfo(provider, nativeToken, erc20Token, fee, poolContract);
@@ -77,18 +91,26 @@ export async function exchangeForNative(
 
     const swapRouter = new Contract(UNISWAP_V3_ROUTER, UniswapABI, signer);
 
+    const recipient = await signer.getAddress();
+    if (!recipient) {
+        throw new Error("Could not retrieve signer address");
+    }
+
     const tx = await swapRouter.exactInputSingle({
         tokenIn: erc20Token.address,
         tokenOut: nativeToken.address,
         fee,
-        recipient: await signer.getAddress(),
+        recipient: recipient,
         deadline: Math.floor(Date.now() / 1000) + 60 * 5,
         amountIn: BigNumber.from(amount),
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: poolInfo.sqrtPriceX96,
     });
     
-    await tx.wait();
+    const receipt = await tx.wait();
+    if (receipt.status !== 1) {
+        throw new Error("Transaction failed");
+    };
 
     console.log(`Swap successful: ${tx.hash}`);
 }
