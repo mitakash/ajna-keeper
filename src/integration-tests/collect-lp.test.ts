@@ -1,13 +1,12 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
+import { Token, WETH9 } from '@uniswap/sdk-core';
 import { expect } from 'chai';
-import { BigNumber, Wallet } from 'ethers';
-import sinon from 'sinon';
+import { BigNumber, ethers, Wallet } from 'ethers';
 import { LpCollector } from '../collect-lp';
 import { configureAjna, TokenToCollect } from '../config';
 import { getBalanceOfErc20 } from '../erc20';
 import { handleKicks } from '../kick';
 import { handleArbTakes } from '../take';
-import * as uniswap from '../uniswap';
 import { delay } from '../utils';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import './subgraph-mock';
@@ -26,6 +25,18 @@ import {
   resetHardhat,
   waitForConditionToBeTrue,
 } from './test-utils';
+
+const HARDHAT_CHAIN_ID = 31337;
+
+const WETH_HARDHAT_ADDRESS = "0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204";
+
+WETH9[HARDHAT_CHAIN_ID] = new Token(
+  HARDHAT_CHAIN_ID,
+  WETH_HARDHAT_ADDRESS,
+  18,
+  "WETH",
+  "Wrapped Ether"
+);
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -184,8 +195,11 @@ describe('LpCollector subscription', () => {
 });
 
 describe('LpCollector collections', () => {
-  beforeEach(async () => {
+  before(async () => {
     await deployETH9();
+  });
+
+  beforeEach(async () => {
     await resetHardhat();
   });
 
@@ -194,6 +208,8 @@ describe('LpCollector collections', () => {
     const signer = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );
+    await signer.provider.send("hardhat_impersonateAccount", [MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress2]);
+  
     const lpCollector = new LpCollector(
       pool,
       signer,

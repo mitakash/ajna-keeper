@@ -127,7 +127,7 @@ export class LpCollector {
             );
             tokenCollected = this.pool.quoteAddress;
             amountCollected = quoteToWithdraw;
-            this.uniswapcode(tokenCollected, amountCollected);
+            await this.uniswapcode(tokenCollected, amountCollected);
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
             logger.error(
@@ -160,6 +160,7 @@ export class LpCollector {
             );
             tokenCollected = this.pool.collateralAddress;
             amountCollected = collateralToWithdraw;
+            await this.uniswapcode(tokenCollected, amountCollected);
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
           } catch (error) {
