@@ -1,22 +1,26 @@
 import {
-  Signer,
-  FungiblePool,
-  ERC20Pool__factory,
-  indexToPrice,
-  wdiv,
-  min,
   ERC20,
+  ERC20Pool__factory,
+  FungiblePool,
+  indexToPrice,
+  min,
+  Signer,
+  wdiv,
 } from '@ajna-finance/sdk';
-import { KeeperConfig, PoolConfig, TokenToCollect } from './config';
 import { TypedListener } from '@ajna-finance/sdk/dist/types/contracts/common';
 import {
   BucketTakeLPAwardedEvent,
   BucketTakeLPAwardedEventFilter,
   ERC20Pool,
 } from '@ajna-finance/sdk/dist/types/contracts/ERC20Pool';
-import { BigNumber } from 'ethers';
-import { decimaledToWei, RequireFields, weiToDecimaled } from './utils';
+import { WETH9 } from '@uniswap/sdk-core';
+import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json';
+import { FeeAmount, Pool as UniswapV3Pool, } from '@uniswap/v3-sdk';
+import { BigNumber, Contract } from 'ethers';
+import { KeeperConfig, PoolConfig, TokenToCollect } from './config';
 import { logger } from './logging';
+import { exchangeForNative } from './uniswap';
+import { decimaledToWei, weiToDecimaled } from './utils';
 
 /**
  * Collects lp rewarded from BucketTakes without collecting the user's deposits or loans.
@@ -97,6 +101,9 @@ export class LpCollector {
       await bucket.getPosition(signerAddress);
     if (lpBalance.lt(rewardLp)) rewardLp = lpBalance;
 
+    let tokenCollected: string | null = null;
+    let amountCollected: BigNumber = BigNumber.from('0');
+
     if (redeemAs == TokenToCollect.QUOTE) {
       const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
       const quoteToWithdraw = min(depositWithdrawable, rewardQuote);
@@ -157,6 +164,27 @@ export class LpCollector {
             );
           }
         }
+      }
+    }
+
+    const network = await this.signer.provider!.getNetwork();
+    if (tokenCollected && tokenCollected !== WETH9[network.chainId]?.address) {
+      try {
+        const poolContract = new Contract(
+          UniswapV3Pool.getAddress(WETH9[network.chainId!], tokenCollected, FeeAmount.MEDIUM),
+          IUniswapV3PoolABI.abi,
+          this.signer.provider!
+        );
+
+        await exchangeForNative(
+          this.signer,
+          tokenCollected,
+          FeeAmount.MEDIUM,
+          amountCollected.toNumber(),
+          poolContract
+        );
+      } catch (error) {
+        logger.error(`Failed to exchange collected tokens to native.`, error);
       }
     }
     return BigNumber.from('0');
