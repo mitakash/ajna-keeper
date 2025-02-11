@@ -53,7 +53,7 @@ export async function exchangeForNative(
   signer: Signer,
   erc20Address: string,
   fee: FeeAmount,
-  amount: number,
+  amount: string,
   poolContract: Contract
 ) {
   if (!signer || !erc20Address || !fee || !amount || !poolContract) {

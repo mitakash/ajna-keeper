@@ -93,7 +93,6 @@ export class LpCollector {
     bucketIndex: number,
     rewardLp: BigNumber
   ): Promise<BigNumber> {
-    console.log('WE ARE HERE 1');
     const { redeemAs, minAmount } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
     const bucket = await this.pool.getBucketByIndex(bucketIndex);
@@ -106,7 +105,6 @@ export class LpCollector {
     let amountCollected: BigNumber = BigNumber.from('0');
 
     if (redeemAs == TokenToCollect.QUOTE) {
-      console.log('WE ARE HERE 2');
       const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
       const quoteToWithdraw = min(depositWithdrawable, rewardQuote);
       if (quoteToWithdraw.gt(decimaledToWei(minAmount))) {
@@ -129,7 +127,6 @@ export class LpCollector {
             );
             tokenCollected = this.pool.quoteAddress;
             amountCollected = quoteToWithdraw;
-            console.log('COLLECTED', tokenCollected);
             this.uniswapcode(tokenCollected, amountCollected);
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
@@ -141,7 +138,6 @@ export class LpCollector {
         }
       }
     } else {
-      console.log('WE ARE HERE 3');
       const rewardCollateral = await bucket.lpToCollateral(rewardLp);
       const collateralToWithdraw = min(rewardCollateral, collateral);
       if (collateralToWithdraw.gt(decimaledToWei(minAmount))) {
@@ -253,7 +249,6 @@ export class LpCollector {
     amountCollected: BigNumber
   ) => {
     const network = await this.signer.provider!.getNetwork();
-    console.log('WE ARE HERE', network.chainId);
     let customWETH9;
     if (WETH9[network.chainId!] === undefined) {
       try {
@@ -273,7 +268,6 @@ export class LpCollector {
 
     if (tokenCollected && customWETH9 && tokenCollected !== customWETH9[network.chainId]?.address) {
       try {
-        console.log('WE ARE HERE');
         const tokenCollectedToken = new Token(
           network.chainId,
           tokenCollected as string,
@@ -281,30 +275,22 @@ export class LpCollector {
           'WETH',
           'Wrapped Ether'
         );
-        console.log('TOKEN COLLECTED', tokenCollectedToken);
-        const address1 = UniswapV3Pool.getAddress(
-            WETH9[network.chainId],
-            tokenCollectedToken,
-            FeeAmount.MEDIUM
-          );
 
-        console.log('ADDRESS', address1);
         const poolContract = new Contract(
           UniswapV3Pool.getAddress(
-            customWETH9[network.chainId!],
+            customWETH9[network.chainId],
             tokenCollectedToken,
             FeeAmount.MEDIUM
           ),
           IUniswapV3PoolABI.abi,
           this.signer.provider!
         );
-        console.log('POOL CONTRACT', poolContract);
 
         await exchangeForNative(
           this.signer,
           tokenCollected as string,
           FeeAmount.MEDIUM,
-          amountCollected.toNumber(),
+          amountCollected.toString(),
           poolContract
         );
       } catch (error) {

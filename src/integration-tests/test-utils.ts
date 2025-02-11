@@ -1,6 +1,8 @@
 import { providers } from 'ethers';
 import { HARDHAT_RPC_URL, MAINNET_CONFIG } from './test-config';
 import { delay } from '../utils';
+import hre from "hardhat";
+import "@nomiclabs/hardhat-ethers";
 
 export const getProvider = () => new providers.JsonRpcProvider(HARDHAT_RPC_URL);
 
@@ -56,3 +58,12 @@ export const waitForConditionToBeTrue = async (
     await delay(pollingTime);
   }
 };
+
+export async function deployETH9() {
+  console.log("Deploying WETH9...");
+  const WETH9 = await hre.ethers.getContractFactory("WETH9");
+  const weth9 = await WETH9.deploy();
+  await weth9.deployed();
+
+  console.log("WETH9 deployed at:", weth9.address);
+}
