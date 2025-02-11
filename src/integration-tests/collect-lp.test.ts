@@ -1,28 +1,30 @@
-import './subgraph-mock';
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
-import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
+import { expect } from 'chai';
+import { BigNumber, Wallet } from 'ethers';
+import sinon from 'sinon';
+import { LpCollector } from '../collect-lp';
 import { configureAjna, TokenToCollect } from '../config';
-import {
-  getProvider,
-  resetHardhat,
-  increaseTime,
-  impersonateSigner,
-} from './test-utils';
+import { getBalanceOfErc20 } from '../erc20';
+import { handleKicks } from '../kick';
+import { handleArbTakes } from '../take';
+import * as uniswap from '../uniswap';
+import { delay } from '../utils';
+import { depositQuoteToken, drawDebt } from './loan-helpers';
+import './subgraph-mock';
 import {
   makeGetLiquidationsFromSdk,
   makeGetLoansFromSdk,
   overrideGetLiquidations,
   overrideGetLoans,
 } from './subgraph-mock';
-import { expect } from 'chai';
-import { delay } from '../utils';
-import { depositQuoteToken, drawDebt } from './loan-helpers';
-import { handleKicks } from '../kick';
-import { handleArbTakes } from '../take';
-import { LpCollector } from '../collect-lp';
-import { BigNumber, Wallet } from 'ethers';
-import { waitForConditionToBeTrue } from './test-utils';
-import { getBalanceOfErc20 } from '../erc20';
+import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
+import {
+  getProvider,
+  impersonateSigner,
+  increaseTime,
+  resetHardhat,
+  waitForConditionToBeTrue,
+} from './test-utils';
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -86,6 +88,7 @@ describe('LpCollector subscription', () => {
       },
       {}
     );
+    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     await handleArbTakes({
       pool,
@@ -103,6 +106,7 @@ describe('LpCollector subscription', () => {
       return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
     });
     await lpCollector.stopSubscription();
+    expect(exchangeForNativeSpy.called).to.be.true;
   });
 
   it('Does not track bucket takes of other users', async () => {
@@ -120,6 +124,7 @@ describe('LpCollector subscription', () => {
       },
       {}
     );
+    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     const takerSigner = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
@@ -138,6 +143,7 @@ describe('LpCollector subscription', () => {
     const entries = Array.from(lpCollector.lpMap.entries());
     expect(entries.length).equals(0);
     await lpCollector.stopSubscription();
+    expect(exchangeForNativeSpy.called).to.be.false;
   });
 
   it('Tracks rewards for kicker', async () => {
@@ -156,6 +162,7 @@ describe('LpCollector subscription', () => {
       },
       {}
     );
+    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     await delay(5);
     const takerSigner = await impersonateSigner(
@@ -177,6 +184,7 @@ describe('LpCollector subscription', () => {
       return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
     });
     await lpCollector.stopSubscription();
+    expect(exchangeForNativeSpy.called).to.be.true;
   });
 });
 
@@ -201,6 +209,7 @@ describe('LpCollector collections', () => {
       },
       {}
     );
+    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     await handleArbTakes({
       pool,
@@ -234,5 +243,6 @@ describe('LpCollector collections', () => {
     );
     expect(balanceAfterCollection.gt(balanceBeforeCollection)).to.be.true;
     await lpCollector.stopSubscription();
+    expect(exchangeForNativeSpy.called).to.be.true;
   });
 });
