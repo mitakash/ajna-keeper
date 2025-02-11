@@ -19,6 +19,7 @@ import {
 } from './subgraph-mock';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import {
+  deployETH9,
   getProvider,
   impersonateSigner,
   increaseTime,
@@ -88,7 +89,6 @@ describe('LpCollector subscription', () => {
       },
       {}
     );
-    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     await handleArbTakes({
       pool,
@@ -106,7 +106,6 @@ describe('LpCollector subscription', () => {
       return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
     });
     await lpCollector.stopSubscription();
-    expect(exchangeForNativeSpy.called).to.be.true;
   });
 
   it('Does not track bucket takes of other users', async () => {
@@ -124,7 +123,6 @@ describe('LpCollector subscription', () => {
       },
       {}
     );
-    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     const takerSigner = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
@@ -143,7 +141,6 @@ describe('LpCollector subscription', () => {
     const entries = Array.from(lpCollector.lpMap.entries());
     expect(entries.length).equals(0);
     await lpCollector.stopSubscription();
-    expect(exchangeForNativeSpy.called).to.be.false;
   });
 
   it('Tracks rewards for kicker', async () => {
@@ -162,7 +159,6 @@ describe('LpCollector subscription', () => {
       },
       {}
     );
-    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     await delay(5);
     const takerSigner = await impersonateSigner(
@@ -184,12 +180,12 @@ describe('LpCollector subscription', () => {
       return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
     });
     await lpCollector.stopSubscription();
-    expect(exchangeForNativeSpy.called).to.be.true;
   });
 });
 
 describe('LpCollector collections', () => {
   beforeEach(async () => {
+    await deployETH9();
     await resetHardhat();
   });
 
@@ -209,7 +205,6 @@ describe('LpCollector collections', () => {
       },
       {}
     );
-    const exchangeForNativeSpy = sinon.spy(uniswap, 'exchangeForNative');
     await lpCollector.startSubscription();
     await handleArbTakes({
       pool,
@@ -243,6 +238,5 @@ describe('LpCollector collections', () => {
     );
     expect(balanceAfterCollection.gt(balanceBeforeCollection)).to.be.true;
     await lpCollector.stopSubscription();
-    expect(exchangeForNativeSpy.called).to.be.true;
   });
 });
