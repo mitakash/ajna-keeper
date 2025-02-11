@@ -7,14 +7,10 @@ export interface GetLoanResponse {
   }[];
 }
 
-async function getLoans(
-  subgraphUrl: string,
-  poolAddress: string,
-  poolLup: number
-) {
+async function getLoans(subgraphUrl: string, poolAddress: string) {
   const query = gql`
     query {
-      loans (where: {inLiquidation: false, poolAddress: "${poolAddress}", thresholdPrice_gt: "${poolLup.toString()}"}){
+      loans (where: {inLiquidation: false, poolAddress: "${poolAddress}"}){
         borrower
         thresholdPrice
       }

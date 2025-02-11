@@ -10,17 +10,6 @@ import {
   setBalance,
 } from './test-utils';
 
-const transferErc20 = async (
-  signer: Signer,
-  receiver: string,
-  tokenAddress: string,
-  amount: BigNumber
-) => {
-  const contract = new Contract(tokenAddress, Erc20Abi, signer);
-  const tx = await contract.transfer(receiver, amount);
-  return await tx.wait();
-};
-
 interface DepostiQuoteParams {
   pool: FungiblePool;
   owner: string;

@@ -65,6 +65,7 @@ async function kickPoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
         signer,
         config,
       });
+      await delay(config.delayBetweenActions);
     }
     await delay(config.delayBetweenRuns);
   }
@@ -87,6 +88,7 @@ async function arbTakePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
         signer,
         config,
       });
+      await delay(config.delayBetweenActions);
     }
     await delay(config.delayBetweenRuns);
   }
@@ -106,6 +108,7 @@ async function collectBondLoop({ poolMap, config, signer }: KeepPoolParams) {
     for (const poolConfig of poolsWithCollectBondSettings) {
       const pool = poolMap.get(poolConfig.address)!;
       await collectBondFromPool({ pool, signer, config });
+      await delay(config.delayBetweenActions);
     }
     await delay(config.delayBetweenRuns);
   }
@@ -130,6 +133,7 @@ async function collectLpRewardsLoop({
       const pool = poolMap.get(poolConfig.address)!;
       const collector = lpCollectors.get(poolConfig.address)!;
       await collector.collectLpRewards();
+      await delay(config.delayBetweenActions);
     }
     await delay(config.delayBetweenRuns);
   }
