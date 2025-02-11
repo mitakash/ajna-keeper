@@ -13,7 +13,7 @@ import {
   Trade,
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
-import { BigNumber, Contract, providers, Signer } from 'ethers';
+import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
 import { getDecimalsErc20 } from './erc20';
 import { logger } from './logging';
 
@@ -33,14 +33,32 @@ export async function getPoolInfo(
   poolContract?: Contract
 ): Promise<PoolInfo> {
   const poolAddress = UniswapV3Pool.getAddress(nativeToken, erc20Token, feeAmt);
+  console.log('poolcontract', poolContract);
 
   const contract =
     poolContract ?? new Contract(poolAddress, IUniswapV3PoolABI.abi, provider);
+    console.log('address', poolAddress);
+    // console.log("Is contract deployed?", await provider.getCode(contract.address));
+    // const jprovider = new ethers.providers.JsonRpcProvider("https://eth-mainnet.g.alchemy.com/v2/e2BrSEJT20i_TW5CrtCSMQ3BMyWl9llr");
 
+    try {
+      const network = await provider.getNetwork();
+      console.log("Network:", network);
+    } catch (error) {
+      console.error("Error connecting to provider:", error);
+    }
+
+    console.log("Is contract deployed?", await provider.getCode(contract.address));
+    const balance = await provider.getBalance(poolAddress);
+    console.log("ETH Balance of pool:", ethers.utils.formatEther(balance));
+  console.log("Checking contract address:", contract.address);
+
+  logger.info("Fetching liquidity and slot0...");
   const [liquidity, slot0] = await Promise.all([
     contract.liquidity(),
     contract.slot0(),
   ]);
+  logger.info("Liquidity:", liquidity.toString(), "Slot0:", slot0[0].toString());
 
   return {
     liquidity,
@@ -59,12 +77,21 @@ export async function exchangeForNative(
   if (!signer || !erc20Address || !fee || !amount || !poolContract) {
     throw new Error('Invalid parameters provided to exchangeForNative');
   }
+  try {
   const provider = signer.provider as providers.JsonRpcProvider;
+
   if (!provider) {
     throw new Error('Signer does not have an associated provider');
   }
 
-  const { chainId } = await provider.getNetwork();
+  console.log('provider', provider);
+  const network = await provider.getNetwork();
+  const code = await provider.getCode("0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204");
+console.log("Contract code at poolAddress:", code);
+
+  console.log('network', network);
+  const { chainId } = network;
+  
   if (!chainId) {
     throw new Error('Could not determine chain ID');
   }
@@ -72,7 +99,10 @@ export async function exchangeForNative(
   const decimals = await getDecimalsErc20(signer, erc20Address);
 
   const erc20Token = new Token(chainId, erc20Address, decimals);
+
+  console.log("WE ARE HERE2");
   const wethAddress = WETH9[chainId]?.address;
+  console.log("WE ARE HERE wethAddress", wethAddress);
   if (!wethAddress) {
     throw new Error('WETH address not found for chain ID');
   }
@@ -84,6 +114,9 @@ export async function exchangeForNative(
     'WETH',
     'Wrapped Ether'
   );
+  console.log("WE ARE HERE nativeToken", nativeToken);
+  console.log("Network chain ID:", (await provider.getNetwork()).chainId);
+
 
   const poolInfo = await getPoolInfo(
     provider,
@@ -92,10 +125,13 @@ export async function exchangeForNative(
     fee,
     poolContract
   );
+  console.log("WE ARE HERE poolInfo", poolInfo);
 
   if (poolInfo.liquidity.isZero()) {
     throw new Error("There isn't enough liquidity");
   }
+
+  console.log("WE ARE HERE3");
 
   const pool = new UniswapV3Pool(
     erc20Token,
@@ -139,6 +175,7 @@ export async function exchangeForNative(
     amountOutMinimum: minOut,
     sqrtPriceLimitX96: poolInfo.sqrtPriceX96,
   });
+  console.log("WE ARE HERE4");
 
   const receipt = await tx.wait();
   if (receipt.status !== 1) {
@@ -146,4 +183,7 @@ export async function exchangeForNative(
   }
 
   logger.info(`Swap successful: ${tx.hash}`);
+} catch (error) {
+  console.error("Error detected:", error);
+}
 }

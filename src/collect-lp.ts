@@ -127,7 +127,7 @@ export class LpCollector {
             );
             tokenCollected = this.pool.quoteAddress;
             amountCollected = quoteToWithdraw;
-            await this.uniswapcode(tokenCollected, amountCollected);
+            await this.swapWinnings(tokenCollected, amountCollected);
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
             logger.error(
@@ -160,7 +160,7 @@ export class LpCollector {
             );
             tokenCollected = this.pool.collateralAddress;
             amountCollected = collateralToWithdraw;
-            await this.uniswapcode(tokenCollected, amountCollected);
+            await this.swapWinnings(tokenCollected, amountCollected);
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
           } catch (error) {
@@ -245,7 +245,7 @@ export class LpCollector {
     return index;
   };
 
-  private uniswapcode = async (
+  private swapWinnings = async (
     tokenCollected: string | null | Token,
     amountCollected: BigNumber
   ) => {

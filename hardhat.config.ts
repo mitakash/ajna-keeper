@@ -6,7 +6,6 @@ module.exports = {
   solidity: '0.8.28',
   paths: {
     tests: './src/integration-tests',
-    sources: "./src/contracts",
   },
   networks: {
     hardhat: {

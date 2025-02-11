@@ -18,7 +18,6 @@ import {
 } from './subgraph-mock';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import {
-  deployETH9,
   getProvider,
   impersonateSigner,
   increaseTime,
@@ -195,10 +194,6 @@ describe('LpCollector subscription', () => {
 });
 
 describe('LpCollector collections', () => {
-  before(async () => {
-    await deployETH9();
-  });
-
   beforeEach(async () => {
     await resetHardhat();
   });
@@ -208,7 +203,6 @@ describe('LpCollector collections', () => {
     const signer = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );
-    await signer.provider.send("hardhat_impersonateAccount", [MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress2]);
   
     const lpCollector = new LpCollector(
       pool,
