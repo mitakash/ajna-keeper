@@ -27,7 +27,7 @@ interface HandleKickParams {
   >;
 }
 
-const LIQUIDATION_BOND_MARGIN: number = 0.01; // How much extra margin to allow for liquidationBond. Expressed as a factor.
+const LIQUIDATION_BOND_MARGIN: number = 0.01; // How much extra margin to allow for liquidationBond. Expressed as a ratio (0 - 1).
 
 export async function handleKicks({
   pool,
@@ -64,7 +64,12 @@ export async function* getLoansToKick({
   poolConfig,
 }: GetLoansToKickParams): AsyncGenerator<LoanToKick> {
   const { subgraphUrl } = config;
-  const { loans } = await subgraph.getLoans(subgraphUrl, pool.poolAddress);
+  const { lup } = await pool.getPrices();
+  const { loans } = await subgraph.getLoans(
+    subgraphUrl,
+    pool.poolAddress,
+    weiToDecimaled(lup)
+  );
   const loanMap = await pool.getLoans(loans.map(({ borrower }) => borrower));
   const borrowersSortedByBond = Array.from(loanMap.keys()).sort(
     (borrowerA, borrowerB) => {
@@ -80,7 +85,6 @@ export async function* getLoansToKick({
     );
 
   for (let i = 0; i < borrowersSortedByBond.length; i++) {
-    // TODO: query price here.
     const borrower = borrowersSortedByBond[i];
     const poolPrices = await pool.getPrices();
     const { lup, hpb } = poolPrices;

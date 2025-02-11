@@ -22,12 +22,16 @@ export function overrideGetLoans(
 export const makeGetLoansFromSdk = (pool: FungiblePool) => {
   return async (
     subgraphUrl: string,
-    poolAddress: string
+    poolAddress: string,
+    poolLup: number
   ): Promise<GetLoanResponse> => {
     const loansMap = await getLoansMap(pool);
     const borrowerLoanTuple = Array.from(loansMap.entries());
     const loans = borrowerLoanTuple
-      .filter(([_, { isKicked }]) => !isKicked)
+      .filter(
+        ([_, { isKicked, thresholdPrice }]) =>
+          weiToDecimaled(thresholdPrice) > poolLup && !isKicked
+      )
       .map(([borrower, { thresholdPrice }]) => ({
         borrower,
         thresholdPrice: weiToDecimaled(thresholdPrice),

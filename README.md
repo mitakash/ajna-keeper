@@ -29,11 +29,11 @@ Starts a liquidation when a loan's threshold price exceeds the lowest utilized p
 
 When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
 
-### collect LiquidationBond
+### Collect Liquidation Bond
 
 Collects liquidation bonds (which were used to kick loans) once they are fully claimable. Note: This does not settle auctions.
 
-### collect Reward LP
+### Collect Reward LP
 
 Redeems rewarded LP for either Quote or Collateral based on config. Note: This will only collect LP rewarded while the bot is running and will not collect deposits.
 
