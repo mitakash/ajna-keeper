@@ -13,9 +13,9 @@ import {
   BucketTakeLPAwardedEventFilter,
   ERC20Pool,
 } from '@ajna-finance/sdk/dist/types/contracts/ERC20Pool';
-import { WETH9 } from '@uniswap/sdk-core';
+import { Token, WETH9 } from '@uniswap/sdk-core';
 import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json';
-import { FeeAmount, Pool as UniswapV3Pool, } from '@uniswap/v3-sdk';
+import { FeeAmount, Pool as UniswapV3Pool } from '@uniswap/v3-sdk';
 import { BigNumber, Contract } from 'ethers';
 import { KeeperConfig, PoolConfig, TokenToCollect } from './config';
 import { logger } from './logging';
@@ -93,6 +93,7 @@ export class LpCollector {
     bucketIndex: number,
     rewardLp: BigNumber
   ): Promise<BigNumber> {
+    console.log('WE ARE HERE 1');
     const { redeemAs, minAmount } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
     const bucket = await this.pool.getBucketByIndex(bucketIndex);
@@ -105,6 +106,7 @@ export class LpCollector {
     let amountCollected: BigNumber = BigNumber.from('0');
 
     if (redeemAs == TokenToCollect.QUOTE) {
+      console.log('WE ARE HERE 2');
       const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
       const quoteToWithdraw = min(depositWithdrawable, rewardQuote);
       if (quoteToWithdraw.gt(decimaledToWei(minAmount))) {
@@ -125,6 +127,10 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
+            tokenCollected = this.pool.quoteAddress;
+            amountCollected = quoteToWithdraw;
+            console.log('COLLECTED', tokenCollected);
+            this.uniswapcode(tokenCollected, amountCollected);
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
             logger.error(
@@ -135,6 +141,7 @@ export class LpCollector {
         }
       }
     } else {
+      console.log('WE ARE HERE 3');
       const rewardCollateral = await bucket.lpToCollateral(rewardLp);
       const collateralToWithdraw = min(rewardCollateral, collateral);
       if (collateralToWithdraw.gt(decimaledToWei(minAmount))) {
@@ -155,6 +162,8 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
+            tokenCollected = this.pool.collateralAddress;
+            amountCollected = collateralToWithdraw;
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
           } catch (error) {
@@ -164,27 +173,6 @@ export class LpCollector {
             );
           }
         }
-      }
-    }
-
-    const network = await this.signer.provider!.getNetwork();
-    if (tokenCollected && tokenCollected !== WETH9[network.chainId]?.address) {
-      try {
-        const poolContract = new Contract(
-          UniswapV3Pool.getAddress(WETH9[network.chainId!], tokenCollected, FeeAmount.MEDIUM),
-          IUniswapV3PoolABI.abi,
-          this.signer.provider!
-        );
-
-        await exchangeForNative(
-          this.signer,
-          tokenCollected,
-          FeeAmount.MEDIUM,
-          amountCollected.toNumber(),
-          poolContract
-        );
-      } catch (error) {
-        logger.error(`Failed to exchange collected tokens to native.`, error);
       }
     }
     return BigNumber.from('0');
@@ -258,5 +246,70 @@ export class LpCollector {
       BigNumber,
     ];
     return index;
+  };
+
+  private uniswapcode = async (
+    tokenCollected: string | null | Token,
+    amountCollected: BigNumber
+  ) => {
+    const network = await this.signer.provider!.getNetwork();
+    console.log('WE ARE HERE', network.chainId);
+    let customWETH9;
+    if (WETH9[network.chainId!] === undefined) {
+      try {
+        customWETH9 = {
+          ...WETH9,
+          [network.chainId]: new Token(network.chainId, '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204', 18,  'WETH', 'Wrapped Ether')
+        };
+      } catch (error) {
+        logger.error(
+          `Failed to get WETH9 address: ${error}`,
+          error
+        );
+      }
+    } else {
+      customWETH9 = WETH9;
+    }
+
+    if (tokenCollected && customWETH9 && tokenCollected !== customWETH9[network.chainId]?.address) {
+      try {
+        console.log('WE ARE HERE');
+        const tokenCollectedToken = new Token(
+          network.chainId,
+          tokenCollected as string,
+          18,
+          'WETH',
+          'Wrapped Ether'
+        );
+        console.log('TOKEN COLLECTED', tokenCollectedToken);
+        const address1 = UniswapV3Pool.getAddress(
+            WETH9[network.chainId],
+            tokenCollectedToken,
+            FeeAmount.MEDIUM
+          );
+
+        console.log('ADDRESS', address1);
+        const poolContract = new Contract(
+          UniswapV3Pool.getAddress(
+            customWETH9[network.chainId!],
+            tokenCollectedToken,
+            FeeAmount.MEDIUM
+          ),
+          IUniswapV3PoolABI.abi,
+          this.signer.provider!
+        );
+        console.log('POOL CONTRACT', poolContract);
+
+        await exchangeForNative(
+          this.signer,
+          tokenCollected as string,
+          FeeAmount.MEDIUM,
+          amountCollected.toNumber(),
+          poolContract
+        );
+      } catch (error) {
+        logger.error(`Failed to exchange collected tokens to native.`, error);
+      }
+    }
   };
 }
