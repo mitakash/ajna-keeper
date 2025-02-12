@@ -5,7 +5,7 @@ import {
   PriceOrigin,
   PriceOriginSource,
   TakeSettings,
-} from '../config';
+} from '../config-types';
 import { RequireFields } from '../utils';
 
 export const HARDHAT_RPC_URL = 'http://127.0.0.1:8545';

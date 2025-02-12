@@ -2,7 +2,7 @@ import { BigNumber, providers, Wallet } from 'ethers';
 import { promises as fs } from 'fs';
 import { password } from '@inquirer/prompts';
 import { FungiblePool } from '@ajna-finance/sdk';
-import { KeeperConfig } from './config';
+import { KeeperConfig } from './config-types';
 import { logger } from './logging';
 
 export type RequireFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
@@ -21,6 +21,7 @@ async function addAccountFromKeystore(
 
   try {
     let wallet = Wallet.fromEncryptedJsonSync(jsonKeystore, pswd);
+    logger.info(`Loaded wallet with address: ${wallet.address}`);
     return wallet.connect(provider);
   } catch (error) {
     logger.error('Error decrypting keystore:', error);

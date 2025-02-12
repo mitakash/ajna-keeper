@@ -7,7 +7,7 @@ import {
   min,
   ERC20,
 } from '@ajna-finance/sdk';
-import { KeeperConfig, PoolConfig, TokenToCollect } from './config';
+import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { TypedListener } from '@ajna-finance/sdk/dist/types/contracts/common';
 import {
   BucketTakeLPAwardedEvent,

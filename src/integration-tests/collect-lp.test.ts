@@ -1,7 +1,7 @@
 import './subgraph-mock';
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
-import { configureAjna, TokenToCollect } from '../config';
+import { configureAjna, TokenToCollect } from '../config-types';
 import {
   getProvider,
   resetHardhat,

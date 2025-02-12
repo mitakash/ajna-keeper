@@ -1,5 +1,5 @@
 import { AjnaSDK, FungiblePool, Signer } from '@ajna-finance/sdk';
-import { configureAjna, KeeperConfig, PoolConfig } from './config';
+import { configureAjna, KeeperConfig, PoolConfig } from './config-types';
 import {
   delay,
   getProviderAndSigner,

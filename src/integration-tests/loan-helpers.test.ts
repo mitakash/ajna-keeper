@@ -1,6 +1,6 @@
 import { AjnaSDK } from '@ajna-finance/sdk';
 import { expect } from 'chai';
-import { configureAjna } from '../config';
+import { configureAjna } from '../config-types';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import { MAINNET_CONFIG } from './test-config';
 import { getProvider, resetHardhat } from './test-utils';

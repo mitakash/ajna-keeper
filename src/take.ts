@@ -1,7 +1,7 @@
 import { Signer, FungiblePool } from '@ajna-finance/sdk';
 import subgraph from './subgraph';
 import { delay, RequireFields, weiToDecimaled } from './utils';
-import { KeeperConfig, PoolConfig } from './config';
+import { KeeperConfig, PoolConfig } from './config-types';
 import { logger } from './logging';
 
 interface HandleArbParams {

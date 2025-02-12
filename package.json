@@ -7,7 +7,8 @@
     "start": "./node_modules/ts-node/dist/bin.js src/index.ts",
     "format": "prettier --write .",
     "unit-tests": "npx mocha --require ts-node/register 'src/unit-tests/**/*.test.ts'",
-    "integration-tests": "npx hardhat test"
+    "integration-tests": "npx hardhat test",
+    "create-keystore": "./node_modules/ts-node/dist/bin.js scripts/create-keystore.ts"
   },
   "author": "",
   "license": "MIT",

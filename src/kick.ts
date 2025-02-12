@@ -1,6 +1,6 @@
 import { FungiblePool, Signer } from '@ajna-finance/sdk';
 import { BigNumber } from 'ethers';
-import { KeeperConfig, PoolConfig } from './config';
+import { KeeperConfig, PoolConfig } from './config-types';
 import {
   getAllowanceOfErc20,
   getBalanceOfErc20,
@@ -23,7 +23,7 @@ interface HandleKickParams {
   signer: Signer;
   config: Pick<
     KeeperConfig,
-    'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'pricing'
+    'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'coinGeckoApiKey'
   >;
 }
 
@@ -55,7 +55,7 @@ interface LoanToKick {
 
 interface GetLoansToKickParams
   extends Pick<HandleKickParams, 'pool' | 'poolConfig'> {
-  config: Pick<KeeperConfig, 'subgraphUrl' | 'pricing'>;
+  config: Pick<KeeperConfig, 'subgraphUrl' | 'coinGeckoApiKey'>;
 }
 
 export async function* getLoansToKick({
@@ -116,7 +116,7 @@ export async function* getLoansToKick({
     // Only kick loans with a neutralPrice above price (with some margin) to ensure they are profitable.
     const limitPrice = await getPrice(
       poolConfig.price,
-      config.pricing.coinGeckoApiKey,
+      config.coinGeckoApiKey,
       poolPrices
     );
     if (

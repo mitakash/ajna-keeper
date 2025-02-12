@@ -10,6 +10,17 @@ import {
   setBalance,
 } from './test-utils';
 
+export const transferErc20 = async (
+  signer: Signer,
+  receiver: string,
+  tokenAddress: string,
+  amount: BigNumber
+) => {
+  const contract = new Contract(tokenAddress, Erc20Abi, signer);
+  const tx = await contract.transfer(receiver, amount);
+  return await tx.wait();
+};
+
 interface DepostiQuoteParams {
   pool: FungiblePool;
   owner: string;
@@ -26,7 +37,6 @@ export const depositQuoteToken = async ({
   const whaleSigner = await impersonateSigner(owner);
   await setBalance(owner, '0x1000000000000000000000000');
   const bucket = await pool.getBucketByPrice(decimaledToWei(price));
-  // const decimals = await getDecimalsErc20(whaleSigner, pool.quoteAddress);
   const amountBn = decimaledToWei(amount);
 
   const approveTx = await pool.quoteApprove(whaleSigner, amountBn);

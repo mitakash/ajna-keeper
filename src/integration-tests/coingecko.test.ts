@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import 'dotenv';
-import { PriceOriginSource } from '../config';
+import { PriceOriginSource } from '../config-types';
 import { getPriceCoinGecko } from '../coingecko';
 
 describe('Coingecko API', () => {

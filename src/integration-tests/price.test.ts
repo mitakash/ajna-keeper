@@ -1,7 +1,7 @@
 import { AjnaSDK, Pool } from '@ajna-finance/sdk';
 import { expect } from 'chai';
 import { providers } from 'ethers';
-import { configureAjna, PriceOriginPoolReference } from '../config';
+import { configureAjna, PriceOriginPoolReference } from '../config-types';
 import { getPoolPrice } from '../price';
 import { getProvider, resetHardhat } from './test-utils';
 import { MAINNET_CONFIG } from './test-config';

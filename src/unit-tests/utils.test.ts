@@ -1,7 +1,7 @@
 import { FungiblePool } from '@ajna-finance/sdk';
 import { expect } from 'chai';
 import { BigNumber } from 'ethers';
-import { KeeperConfig } from '../config';
+import { KeeperConfig } from '../config-types';
 import {
   overrideMulticall,
   decimaledToWei,
