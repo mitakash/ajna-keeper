@@ -163,6 +163,7 @@ export async function exchangeForNative(
 export async function swapWinnings(
   tokenCollected: string | null,
   amountCollected: BigNumber,
+  feeAmpunt: FeeAmount,
   signer: Signer
 ) {
   const network = await signer.provider!.getNetwork();
@@ -204,7 +205,7 @@ export async function swapWinnings(
         UniswapV3Pool.getAddress(
           customWETH9[network.chainId],
           tokenCollectedToken,
-          FeeAmount.MEDIUM
+          feeAmpunt
         ),
         IUniswapV3PoolABI.abi,
         signer.provider!
@@ -213,7 +214,7 @@ export async function swapWinnings(
       await exchangeForNative(
         signer,
         tokenCollected,
-        FeeAmount.MEDIUM,
+        feeAmpunt,
         amountCollected.toString(),
         poolContract
       );

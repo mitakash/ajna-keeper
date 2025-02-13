@@ -93,8 +93,12 @@ export class LpCollector {
     bucketIndex: number,
     rewardLp: BigNumber
   ): Promise<BigNumber> {
-    const { redeemAs, minAmount, shouldExchangeLPRewards } =
-      this.poolConfig.collectLpReward;
+    const {
+      redeemAs,
+      minAmount,
+      shouldExchangeLPRewards,
+      exchangeRewardsFeeAmount,
+    } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
     const bucket = await this.pool.getBucketByIndex(bucketIndex);
     const { exchangeRate, collateral } = await bucket.getStatus();
@@ -126,10 +130,15 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
-            if (!!shouldExchangeLPRewards) {
+            if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
               tokenCollected = this.pool.quoteAddress;
               amountCollected = quoteToWithdraw;
-              await swapWinnings(tokenCollected, amountCollected, this.signer);
+              await swapWinnings(
+                tokenCollected,
+                amountCollected,
+                exchangeRewardsFeeAmount,
+                this.signer
+              );
             }
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
@@ -162,10 +171,15 @@ export class LpCollector {
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
 
-            if (!!shouldExchangeLPRewards) {
+            if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
               tokenCollected = this.pool.collateralAddress;
               amountCollected = collateralToWithdraw;
-              await swapWinnings(tokenCollected, amountCollected, this.signer);
+              await swapWinnings(
+                tokenCollected,
+                amountCollected,
+                exchangeRewardsFeeAmount,
+                this.signer
+              );
             }
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);

@@ -1,3 +1,4 @@
+import { FeeAmount } from '@uniswap/v3-sdk';
 import {
   KeeperConfig,
   PriceOriginPoolReference,
@@ -45,6 +46,7 @@ const config: KeeperConfig = {
         redeemAs: TokenToCollect.QUOTE,
         minAmount: 0.001,
         shouldExchangeLPRewards: false,
+        exchangeRewardsFeeAmount: FeeAmount.MEDIUM,
       },
     },
     {
