@@ -11,7 +11,6 @@ import {
 } from '../utils';
 import Utils from '../utils';
 import sinon from 'sinon';
-import * as inquirer from "@inquirer/prompts";
 
 const mockAddress = '0x123456abcabc123456abcabcd123456abcdabcd1';
 
@@ -112,36 +111,41 @@ describe('overrideMulticall', () => {
   });
 });
 
-describe("getProviderAndSigner", function () {
-  const fakeRpcUrl = "http://localhost:8545";
-  const fakeKeystorePath = "/fake/path/keystore.json";
+describe('getProviderAndSigner', function () {
+  const fakeRpcUrl = 'http://localhost:8545';
+  const fakeKeystorePath = '/fake/path/keystore.json';
   let addAccountStub: sinon.SinonStub;
   let fakeWallet: Wallet;
 
   beforeEach(async () => {
     fakeWallet = {
-      address: "0x1234567890abcdef",
+      address: '0x1234567890abcdef',
       provider: new providers.JsonRpcProvider(fakeRpcUrl),
-      signTransaction: sinon.stub().resolves("0xSignedTransaction"),
+      signTransaction: sinon.stub().resolves('0xSignedTransaction'),
       connect: sinon.stub().returnsThis(),
-      signMessage: sinon.stub().resolves("0xSignedMessage"),
+      signMessage: sinon.stub().resolves('0xSignedMessage'),
     } as unknown as Wallet;
-    
-    addAccountStub = sinon.stub(Utils, 'addAccountFromKeystore').callsFake(async () => {
-      return fakeWallet;
-    });
+
+    addAccountStub = sinon
+      .stub(Utils, 'addAccountFromKeystore')
+      .callsFake(async () => {
+        return fakeWallet;
+      });
   });
 
   afterEach(() => {
     sinon.restore();
   });
 
-  it("should return provider and signer", async function () {
-    const result = await Utils.getProviderAndSigner(fakeKeystorePath, fakeRpcUrl);
-    expect(result).to.have.property("provider");
-    expect(result).to.have.property("signer");
+  it('should return provider and signer', async function () {
+    const result = await Utils.getProviderAndSigner(
+      fakeKeystorePath,
+      fakeRpcUrl
+    );
+    expect(result).to.have.property('provider');
+    expect(result).to.have.property('signer');
     expect(addAccountStub.calledOnceWith(fakeKeystorePath)).to.be.true;
-    expect(result.signer).to.have.property("address", fakeWallet.address);
+    expect(result.signer).to.have.property('address', fakeWallet.address);
   });
 });
 

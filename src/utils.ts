@@ -20,14 +20,14 @@ interface UtilsType {
 
 let Utils: UtilsType;
 
-export async function askPassword () {
+export async function askPassword() {
   const pswd = await password({
     message: 'Please enter your keystore password',
     mask: '*',
   });
 
   return pswd;
-};
+}
 
 export async function addAccountFromKeystore(
   keystorePath: string,
@@ -151,4 +151,4 @@ export default Utils = {
   addAccountFromKeystore,
   getProviderAndSigner,
   askPassword,
-}
+};
