@@ -234,7 +234,6 @@ describe('LpCollector collections', () => {
     const liquidation = pool.getLiquidation(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress
     );
-    console.log('liquidation...', liquidation);
     const settleTx = await liquidation.settle(signer);
     await settleTx.verifyAndSubmit();
 
