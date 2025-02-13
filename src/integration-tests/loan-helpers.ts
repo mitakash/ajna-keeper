@@ -10,7 +10,7 @@ import {
   setBalance,
 } from './test-utils';
 
-const transferErc20 = async (
+export const transferErc20 = async (
   signer: Signer,
   receiver: string,
   tokenAddress: string,
@@ -37,7 +37,6 @@ export const depositQuoteToken = async ({
   const whaleSigner = await impersonateSigner(owner);
   await setBalance(owner, '0x1000000000000000000000000');
   const bucket = await pool.getBucketByPrice(decimaledToWei(price));
-  // const decimals = await getDecimalsErc20(whaleSigner, pool.quoteAddress);
   const amountBn = decimaledToWei(amount);
 
   const approveTx = await pool.quoteApprove(whaleSigner, amountBn);

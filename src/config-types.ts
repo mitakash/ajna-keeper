@@ -4,10 +4,6 @@ import { Config, Address } from '@ajna-finance/sdk';
 import { FeeAmount } from '@uniswap/v3-sdk';
 import { logger } from './logging';
 
-// these are in seconds, helps manage API costs and rate limits
-const DELAY_BETWEEN_LOANS = 1.5;
-const DELAY_MAIN_LOOP = 15;
-
 export interface AjnaConfigParams {
   erc20PoolFactory: Address;
   erc721PoolFactory: Address;
@@ -17,10 +13,6 @@ export interface AjnaConfigParams {
   grantFund?: Address;
   burnWrapper?: Address;
   lenderHelper?: Address;
-}
-
-interface PricingApiKey {
-  coinGeckoApiKey: string;
 }
 
 export enum PriceOriginSource {
@@ -36,53 +28,69 @@ export enum PriceOriginPoolReference {
   LLB = 'llb',
 }
 
+/** Use a constant value as the price. */
 interface PriceOriginFixed {
   source: PriceOriginSource.FIXED;
   value: number;
 }
 
 // See: https://docs.coingecko.com/reference/simple-price for reference.
+/** Query the price from Coingecko. */
 export interface PriceOriginCoinGeckoQuery {
   source: PriceOriginSource.COINGECKO;
-  query: string; // The query used for the token price in Coingecko.  example: "price?ids=ethereum&vs_currencies=usd"
+  /** The query used for the token price in Coingecko.  example: "price?ids=ethereum&vs_currencies=usd" */
+  query: string;
 }
 
+/** Query the price from Coingeck using two different tokens which aren't currencies.  */
 export interface PriceOriginCoinGeckoTokenIds {
   source: PriceOriginSource.COINGECKO;
-  quoteId: string; // Id of quote token as seen in Coingecko api. example: "ethereum"
-  collateralId: string; // Id of collateral token as seen in Coingecko api. example: "solana"
+  /** Id of quote token as seen in Coingecko api. example: "wrapped-steth". */
+  quoteId: string;
+  /** Id of collateral token as seen in Coingecko api. example: "sol-wormhole". */
+  collateralId: string;
 }
 
+/** Get the price by querying from CoinGecko. */
 export type PriceOriginCoinGecko =
   | PriceOriginCoinGeckoQuery
   | PriceOriginCoinGeckoTokenIds;
 
+/** Use the pool's prices as the source for limitPrice */
 interface PriceOriginPool {
   source: PriceOriginSource.POOL;
   reference: PriceOriginPoolReference;
 }
 
+/** Determines how to get the price for kicks. */
 export type PriceOrigin = (
   | PriceOriginFixed
   | PriceOriginCoinGecko
   | PriceOriginPool
 ) & {
-  invert?: boolean; // Uses the inverse of the price as reference.
+  /** If set, use the inverse of the price as reference. */
+  invert?: boolean;
 };
 
 export interface KickSettings {
-  minDebt: number; // The minimum amount of debt in wad to kick a loan.
-  priceFactor: number; // Will only kick when NP * priceFactor > price. (Should be less than one).
+  /** The minimum amount of debt in wad to kick a loan. */
+  minDebt: number;
+  /** Will only kick when NP * priceFactor > price. (Should be less than one). */
+  priceFactor: number;
 }
 
 export interface TakeSettings {
+  /** Minimum amount of collateral in liquidation to arbTake. */
   minCollateral: number;
-  priceFactor: number; // Will only arbTake when auctionPrice < hpb * priceFactor.
+  /** Will only arbTake when auctionPrice < hpb * priceFactor. */
+  priceFactor: number;
 }
 
 export interface CollectSettings {
-  collectLiquidity: boolean; // If true collects arbTake rewards as well as all deposits for this pool.
-  collectBonds: boolean; // If true collects bonds from pool.
+  /** If true collects arbTake rewards as well as all deposits for this pool. */
+  collectLiquidity: boolean;
+  /** If true collects bonds from pool. */
+  collectBonds: boolean;
 }
 
 interface DexConfig {
@@ -95,32 +103,48 @@ export enum TokenToCollect {
 }
 
 interface CollectLpRewardSettings {
+  /** Wether to redeem LP as Quote or Collateral. */
   redeemAs: TokenToCollect;
+  /** Minimum amount of token to collect. */
   minAmount: number;
 }
 
 export interface PoolConfig {
   name: string;
   address: Address;
-  price: PriceOrigin; // TODO: move price setting to kick settings.
-  kick?: KickSettings; // Will only kick if settings are provided.
-  take?: TakeSettings; // Will only take if settings are provided.
-  dexSettings?: DexConfig; // Only set this value if you want winnings sent to dex and traded for L2 token.
-  collectBond?: boolean; // Will only collect bond if true.
-  collectLpReward?: CollectLpRewardSettings; // Will only collect reward if settings are provided.
+  price: PriceOrigin;
+  /** Will only kick if settings are provided. */
+  kick?: KickSettings;
+  /** Will only take if settings are provided. */
+  take?: TakeSettings;
+  /** Only set this value if you want winnings sent to dex and traded for L2 token. */
+  dexSettings?: DexConfig;
+  /** Will only collect bond if true.*/
+  collectBond?: boolean;
+  /** Will only collect reward if settings are provided. */
+  collectLpReward?: CollectLpRewardSettings;
 }
 
 export interface KeeperConfig {
+  /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
   ethRpcUrl: string;
+  /** The url of the subgraph. */
   subgraphUrl: string;
+  /** Path to encrypted keystore json file. See README for instructions on how to create this file.*/
   keeperKeystore: string;
+  /** If true, doesn't send any requests. */
   dryRun?: boolean;
+  /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. */
   multicallAddress?: string;
+  /** Use this only if you have used multicallAddress. */
   multicallBlock?: number;
   ajna: AjnaConfigParams;
-  pricing: PricingApiKey;
+  /** Your API key for Coingecko.com */
+  coinGeckoApiKey: string;
   pools: PoolConfig[];
+  /** The time between between actions within Kick or ArbTake loops. Higher values reduce load on network and prevent usage errors. */
   delayBetweenActions: number;
+  /** The time between each run of the Kick and ArbTake loops. */
   delayBetweenRuns: number;
 }
 
@@ -149,11 +173,8 @@ export function assertIsValidConfig(
   expectProperty(config, 'subgraphUrl');
   expectProperty(config, 'keeperKeystore');
   expectProperty(config, 'ajna');
-  expectProperty(config, 'pricing');
+  expectProperty(config, 'coinGeckoApiKey');
   expectProperty(config, 'pools');
-  config.delayBetweenActions =
-    config.delayBetweenActions ?? DELAY_BETWEEN_LOANS;
-  config.delayBetweenRuns = config.delayBetweenRuns ?? DELAY_MAIN_LOOP;
 }
 
 function expectProperty<T, K extends keyof T>(config: T, key: K): void {

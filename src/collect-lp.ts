@@ -17,7 +17,7 @@ import { Token, WETH9 } from '@uniswap/sdk-core';
 import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json';
 import { FeeAmount, Pool as UniswapV3Pool } from '@uniswap/v3-sdk';
 import { BigNumber, Contract } from 'ethers';
-import { KeeperConfig, PoolConfig, TokenToCollect } from './config';
+import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { logger } from './logging';
 import { exchangeForNative } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';

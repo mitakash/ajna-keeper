@@ -1,6 +1,6 @@
 import { FungiblePool, Signer } from '@ajna-finance/sdk';
 import { BigNumber } from 'ethers';
-import { KeeperConfig, PoolConfig } from './config';
+import { KeeperConfig, PoolConfig } from './config-types';
 import {
   getAllowanceOfErc20,
   getBalanceOfErc20,
@@ -23,11 +23,11 @@ interface HandleKickParams {
   signer: Signer;
   config: Pick<
     KeeperConfig,
-    'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'pricing'
+    'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'coinGeckoApiKey'
   >;
 }
 
-const LIQUIDATION_BOND_MARGIN: number = 0.01; // How much extra margin to allow for liquidationBond. Expressed as a factor.
+const LIQUIDATION_BOND_MARGIN: number = 0.01; // How much extra margin to allow for liquidationBond. Expressed as a ratio (0 - 1).
 
 export async function handleKicks({
   pool,
@@ -55,7 +55,7 @@ interface LoanToKick {
 
 interface GetLoansToKickParams
   extends Pick<HandleKickParams, 'pool' | 'poolConfig'> {
-  config: Pick<KeeperConfig, 'subgraphUrl' | 'pricing'>;
+  config: Pick<KeeperConfig, 'subgraphUrl' | 'coinGeckoApiKey'>;
 }
 
 export async function* getLoansToKick({
@@ -80,7 +80,6 @@ export async function* getLoansToKick({
     );
 
   for (let i = 0; i < borrowersSortedByBond.length; i++) {
-    // TODO: query price here.
     const borrower = borrowersSortedByBond[i];
     const poolPrices = await pool.getPrices();
     const { lup, hpb } = poolPrices;
@@ -117,7 +116,7 @@ export async function* getLoansToKick({
     // Only kick loans with a neutralPrice above price (with some margin) to ensure they are profitable.
     const limitPrice = await getPrice(
       poolConfig.price,
-      config.pricing.coinGeckoApiKey,
+      config.coinGeckoApiKey,
       poolPrices
     );
     if (

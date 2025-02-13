@@ -2,7 +2,7 @@ import './subgraph-mock';
 import { getLoansToKick, kick } from '../kick';
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
 import { MAINNET_CONFIG } from './test-config';
-import { configureAjna } from '../config';
+import { configureAjna } from '../config-types';
 import {
   getProvider,
   resetHardhat,
@@ -46,9 +46,7 @@ describe('getLoansToKick', () => {
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
         config: {
           subgraphUrl: '',
-          pricing: {
-            coinGeckoApiKey: '',
-          },
+          coinGeckoApiKey: '',
         },
       })
     );
@@ -82,9 +80,7 @@ describe('getLoansToKick', () => {
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
         config: {
           subgraphUrl: '',
-          pricing: {
-            coinGeckoApiKey: '',
-          },
+          coinGeckoApiKey: '',
         },
       })
     );
@@ -126,9 +122,7 @@ describe('kick', () => {
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
         config: {
           subgraphUrl: '',
-          pricing: {
-            coinGeckoApiKey: '',
-          },
+          coinGeckoApiKey: '',
         },
       })
     );

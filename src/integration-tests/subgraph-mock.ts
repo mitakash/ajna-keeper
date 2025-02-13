@@ -27,7 +27,7 @@ export const makeGetLoansFromSdk = (pool: FungiblePool) => {
     const loansMap = await getLoansMap(pool);
     const borrowerLoanTuple = Array.from(loansMap.entries());
     const loans = borrowerLoanTuple
-      .filter(([_, { isKicked }]) => !isKicked)
+      .filter(([_, { isKicked, thresholdPrice }]) => !isKicked)
       .map(([borrower, { thresholdPrice }]) => ({
         borrower,
         thresholdPrice: weiToDecimaled(thresholdPrice),

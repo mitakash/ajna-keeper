@@ -1,5 +1,8 @@
 import { logger } from './logging';
-import { PriceOriginCoinGecko, PriceOriginCoinGeckoQuery } from './config';
+import {
+  PriceOriginCoinGecko,
+  PriceOriginCoinGeckoQuery,
+} from './config-types';
 
 interface CoinGeckoRespone {
   [coinName: string]: {

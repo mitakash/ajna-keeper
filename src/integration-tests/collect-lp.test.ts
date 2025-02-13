@@ -1,9 +1,9 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
 import { Token, WETH9 } from '@uniswap/sdk-core';
 import { expect } from 'chai';
-import { BigNumber, ethers, Wallet } from 'ethers';
+import { BigNumber, Wallet } from 'ethers';
 import { LpCollector } from '../collect-lp';
-import { configureAjna, TokenToCollect } from '../config';
+import { configureAjna, TokenToCollect } from '../config-types';
 import { getBalanceOfErc20 } from '../erc20';
 import { handleKicks } from '../kick';
 import { handleArbTakes } from '../take';
@@ -22,7 +22,6 @@ import {
   impersonateSigner,
   increaseTime,
   resetHardhat,
-  waitForConditionToBeTrue,
 } from './test-utils';
 
 const HARDHAT_CHAIN_ID = 31337;

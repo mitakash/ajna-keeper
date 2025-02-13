@@ -9,6 +9,76 @@ A bot to automate liquidations on the Ajna platform.
 - Each instance of the keeper connects to exactly one chain using a single RPC endpoint. The same keeper instance may interact with multiple pools on that chain.
 - Pool addresses must be explicitly configured.
 - Each instance of the keeper may unlock only a single wallet using a JSON keystore file. As such, if running multiple keepers on the same chain, different accounts should be used for each keeper to avoid nonce conflicts.
+- Kick, ArbTake, Bond Colelction, Reward LP Collection - can all be enabled/disabled per pool through the provided config.
+
+## Quick Setup
+
+You must setup one bot per-chain, per-signer.
+
+### Installation and Prerequisites
+
+You'll need `node` and related tools (`npm`, `yarn`). This was developed with node v22 but should work with later versions.
+
+Download node here: https://nodejs.org/en
+
+Install node dependencies.
+
+```bash
+yarn --frozen-lockfile
+```
+
+### Create a new config file
+
+Create a new `config.ts` file in the `ajna-keeper/` folder and copy the contents from `example-config.ts`.
+
+### Get Alchemy URL with API token.
+
+(Any RPC endpoint can be used. But, these instructions are for Alchemy.)
+Go to your acount on Alchemy.
+Make sure you have an app with your L2 network enabled.
+Navigate to the Apps > Networks tab and copy the url under your network. It will look something like: `https://avax-mainnet.g.alchemy.com/v2/asf...`
+Replace the `ethRpcUrl` in your `config.ts` file with the url you got from alchemy.
+
+### Get Coingecko token
+
+Create an account on Coingecko and go to the URL https://www.coingecko.com/en/developers/dashboard
+Here you will click "Add New Key" to add a new key.
+In your `config.ts` file replace `coinGeckoApiKey` with the key you just created.
+
+### Setup Ajna-Subgraph
+
+In a different folder clone the ajna-finance repo. It is recommended that you checkout the develop branch so that you have the latests networks settings for L2s.
+
+```bash
+git clone https://github.com/ajna-finance/subgraph.git
+git checkout develop
+```
+
+Update your `ajna-subgraph/.env` file to contain your alchemy key.
+
+`ajna-subgraph/.env`
+
+```.env
+ETH_RPC_URL=https://avax-mainnet.g.alchemy.com/v2/asf.....
+ETH_NETWORK=avalanche:https://avax-mainnet.g.alchemy.com/v2/asf.....
+```
+
+[Install docker](https://www.docker.com/).
+
+Follow the setup instructions in ajna-subgraph/README.
+
+### Setting up a keystore.
+
+Keeper uses ethers [Encrypted JSON Wallet](hhttps://docs.ethers.org/v5/api/signer/#Wallet-fromEncryptedJson), which is encrypted using a password.
+
+The easiest way to create an encrypted JSON wallet is to use the create-keystore script provided in keeper:
+Run the script with `yarn create-keystore`. Then follow the onscreen prompts.
+
+### Execution
+
+```bash
+yarn start --config config.ts
+```
 
 ## Requirements
 
@@ -29,21 +99,13 @@ Starts a liquidation when a loan's threshold price exceeds the lowest utilized p
 
 When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
 
-### collect LiquidationBond
+### Collect Liquidation Bond
 
 Collects liquidation bonds (which were used to kick loans) once they are fully claimable. Note: This does not settle auctions.
 
-### collect Reward LP
+### Collect Reward LP
 
 Redeems rewarded LP for either Quote or Collateral based on config. Note: This will only collect LP rewarded while the bot is running and will not collect deposits.
-
-## Installation and Prerequisites
-
-You'll need `node` and related tools (`npm`, `yarn`). This was developed with node v22 but should work with later versions.
-
-```bash
-yarn --frozen-lockfile
-```
 
 ## Configuration
 
@@ -59,12 +121,6 @@ See `example-config.ts` for reference.
 - **pool** - can use _lup_ or _htp_
 
 If the price source only has quote token priced in collateral, you may add `"invert": true` to `price` config to invert the configured price.
-
-## Execution
-
-```bash
-yarn start --config my-config.ts
-```
 
 ## Testing
 
