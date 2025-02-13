@@ -1,6 +1,7 @@
 import { providers } from 'ethers';
 import { HARDHAT_RPC_URL, MAINNET_CONFIG } from './test-config';
 import { delay } from '../utils';
+import '@nomiclabs/hardhat-ethers';
 
 export const getProvider = () => new providers.JsonRpcProvider(HARDHAT_RPC_URL);
 

@@ -37,13 +37,12 @@ export async function getPoolInfo(
   const contract =
     poolContract ?? new Contract(poolAddress, IUniswapV3PoolABI.abi, provider);
 
-  const balance = await provider.getBalance(poolAddress);
-
   logger.info('Fetching liquidity and slot0...');
   const [liquidity, slot0] = await Promise.all([
     contract.liquidity(),
     contract.slot0(),
   ]);
+
   logger.info(
     'Liquidity:',
     liquidity.toString(),

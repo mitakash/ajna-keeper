@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
-import { BigNumber, Contract, Signer } from 'ethers';
+import hre from 'hardhat';
+import { BigNumber, Contract, ethers, Signer } from 'ethers';
 import { abi as UniswapABI } from '@uniswap/v3-periphery/artifacts/contracts/SwapRouter.sol/SwapRouter.json';
 import {
   FeeAmount,
@@ -15,7 +15,7 @@ import {
   TradeType,
   WETH9,
 } from '@uniswap/sdk-core';
-import { getProvider, impersonateSigner } from './test-utils';
+import { getProvider, impersonateSigner, setBalance } from './test-utils';
 import { MAINNET_CONFIG } from './test-config';
 import { abi as NonfungiblePositionManagerABI } from '@uniswap/v3-periphery/artifacts/contracts/NonfungiblePositionManager.sol/NonfungiblePositionManager.json';
 import ERC20_ABI from '../abis/erc20.abi.json';
@@ -61,38 +61,43 @@ async function addLiquidity({
     NonfungiblePositionManagerABI,
     signer
   );
-  const tokenAContract = new Contract(tokenA.address, ERC20_ABI, signer);
-  const tokenBContract = new Contract(tokenB.address, ERC20_ABI, signer);
-  const recipient = await signer.getAddress();
-  await tokenAContract.transfer(recipient, ethers.utils.parseUnits('1000', 6));
-  await tokenBContract.transfer(recipient, ethers.utils.parseUnits('10', 18));
+    const tokenAContract = new ethers.Contract(tokenA.address, ERC20_ABI, signer);
+    const tokenBContract = new ethers.Contract(tokenB.address, ERC20_ABI, signer);
 
-  await tokenAContract.approve(POSITION_MANAGER_ADDRESS, amountA);
-  await tokenBContract.approve(POSITION_MANAGER_ADDRESS, amountB);
+    const address = await signer.getAddress();
 
-  const [token0, token1] =
-    tokenA.address.toLowerCase() < tokenB.address.toLowerCase()
-      ? [tokenA, tokenB]
-      : [tokenB, tokenA];
+    await impersonateSigner(tokenA.address);
+    await impersonateSigner(tokenB.address);
 
-  const tx = await positionManager.mint(
-    {
-      token0: token0.address,
-      token1: token1.address,
-      fee,
-      tickLower: -60000,
-      tickUpper: 60000,
-      amount0Desired: amountA,
-      amount1Desired: amountB,
-      amount0Min: 0,
-      amount1Min: 0,
-      recipient: await signer.getAddress(),
-      deadline: Math.floor(Date.now() / 1000) + 60 * 30,
-    },
-    { gasLimit: ethers.utils.parseUnits('500000', 'wei') }
-  );
+    await tokenAContract.connect(signer).transfer(address, ethers.utils.parseUnits("100", 18));
+    await tokenBContract.connect(signer).transfer(address, ethers.utils.parseUnits("100", 18));
 
-  await tx.wait();
+    await tokenAContract.approve(POSITION_MANAGER_ADDRESS, amountA);
+    await tokenBContract.approve(POSITION_MANAGER_ADDRESS, amountB);
+
+    const [token0, token1] =
+        tokenA.address.toLowerCase() < tokenB.address.toLowerCase()
+        ? [tokenA, tokenB]
+        : [tokenB, tokenA];
+
+    const tx = await positionManager.mint(
+        {
+        token0: token0.address,
+        token1: token1.address,
+        fee,
+        tickLower: -60000,
+        tickUpper: 60000,
+        amount0Desired: amountA,
+        amount1Desired: amountB,
+        amount0Min: 0,
+        amount1Min: 0,
+        recipient: await signer.getAddress(),
+        deadline: Math.floor(Date.now() / 1000) + 60 * 60 * 24,
+        },
+        { gasLimit: 5000000 }
+    );
+
+    await tx.wait();
 }
 
 describe('Uniswap V3 Integration Tests', function () {
@@ -115,9 +120,6 @@ describe('Uniswap V3 Integration Tests', function () {
       'WETH',
       'Wrapped Ether'
     );
-
-    await impersonateSigner(tokenA.address);
-    await impersonateSigner(tokenB.address);
 
     await addLiquidity({
       signer,
@@ -204,7 +206,9 @@ describe('Uniswap V3 Integration Tests', function () {
       trade.minimumAmountOut(slippageTolerance).quotient.toString()
     );
 
-    const tx = await uniswapRouter.exactInputSingle({
+    const uniswapRouterWithSigner = uniswapRouter.connect(signer);
+
+    const tx = await uniswapRouterWithSigner.exactInputSingle({
       tokenIn: tokenA.address,
       tokenOut: tokenB.address,
       fee: FeeAmount.LOW,
@@ -213,7 +217,8 @@ describe('Uniswap V3 Integration Tests', function () {
       amountIn: ethers.BigNumber.from('1000000'),
       amountOutMinimum: minOut,
       sqrtPriceLimitX96: poolInfo.sqrtPriceX96,
-    });
+    },
+    { gasLimit: 5000000 });
 
     const receipt = await tx.wait();
     expect(receipt.status).to.equal(1);
