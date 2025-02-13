@@ -134,10 +134,11 @@ export interface KeeperConfig {
   keeperKeystore: string;
   /** If true, doesn't send any requests. */
   dryRun?: boolean;
-  /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. */
+  /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */
   multicallAddress?: string;
-  /** Use this only if you have used multicallAddress. */
+  /** The block at which the multicall contract was deployed. Use this only if you have used multicallAddress. */
   multicallBlock?: number;
+  /** Contract addresses passed to Ajna for this chain. See here for addresses https://faqs.ajna.finance/info/deployment-addresses-and-bridges */
   ajna: AjnaConfigParams;
   /** Your API key for Coingecko.com */
   coinGeckoApiKey: string;
