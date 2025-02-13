@@ -1,10 +1,9 @@
 import { providers } from 'ethers';
 import { HARDHAT_RPC_URL, MAINNET_CONFIG } from './test-config';
 import { delay } from '../utils';
-import "@nomiclabs/hardhat-ethers";
-// import { Token } from '@uniswap/sdk-core';
+import '@nomiclabs/hardhat-ethers';
 
-const POSITION_MANAGER_ADDRESS = "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"; // Uniswap V3 NonfungiblePositionManager
+const POSITION_MANAGER_ADDRESS = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88'; // Uniswap V3 NonfungiblePositionManager
 export const getProvider = () => new providers.JsonRpcProvider(HARDHAT_RPC_URL);
 
 export const resetHardhat = () =>
@@ -59,4 +58,3 @@ export const waitForConditionToBeTrue = async (
     await delay(pollingTime);
   }
 };
-

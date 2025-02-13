@@ -27,14 +27,14 @@ import {
 
 const HARDHAT_CHAIN_ID = 31337;
 
-const WETH_HARDHAT_ADDRESS = "0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204";
+const WETH_HARDHAT_ADDRESS = '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204';
 
 WETH9[HARDHAT_CHAIN_ID] = new Token(
   HARDHAT_CHAIN_ID,
   WETH_HARDHAT_ADDRESS,
   18,
-  "WETH",
-  "Wrapped Ether"
+  'WETH',
+  'Wrapped Ether'
 );
 
 const setup = async () => {
@@ -203,7 +203,7 @@ describe('LpCollector collections', () => {
     const signer = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );
-  
+
     const lpCollector = new LpCollector(
       pool,
       signer,

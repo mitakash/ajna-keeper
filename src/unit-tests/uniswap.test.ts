@@ -210,7 +210,7 @@ describe('exchangeForNative', () => {
 
   it('should throw an error for invalid parameters', async function () {
     await expect(
-      exchangeForNative(null as any, '', 100, 0, null as any)
+      exchangeForNative(null as any, '', 100, '0', null as any)
     ).to.be.rejectedWith('Invalid parameters provided to exchangeForNative');
   });
 
@@ -223,7 +223,7 @@ describe('exchangeForNative', () => {
         invalidSigner,
         '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
         3000,
-        100,
+        '100',
         mockSwapRouter
       )
     ).to.be.rejectedWith('Signer does not have an associated provider');
@@ -243,7 +243,7 @@ describe('exchangeForNative', () => {
         mockSigner,
         '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
         3000,
-        100,
+        '100',
         mockSwapRouter
       )
     ).to.be.rejectedWith("There isn't enough liquidity");
@@ -257,7 +257,7 @@ describe('exchangeForNative', () => {
         mockSigner,
         '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
         3000,
-        100,
+        '100',
         mockSwapRouter
       )
     ).to.be.rejectedWith('Could not determine chain ID');
@@ -272,7 +272,7 @@ describe('exchangeForNative', () => {
         mockSigner,
         '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
         3000,
-        1000,
+        '1000',
         mockSwapRouter
       )
     ).to.not.be.rejected;

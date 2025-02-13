@@ -125,7 +125,7 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
-            if(!!this.config.shouldExchangeLPRewards) {
+            if (!!this.config.shouldExchangeLPRewards) {
               tokenCollected = this.pool.quoteAddress;
               amountCollected = quoteToWithdraw;
               await this.swapWinnings(tokenCollected, amountCollected);
@@ -161,7 +161,7 @@ export class LpCollector {
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
 
-            if(!!this.config.shouldExchangeLPRewards) {
+            if (!!this.config.shouldExchangeLPRewards) {
               tokenCollected = this.pool.collateralAddress;
               amountCollected = collateralToWithdraw;
               await this.swapWinnings(tokenCollected, amountCollected);
@@ -260,19 +260,26 @@ export class LpCollector {
       try {
         customWETH9 = {
           ...WETH9,
-          [network.chainId]: new Token(network.chainId, '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204', 18,  'WETH', 'Wrapped Ether')
+          [network.chainId]: new Token(
+            network.chainId,
+            '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204',
+            18,
+            'WETH',
+            'Wrapped Ether'
+          ),
         };
       } catch (error) {
-        logger.error(
-          `Failed to get WETH9 address: ${error}`,
-          error
-        );
+        logger.error(`Failed to get WETH9 address: ${error}`, error);
       }
     } else {
       customWETH9 = WETH9;
     }
 
-    if (tokenCollected && customWETH9 && tokenCollected !== customWETH9[network.chainId]?.address) {
+    if (
+      tokenCollected &&
+      customWETH9 &&
+      tokenCollected !== customWETH9[network.chainId]?.address
+    ) {
       try {
         const tokenCollectedToken = new Token(
           network.chainId,
