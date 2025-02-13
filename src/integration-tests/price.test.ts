@@ -5,10 +5,11 @@ import { configureAjna, PriceOriginPoolReference } from '../config-types';
 import { getPoolPrice } from '../price';
 import { getProvider, resetHardhat } from './test-utils';
 import { MAINNET_CONFIG } from './test-config';
+import { JsonRpcProvider } from '../provider';
 
 describe('getPoolPrice', () => {
   const poolAddress = MAINNET_CONFIG.WBTC_USDC_POOL.poolConfig.address;
-  let provider: providers.JsonRpcProvider;
+  let provider: JsonRpcProvider;
   let ajna: AjnaSDK;
   let fungiblePool: Pool;
 

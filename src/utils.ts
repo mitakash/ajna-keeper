@@ -4,6 +4,7 @@ import { password } from '@inquirer/prompts';
 import { FungiblePool } from '@ajna-finance/sdk';
 import { KeeperConfig } from './config-types';
 import { logger } from './logging';
+import { JsonRpcProvider } from './provider';
 
 export type RequireFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
 
@@ -109,7 +110,7 @@ export async function getProviderAndSigner(
   keystorePath: string,
   rpcUrl: string
 ) {
-  const provider = new providers.JsonRpcProvider(rpcUrl);
+  const provider = new JsonRpcProvider(rpcUrl);
   const signer = await addAccountFromKeystore(keystorePath, provider);
 
   return { provider, signer };
