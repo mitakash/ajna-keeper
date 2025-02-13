@@ -19,7 +19,7 @@ import { FeeAmount, Pool as UniswapV3Pool } from '@uniswap/v3-sdk';
 import { BigNumber, Contract } from 'ethers';
 import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { logger } from './logging';
-import { exchangeForNative } from './uniswap';
+import { exchangeForNative, swapWinnings } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
 
 /**
@@ -93,7 +93,8 @@ export class LpCollector {
     bucketIndex: number,
     rewardLp: BigNumber
   ): Promise<BigNumber> {
-    const { redeemAs, minAmount, shouldExchangeLPRewards } = this.poolConfig.collectLpReward;
+    const { redeemAs, minAmount, shouldExchangeLPRewards } =
+      this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
     const bucket = await this.pool.getBucketByIndex(bucketIndex);
     const { exchangeRate, collateral } = await bucket.getStatus();
@@ -128,7 +129,7 @@ export class LpCollector {
             if (!!shouldExchangeLPRewards) {
               tokenCollected = this.pool.quoteAddress;
               amountCollected = quoteToWithdraw;
-              await this.swapWinnings(tokenCollected, amountCollected);
+              await swapWinnings(tokenCollected, amountCollected, this.signer);
             }
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
@@ -164,7 +165,7 @@ export class LpCollector {
             if (!!shouldExchangeLPRewards) {
               tokenCollected = this.pool.collateralAddress;
               amountCollected = collateralToWithdraw;
-              await this.swapWinnings(tokenCollected, amountCollected);
+              await swapWinnings(tokenCollected, amountCollected, this.signer);
             }
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
@@ -248,67 +249,5 @@ export class LpCollector {
       BigNumber,
     ];
     return index;
-  };
-
-  private swapWinnings = async (
-    tokenCollected: string | null | Token,
-    amountCollected: BigNumber
-  ) => {
-    const network = await this.signer.provider!.getNetwork();
-    let customWETH9;
-    if (WETH9[network.chainId!] === undefined) {
-      try {
-        customWETH9 = {
-          ...WETH9,
-          [network.chainId]: new Token(
-            network.chainId,
-            '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204',
-            18,
-            'WETH',
-            'Wrapped Ether'
-          ),
-        };
-      } catch (error) {
-        logger.error(`Failed to get WETH9 address: ${error}`, error);
-      }
-    } else {
-      customWETH9 = WETH9;
-    }
-
-    if (
-      tokenCollected &&
-      customWETH9 &&
-      tokenCollected !== customWETH9[network.chainId]?.address
-    ) {
-      try {
-        const tokenCollectedToken = new Token(
-          network.chainId,
-          tokenCollected as string,
-          18,
-          'WETH',
-          'Wrapped Ether'
-        );
-
-        const poolContract = new Contract(
-          UniswapV3Pool.getAddress(
-            customWETH9[network.chainId],
-            tokenCollectedToken,
-            FeeAmount.MEDIUM
-          ),
-          IUniswapV3PoolABI.abi,
-          this.signer.provider!
-        );
-
-        await exchangeForNative(
-          this.signer,
-          tokenCollected as string,
-          FeeAmount.MEDIUM,
-          amountCollected.toString(),
-          poolContract
-        );
-      } catch (error) {
-        logger.error(`Failed to exchange collected tokens to native.`, error);
-      }
-    }
   };
 }

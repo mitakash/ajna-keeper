@@ -25,18 +25,6 @@ import {
   waitForConditionToBeTrue,
 } from './test-utils';
 
-const HARDHAT_CHAIN_ID = 31337;
-
-const WETH_HARDHAT_ADDRESS = '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204';
-
-WETH9[HARDHAT_CHAIN_ID] = new Token(
-  HARDHAT_CHAIN_ID,
-  WETH_HARDHAT_ADDRESS,
-  18,
-  'WETH',
-  'Wrapped Ether'
-);
-
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
   const ajna = new AjnaSDK(getProvider());
