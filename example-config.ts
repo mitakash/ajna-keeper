@@ -15,6 +15,7 @@ const config: KeeperConfig = {
   multicallBlock: 5022,
   delayBetweenRuns: 15,
   delayBetweenActions: 1,
+  shouldExchangeLPRewards: false,
   ajna: {
     erc20PoolFactory: '0x214f62B5836D83f3D6c4f71F174209097B1A779C',
     erc721PoolFactory: '0xeefEC5d1Cc4bde97279d01D88eFf9e0fEe981769',

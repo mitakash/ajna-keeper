@@ -146,6 +146,8 @@ export interface KeeperConfig {
   delayBetweenActions: number;
   /** The time between each run of the Kick and ArbTake loops. */
   delayBetweenRuns: number;
+  /** If true, will exchange LP rewards with Uniswap. */
+  shouldExchangeLPRewards?: boolean;
 }
 
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {

@@ -37,7 +37,7 @@ export class LpCollector {
     private pool: FungiblePool,
     private signer: Signer,
     private poolConfig: Required<Pick<PoolConfig, 'collectLpReward'>>,
-    private config: Pick<KeeperConfig, 'dryRun'>
+    private config: Pick<KeeperConfig, 'dryRun' | 'shouldExchangeLPRewards'>
   ) {
     const poolContract = ERC20Pool__factory.connect(
       this.pool.poolAddress,
@@ -125,9 +125,11 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
-            tokenCollected = this.pool.quoteAddress;
-            amountCollected = quoteToWithdraw;
-            await this.swapWinnings(tokenCollected, amountCollected);
+            if(!!this.config.shouldExchangeLPRewards) {
+              tokenCollected = this.pool.quoteAddress;
+              amountCollected = quoteToWithdraw;
+              await this.swapWinnings(tokenCollected, amountCollected);
+            }
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
             logger.error(
@@ -158,9 +160,12 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
-            tokenCollected = this.pool.collateralAddress;
-            amountCollected = collateralToWithdraw;
-            await this.swapWinnings(tokenCollected, amountCollected);
+
+            if(!!this.config.shouldExchangeLPRewards) {
+              tokenCollected = this.pool.collateralAddress;
+              amountCollected = collateralToWithdraw;
+              await this.swapWinnings(tokenCollected, amountCollected);
+            }
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
           } catch (error) {

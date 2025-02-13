@@ -22,6 +22,7 @@ import {
   impersonateSigner,
   increaseTime,
   resetHardhat,
+  waitForConditionToBeTrue,
 } from './test-utils';
 
 const HARDHAT_CHAIN_ID = 31337;
@@ -233,6 +234,7 @@ describe('LpCollector collections', () => {
     const liquidation = pool.getLiquidation(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress
     );
+    console.log('liquidation...', liquidation);
     const settleTx = await liquidation.settle(signer);
     await settleTx.verifyAndSubmit();
 
