@@ -43,11 +43,11 @@ export async function getPoolInfo(
     contract.slot0(),
   ]);
 
-  console.log(
-    'Liquidity:',
-    liquidity.toString(),
-    'Slot0:',
-    slot0[0].toString()
+  logger.info(
+    `Liquidity:,
+    ${liquidity.toString()},
+    Slot0:,
+    ${slot0[0].toString()}`
   );
 
   return {
@@ -164,7 +164,8 @@ export async function swapWinnings(
   tokenCollected: string | null,
   amountCollected: BigNumber,
   feeAmpunt: FeeAmount,
-  signer: Signer
+  signer: Signer,
+  wethAddress: string
 ) {
   const network = await signer.provider!.getNetwork();
   let customWETH9;
@@ -174,7 +175,7 @@ export async function swapWinnings(
         ...WETH9,
         [network.chainId]: new Token(
           network.chainId,
-          '0xfD3e0cEe740271f070607aEddd0Bf4Cf99C92204',
+          wethAddress,
           18,
           'WETH',
           'Wrapped Ether'
@@ -195,7 +196,7 @@ export async function swapWinnings(
     try {
       const tokenCollectedToken = new Token(
         network.chainId,
-        tokenCollected as string,
+        tokenCollected,
         18,
         'WETH',
         'Wrapped Ether'

@@ -140,6 +140,8 @@ export interface KeeperConfig {
   dryRun?: boolean;
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. */
   multicallAddress?: string;
+  /** The address of the WETH token. */
+  wethAddress: string;
   /** Use this only if you have used multicallAddress. */
   multicallBlock?: number;
   ajna: AjnaConfigParams;

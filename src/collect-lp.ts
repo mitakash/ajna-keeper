@@ -1,5 +1,4 @@
 import {
-  ERC20,
   ERC20Pool__factory,
   FungiblePool,
   indexToPrice,
@@ -13,13 +12,10 @@ import {
   BucketTakeLPAwardedEventFilter,
   ERC20Pool,
 } from '@ajna-finance/sdk/dist/types/contracts/ERC20Pool';
-import { Token, WETH9 } from '@uniswap/sdk-core';
-import IUniswapV3PoolABI from '@uniswap/v3-core/artifacts/contracts/interfaces/IUniswapV3Pool.sol/IUniswapV3Pool.json';
-import { FeeAmount, Pool as UniswapV3Pool } from '@uniswap/v3-sdk';
-import { BigNumber, Contract } from 'ethers';
+import { BigNumber } from 'ethers';
 import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { logger } from './logging';
-import { exchangeForNative, swapWinnings } from './uniswap';
+import { swapWinnings } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
 
 /**
@@ -37,7 +33,7 @@ export class LpCollector {
     private pool: FungiblePool,
     private signer: Signer,
     private poolConfig: Required<Pick<PoolConfig, 'collectLpReward'>>,
-    private config: Pick<KeeperConfig, 'dryRun' | 'pools'>
+    private config: Pick<KeeperConfig, 'dryRun' | 'wethAddress'>
   ) {
     const poolContract = ERC20Pool__factory.connect(
       this.pool.poolAddress,
@@ -137,7 +133,8 @@ export class LpCollector {
                 tokenCollected,
                 amountCollected,
                 exchangeRewardsFeeAmount,
-                this.signer
+                this.signer,
+                this.config.wethAddress
               );
             }
             return wdiv(quoteToWithdraw, exchangeRate);
@@ -178,7 +175,8 @@ export class LpCollector {
                 tokenCollected,
                 amountCollected,
                 exchangeRewardsFeeAmount,
-                this.signer
+                this.signer,
+                this.config.wethAddress
               );
             }
             const price = indexToPrice(bucketIndex);
