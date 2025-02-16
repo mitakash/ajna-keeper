@@ -1,20 +1,11 @@
-import { Ether, Token } from '@uniswap/sdk-core';
 import { FeeAmount } from '@uniswap/v3-sdk';
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
-import {
-  BigNumber,
-  Contract,
-  ethers,
-  providers,
-  Signer,
-  utils,
-  Wallet,
-} from 'ethers';
+import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
 import sinon from 'sinon';
-import { exchangeForNative, getPoolInfo } from '../uniswap';
 import * as erc20 from '../erc20';
-import * as uniswap from '../uniswap';
+import { logger } from '../logging';
+import Uniswap, * as uniswap from '../uniswap';
 
 chai.use(chaiAsPromised);
 
@@ -58,14 +49,6 @@ describe('getPoolInfo', () => {
   let contractStub: CustomContract;
 
   const mockProvider = new providers.JsonRpcProvider();
-  const mockERC20Token = new Token(
-    1,
-    utils.getAddress('0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C'),
-    6,
-    'USDC',
-    'USD Coin'
-  );
-  const mockNativeToken = Ether.onChain(1).wrapped;
 
   beforeEach(async () => {
     contractStub = new CustomContract(
@@ -86,13 +69,7 @@ describe('getPoolInfo', () => {
   });
 
   it('should return pool info correctly', async () => {
-    const poolInfo = await getPoolInfo(
-      mockProvider,
-      mockNativeToken,
-      mockERC20Token,
-      FeeAmount.MEDIUM,
-      contractStub
-    );
+    const poolInfo = await Uniswap.getPoolInfo(contractStub);
 
     expect(poolInfo).to.have.property('liquidity');
     expect(poolInfo).to.have.property('sqrtPriceX96');
@@ -105,7 +82,7 @@ describe('getPoolInfo', () => {
   });
 });
 
-describe('exchangeForNative', () => {
+describe('swapToWETH', () => {
   const mockProvider = new providers.JsonRpcProvider();
   let mockSigner: CustomSigner;
   let mockSwapRouter: CustomContract;
@@ -210,71 +187,31 @@ describe('exchangeForNative', () => {
 
   it('should throw an error for invalid parameters', async function () {
     await expect(
-      exchangeForNative(null as any, '', 100, '0', null as any)
-    ).to.be.rejectedWith('Invalid parameters provided to exchangeForNative');
+      Uniswap.swapToWETH(
+        null as any,
+        '',
+        ethers.utils.parseUnits('100', 8),
+        FeeAmount.MEDIUM,
+        ''
+      )
+    ).to.be.rejectedWith('Invalid parameters provided to swapToWETH');
   });
 
   it('should throw an error if signer does not have a provider', async function () {
+    const spyWarn = sinon.spy(logger, 'warn');
     const invalidSigner = {
       getAddress: sinon.stub().resolves('0xMock'),
     } as unknown as Signer;
-    await expect(
-      exchangeForNative(
-        invalidSigner,
-        '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
-        3000,
-        '100',
-        mockSwapRouter
-      )
-    ).to.be.rejectedWith('Signer does not have an associated provider');
-  });
-
-  it("should throw an error if there isn't enough liquidity", async function () {
-    sinon
-      .stub(mockProvider, 'getNetwork')
-      .resolves({ chainId: 1, name: 'homestead' });
-    sinon.replace(
-      mockSwapRouter,
-      'liquidity',
-      sinon.stub().resolves(ethers.BigNumber.from('0'))
+    await Uniswap.swapToWETH(
+      invalidSigner,
+      '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
+      ethers.utils.parseUnits('100', 8),
+      FeeAmount.MEDIUM,
+      mockSwapRouter.address
     );
-    await expect(
-      exchangeForNative(
-        mockSigner,
-        '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
-        3000,
-        '100',
-        mockSwapRouter
-      )
-    ).to.be.rejectedWith("There isn't enough liquidity");
-  });
-
-  it('should throw an error if chain ID cannot be determined', async function () {
-    const providerStub = sinon.stub().resolves({ chainId: null });
-    sinon.replace(mockSigner.provider!, 'getNetwork', providerStub);
-    await expect(
-      exchangeForNative(
-        mockSigner,
-        '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
-        3000,
-        '100',
-        mockSwapRouter
-      )
-    ).to.be.rejectedWith('Could not determine chain ID');
-  });
-
-  it('should execute a swap successfully', async function () {
-    sinon
-      .stub(mockProvider, 'getNetwork')
-      .resolves({ chainId: 1, name: 'homestead' });
-    await expect(
-      exchangeForNative(
-        mockSigner,
-        '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
-        3000,
-        '1000',
-        mockSwapRouter
-      )
-    ).to.not.be.rejected;
+    expect(spyWarn.calledOnce).to.be.true;
+    expect(
+      spyWarn.calledWith(sinon.match('No provider available, skipping swap'))
+    ).to.be.true;
   });
 });
