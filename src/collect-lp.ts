@@ -15,7 +15,7 @@ import {
 import { BigNumber } from 'ethers';
 import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { logger } from './logging';
-import { swapWinnings } from './uniswap';
+import { swapToWETH } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
 
 /**
@@ -126,17 +126,20 @@ export class LpCollector {
             logger.info(
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
+
             if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
               tokenCollected = this.pool.quoteAddress;
               amountCollected = quoteToWithdraw;
-              await swapWinnings(
+
+              await swapToWETH(
+                this.signer,
                 tokenCollected,
                 amountCollected,
                 exchangeRewardsFeeAmount,
-                this.signer,
                 this.config.wethAddress
               );
             }
+
             return wdiv(quoteToWithdraw, exchangeRate);
           } catch (error) {
             logger.error(
@@ -171,14 +174,16 @@ export class LpCollector {
             if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
               tokenCollected = this.pool.collateralAddress;
               amountCollected = collateralToWithdraw;
-              await swapWinnings(
+
+              await swapToWETH(
+                this.signer,
                 tokenCollected,
                 amountCollected,
                 exchangeRewardsFeeAmount,
-                this.signer,
                 this.config.wethAddress
               );
             }
+
             const price = indexToPrice(bucketIndex);
             return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
           } catch (error) {
