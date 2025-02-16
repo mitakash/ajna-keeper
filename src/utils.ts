@@ -7,8 +7,30 @@ import { logger } from './logging';
 import { JsonRpcProvider } from './provider';
 
 export type RequireFields<T, K extends keyof T> = T & Required<Pick<T, K>>;
+interface UtilsType {
+  addAccountFromKeystore: (
+    keystorePath: string,
+    provider: providers.JsonRpcProvider
+  ) => Promise<Wallet>;
+  getProviderAndSigner: (
+    keystorePath: string,
+    rpcUrl: string
+  ) => Promise<{ provider: providers.JsonRpcProvider; signer: Wallet }>;
+  askPassword: () => Promise<string>;
+}
 
-async function addAccountFromKeystore(
+let Utils: UtilsType;
+
+export async function askPassword() {
+  const pswd = await password({
+    message: 'Please enter your keystore password',
+    mask: '*',
+  });
+
+  return pswd;
+}
+
+export async function addAccountFromKeystore(
   keystorePath: string,
   provider: providers.JsonRpcProvider
 ): Promise<Wallet> {
@@ -111,7 +133,7 @@ export async function getProviderAndSigner(
   rpcUrl: string
 ) {
   const provider = new JsonRpcProvider(rpcUrl);
-  const signer = await addAccountFromKeystore(keystorePath, provider);
+  const signer = await Utils.addAccountFromKeystore(keystorePath, provider);
 
   return { provider, signer };
 }
@@ -125,3 +147,9 @@ export async function arrayFromAsync<T>(
   }
   return result;
 }
+
+export default Utils = {
+  addAccountFromKeystore,
+  getProviderAndSigner,
+  askPassword,
+};
