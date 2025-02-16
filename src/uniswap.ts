@@ -22,13 +22,26 @@ import { logger } from './logging';
 
 const UNISWAP_V3_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
 
+interface UniswapType {
+  getPoolInfo: any;
+  swapToWETH?: (
+    signer: Signer,
+    tokenToSwap: string,
+    amount: BigNumber,
+    feeAmount: FeeAmount,
+    wethAddress: string
+  ) => Promise<void>;
+}
+
 interface PoolInfo {
   sqrtPriceX96: BigNumber;
   liquidity: BigNumber;
   tick: number;
 }
 
-async function getPoolInfo(poolContract: Contract): Promise<PoolInfo> {
+let Uniswap: UniswapType;
+
+export async function getPoolInfo(poolContract: Contract): Promise<PoolInfo> {
   const [liquidity, slot0] = await Promise.all([
     poolContract.liquidity(),
     poolContract.slot0(),
@@ -48,6 +61,9 @@ export async function swapToWETH(
   feeAmount: FeeAmount,
   wethAddress: string
 ) {
+  if (!signer || !tokenToSwap || !amount || !feeAmount || !wethAddress) {
+    throw new Error('Invalid parameters provided to swapToWETH');
+  }
   const provider = signer.provider;
   if (!provider) {
     logger.warn('No provider available, skipping swap');
@@ -56,6 +72,7 @@ export async function swapToWETH(
 
   const network = await provider.getNetwork();
   const chainId = network.chainId;
+
   const tokenToSwapContract = new Contract(tokenToSwap, ERC20_ABI, signer);
   const tokenToSwapContractSymbol = await tokenToSwapContract.symbol();
   const tokenToSwapContractName = await tokenToSwapContract.name();
@@ -129,7 +146,7 @@ export async function swapToWETH(
     return;
   }
 
-  const poolInfo = await getPoolInfo(poolContract);
+  const poolInfo = await Uniswap.getPoolInfo(poolContract);
 
   const tickSpacing = await poolContract.tickSpacing();
   const roundTick = Math.round(poolInfo.tick / tickSpacing) * tickSpacing;
@@ -207,3 +224,8 @@ export async function swapToWETH(
     }
   }
 }
+
+export default Uniswap = {
+  getPoolInfo,
+  swapToWETH,
+};
