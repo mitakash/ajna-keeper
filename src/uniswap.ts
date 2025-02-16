@@ -10,11 +10,14 @@ import { abi as UniswapABI } from '@uniswap/v3-periphery/artifacts/contracts/Swa
 import {
   FeeAmount,
   Route,
+  Tick,
+  TickListDataProvider,
   Trade,
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
-import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
-import { getDecimalsErc20 } from './erc20';
+import { BigNumber, Contract, ethers, Signer } from 'ethers';
+import JSBI from 'jsbi';
+import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
 
 const UNISWAP_V3_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
@@ -25,202 +28,182 @@ interface PoolInfo {
   tick: number;
 }
 
-export async function getPoolInfo(
-  provider: providers.JsonRpcProvider,
-  nativeToken: Token,
-  erc20Token: Token,
-  feeAmt: FeeAmount,
-  poolContract?: Contract
-): Promise<PoolInfo> {
-  const poolAddress = UniswapV3Pool.getAddress(nativeToken, erc20Token, feeAmt);
-
-  const contract =
-    poolContract ?? new Contract(poolAddress, IUniswapV3PoolABI.abi, provider);
-
-  logger.info('Fetching liquidity and slot0...');
+async function getPoolInfo(poolContract: Contract): Promise<PoolInfo> {
   const [liquidity, slot0] = await Promise.all([
-    contract.liquidity(),
-    contract.slot0(),
+    poolContract.liquidity(),
+    poolContract.slot0(),
   ]);
 
-  logger.info(
-    `Liquidity:,
-    ${liquidity.toString()},
-    Slot0:,
-    ${slot0[0].toString()}`
-  );
-
   return {
-    liquidity,
+    liquidity: liquidity,
     sqrtPriceX96: slot0[0],
     tick: slot0[1],
   };
 }
 
-export async function exchangeForNative(
+export async function swapToWETH(
   signer: Signer,
-  erc20Address: string,
-  fee: FeeAmount,
-  amount: string,
-  poolContract: Contract
+  tokenToSwap: string,
+  amount: BigNumber,
+  feeAmount: FeeAmount,
+  wethAddress: string
 ) {
-  if (!signer || !erc20Address || !fee || !amount || !poolContract) {
-    throw new Error('Invalid parameters provided to exchangeForNative');
-  }
-  const provider = signer.provider as providers.JsonRpcProvider;
-
+  const provider = signer.provider;
   if (!provider) {
-    throw new Error('Signer does not have an associated provider');
+    logger.warn('No provider available, skipping swap');
+    return;
   }
 
   const network = await provider.getNetwork();
-  const { chainId } = network;
+  const chainId = network.chainId;
+  const tokenToSwapContract = new Contract(tokenToSwap, ERC20_ABI, signer);
+  const tokenToSwapContractSymbol = await tokenToSwapContract.symbol();
+  const tokenToSwapContractName = await tokenToSwapContract.name();
+  const tokenToSwapContractDecimals = await tokenToSwapContract.decimals();
 
-  if (!chainId) {
-    throw new Error('Could not determine chain ID');
+  if (
+    !tokenToSwapContractSymbol ||
+    !tokenToSwapContractName ||
+    !tokenToSwapContractDecimals
+  ) {
+    logger.warn(`Couldn't get token info`);
   }
 
-  const decimals = await getDecimalsErc20(signer, erc20Address);
-
-  const erc20Token = new Token(chainId, erc20Address, decimals);
-
-  const wethAddress = WETH9[chainId]?.address;
-  if (!wethAddress) {
-    throw new Error('WETH address not found for chain ID');
+  let weth: Token;
+  if (WETH9[chainId]) {
+    weth = WETH9[chainId];
+  } else {
+    weth = new Token(chainId, wethAddress, 18, 'WETH', 'Wrapped Ether');
   }
 
-  const nativeToken = new Token(
+  if (tokenToSwapContractSymbol.toLowerCase() === 'weth') {
+    logger.info('Collected tokens are already WETH, no swap necessary');
+    return;
+  }
+
+  const tokenToSwapToken = new Token(
     chainId,
-    wethAddress,
-    18,
-    'WETH',
-    'Wrapped Ether'
+    tokenToSwap,
+    tokenToSwapContractDecimals,
+    tokenToSwapContractSymbol,
+    tokenToSwapContractName
   );
 
-  const poolInfo = await getPoolInfo(
-    provider,
-    nativeToken,
-    erc20Token,
-    fee,
-    poolContract
-  );
-
-  if (poolInfo.liquidity.isZero()) {
-    throw new Error("There isn't enough liquidity");
+  try {
+    const currentAllowance = await tokenToSwapContract.allowance(
+      await signer.getAddress(),
+      UNISWAP_V3_ROUTER
+    );
+    if (currentAllowance.lt(amount)) {
+      await (
+        await tokenToSwapContract.approve(UNISWAP_V3_ROUTER, amount)
+      ).wait();
+      logger.info(`Approval successful for token ${tokenToSwapToken.symbol}`);
+    } else {
+      logger.info(
+        `Token ${tokenToSwapToken.symbol} already has sufficient allowance`
+      );
+    }
+  } catch (error) {
+    logger.error('Error approving transaction:', error);
   }
+
+  const poolAddress = UniswapV3Pool.getAddress(
+    tokenToSwapToken,
+    weth,
+    FeeAmount.MEDIUM
+  );
+
+  const poolContract = new Contract(
+    poolAddress,
+    IUniswapV3PoolABI.abi,
+    provider
+  );
+
+  try {
+    await poolContract.slot0();
+  } catch {
+    logger.info(
+      `Pool does not exist for ${tokenToSwapToken.symbol}/${weth.symbol}, skipping swap`
+    );
+    return;
+  }
+
+  const poolInfo = await getPoolInfo(poolContract);
+
+  const tickSpacing = await poolContract.tickSpacing();
+  const roundTick = Math.round(poolInfo.tick / tickSpacing) * tickSpacing;
+  const initialTick = {
+    index: roundTick,
+    liquidityNet: JSBI.BigInt(0),
+    liquidityGross: JSBI.BigInt(0),
+  };
+  const ticks = [new Tick(initialTick)];
+  const tickDataProvider = new TickListDataProvider(ticks, tickSpacing);
 
   const pool = new UniswapV3Pool(
-    erc20Token,
-    nativeToken,
-    fee,
+    tokenToSwapToken,
+    weth,
+    feeAmount,
     poolInfo.sqrtPriceX96.toString(),
     poolInfo.liquidity.toString(),
-    poolInfo.tick
+    roundTick,
+    tickDataProvider
   );
 
-  const route = new Route([pool], erc20Token, nativeToken);
+  const route = new Route([pool], tokenToSwapToken, weth);
+
+  const quote = await pool.getOutputAmount(
+    CurrencyAmount.fromRawAmount(tokenToSwapToken, amount.toString())
+  );
+  const expectedOutputAmount = quote[0];
+
   const trade = Trade.createUncheckedTrade({
     route,
-    inputAmount: CurrencyAmount.fromRawAmount(erc20Token, amount.toString()),
-    outputAmount: CurrencyAmount.fromRawAmount(
-      nativeToken,
-      poolInfo.sqrtPriceX96.toString()
+    inputAmount: CurrencyAmount.fromRawAmount(
+      tokenToSwapToken,
+      amount.toString()
     ),
+    outputAmount: expectedOutputAmount,
     tradeType: TradeType.EXACT_INPUT,
   });
 
   const slippageTolerance = new Percent(5, 100);
-  const minOut = BigNumber.from(
+  let minOut = BigNumber.from(
     trade.minimumAmountOut(slippageTolerance).quotient.toString()
   );
 
+  if (minOut.lte(BigNumber.from('0'))) {
+    minOut = amount.mul(BigNumber.from('1')).div(BigNumber.from('10000')); // 0.01% de amountIn como mínimo
+  }
+
   const swapRouter = new Contract(UNISWAP_V3_ROUTER, UniswapABI, signer);
-
   const recipient = await signer.getAddress();
-  if (!recipient) {
-    throw new Error('Could not retrieve signer address');
-  }
 
-  const tx = await swapRouter.exactInputSingle({
-    tokenIn: erc20Token.address,
-    tokenOut: nativeToken.address,
-    fee,
-    recipient: recipient,
-    deadline: Math.floor(Date.now() / 1000) + 60 * 5,
-    amountIn: BigNumber.from(amount),
-    amountOutMinimum: minOut,
-    sqrtPriceLimitX96: poolInfo.sqrtPriceX96,
-  });
+  const currentBlock = await provider.getBlock('latest');
+  const currentBlockTimestamp = currentBlock.timestamp;
 
-  const receipt = await tx.wait();
-  if (receipt.status !== 1) {
-    throw new Error('Transaction failed');
-  }
-
-  logger.info(`Swap successful: ${tx.hash}`);
-}
-
-export async function swapWinnings(
-  tokenCollected: string | null,
-  amountCollected: BigNumber,
-  feeAmpunt: FeeAmount,
-  signer: Signer,
-  wethAddress: string
-) {
-  const network = await signer.provider!.getNetwork();
-  let customWETH9;
-  if (WETH9[network.chainId!] === undefined) {
-    try {
-      customWETH9 = {
-        ...WETH9,
-        [network.chainId]: new Token(
-          network.chainId,
-          wethAddress,
-          18,
-          'WETH',
-          'Wrapped Ether'
-        ),
-      };
-    } catch (error) {
-      logger.error(`Failed to get WETH9 address: ${error}`, error);
-    }
-  } else {
-    customWETH9 = WETH9;
-  }
-
-  if (
-    tokenCollected &&
-    customWETH9 &&
-    tokenCollected !== customWETH9[network.chainId]?.address
-  ) {
-    try {
-      const tokenCollectedToken = new Token(
-        network.chainId,
-        tokenCollected,
-        18,
-        'WETH',
-        'Wrapped Ether'
-      );
-
-      const poolContract = new Contract(
-        UniswapV3Pool.getAddress(
-          customWETH9[network.chainId],
-          tokenCollectedToken,
-          feeAmpunt
-        ),
-        IUniswapV3PoolABI.abi,
-        signer.provider!
-      );
-
-      await exchangeForNative(
-        signer,
-        tokenCollected,
-        feeAmpunt,
-        amountCollected.toString(),
-        poolContract
-      );
-    } catch (error) {
-      logger.error(`Failed to exchange collected tokens to native.`, error);
+  try {
+    const tx = await swapRouter.exactInputSingle(
+      {
+        tokenIn: tokenToSwapToken.address,
+        tokenOut: weth.address,
+        fee: feeAmount,
+        recipient: recipient,
+        deadline: currentBlockTimestamp + 60 * 60 * 60,
+        amountIn: amount,
+        amountOutMinimum: minOut,
+        sqrtPriceLimitX96: ethers.constants.Zero,
+      },
+      { gasLimit: ethers.utils.hexlify(500000) }
+    );
+    await tx.wait();
+    logger.info(`Swap to WETH successful: ${tx.hash}`);
+  } catch (swapError) {
+    if (swapError instanceof Error) {
+      logger.warn(`Swap to WETH failed: ${swapError.message}`);
+    } else {
+      logger.warn(`Swap to WETH failed: ${String(swapError)}`);
     }
   }
 }
