@@ -32,7 +32,7 @@ describe('Uniswap V3 Integration Tests', function () {
   before(async () => {
     await resetHardhat();
 
-    // Personalize signers
+    // Impersonate signers
     wbtcSigner = await impersonateSigner(
       MAINNET_CONFIG.WBTC_USDC_POOL.collateralWhaleAddress
     );
