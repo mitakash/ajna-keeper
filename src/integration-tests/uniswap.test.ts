@@ -31,6 +31,8 @@ describe('Uniswap V3 Integration Tests', function () {
 
   before(async () => {
     await resetHardhat();
+
+    // Personalize signers
     wbtcSigner = await impersonateSigner(
       MAINNET_CONFIG.WBTC_USDC_POOL.collateralWhaleAddress
     );
@@ -39,12 +41,16 @@ describe('Uniswap V3 Integration Tests', function () {
     );
     wbtcSignerAddress = await wbtcSigner.getAddress();
     wethSignerAddress = await wethSigner.getAddress();
+
+    // Add balance to signers
     await setBalance(wbtcSignerAddress, '0x10000000000000000000000000');
     await setBalance(wethSignerAddress, '0x10000000000000000000000000');
+
     uniswapRouter = new Contract(UNISWAP_V3_ROUTER, UniswapABI, wbtcSigner);
   });
 
   it('Should add liquidity to the pool', async function () {
+    // Add liquidity to pool, (only for testing purposes)
     const wbtcContract = new Contract(
       MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress,
       ERC20_ABI,
@@ -148,6 +154,7 @@ describe('Uniswap V3 Integration Tests', function () {
       'WBTC',
       'Wrapped Bitcoin'
     );
+
     const tokenToSwapContract = new Contract(
       MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress,
       ERC20_ABI,
