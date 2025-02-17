@@ -12,6 +12,7 @@ import {
   Route,
   Tick,
   TickListDataProvider,
+  TickMath,
   Trade,
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
@@ -158,11 +159,13 @@ export async function swapToWETH(
   const ticks = [new Tick(initialTick)];
   const tickDataProvider = new TickListDataProvider(ticks, tickSpacing);
 
+  const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(roundTick);
+
   const pool = new UniswapV3Pool(
     tokenToSwapToken,
     weth,
     feeAmount,
-    poolInfo.sqrtPriceX96.toString(),
+    sqrtPriceX96.toString(),
     poolInfo.liquidity.toString(),
     roundTick,
     tickDataProvider
@@ -185,13 +188,13 @@ export async function swapToWETH(
     tradeType: TradeType.EXACT_INPUT,
   });
 
-  const slippageTolerance = new Percent(5, 100);
+  const slippageTolerance = new Percent(50, 10000);
   let minOut = BigNumber.from(
     trade.minimumAmountOut(slippageTolerance).quotient.toString()
   );
 
   if (minOut.lte(BigNumber.from('0'))) {
-    minOut = amount.mul(BigNumber.from('1')).div(BigNumber.from('10000')); // 0.01% de amountIn como mínimo
+    minOut = amount.mul(BigNumber.from('1')).div(BigNumber.from('10000'));
   }
 
   const swapRouter = new Contract(UNISWAP_V3_ROUTER, UniswapABI, signer);
