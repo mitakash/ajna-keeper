@@ -17,11 +17,8 @@ import {
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
 import { BigNumber, Contract, ethers, Signer } from 'ethers';
-import JSBI from 'jsbi';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
-
-const UNISWAP_V3_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
 
 interface UniswapType {
   getPoolInfo: any;
@@ -30,7 +27,8 @@ interface UniswapType {
     tokenToSwap: string,
     amount: BigNumber,
     feeAmount: FeeAmount,
-    wethAddress: string
+    wethAddress: string,
+    uniswapV3Router: string
   ) => Promise<void>;
 }
 
@@ -60,7 +58,8 @@ export async function swapToWETH(
   tokenToSwap: string,
   amount: BigNumber,
   feeAmount: FeeAmount,
-  wethAddress: string
+  wethAddress: string,
+  uniswapV3Router: string
 ) {
   if (!signer || !tokenToSwap || !amount || !feeAmount || !wethAddress) {
     throw new Error('Invalid parameters provided to swapToWETH');
@@ -110,11 +109,11 @@ export async function swapToWETH(
   try {
     const currentAllowance = await tokenToSwapContract.allowance(
       await signer.getAddress(),
-      UNISWAP_V3_ROUTER
+      uniswapV3Router
     );
     if (currentAllowance.lt(amount)) {
       await (
-        await tokenToSwapContract.approve(UNISWAP_V3_ROUTER, amount)
+        await tokenToSwapContract.approve(uniswapV3Router, amount)
       ).wait();
       logger.info(`Approval successful for token ${tokenToSwapToken.symbol}`);
     } else {
@@ -153,8 +152,8 @@ export async function swapToWETH(
   const roundTick = Math.round(poolInfo.tick / tickSpacing) * tickSpacing;
   const initialTick = {
     index: roundTick,
-    liquidityNet: JSBI.BigInt(0),
-    liquidityGross: JSBI.BigInt(0),
+    liquidityNet: BigInt(0).toString(),
+    liquidityGross: BigInt(0).toString(),
   };
   const ticks = [new Tick(initialTick)];
   const tickDataProvider = new TickListDataProvider(ticks, tickSpacing);
@@ -194,10 +193,10 @@ export async function swapToWETH(
   );
 
   if (minOut.lte(BigNumber.from('0'))) {
-    minOut = amount.mul(BigNumber.from('1')).div(BigNumber.from('10000'));
+    minOut = amount.div(BigNumber.from('10000'));
   }
 
-  const swapRouter = new Contract(UNISWAP_V3_ROUTER, UniswapABI, signer);
+  const swapRouter = new Contract(uniswapV3Router, UniswapABI, signer);
   const recipient = await signer.getAddress();
 
   const currentBlock = await provider.getBlock('latest');
@@ -214,8 +213,7 @@ export async function swapToWETH(
         amountIn: amount,
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: ethers.constants.Zero,
-      },
-      { gasLimit: ethers.utils.hexlify(500000) }
+      }
     );
     await tx.wait();
     logger.info(`Swap to WETH successful: ${tx.hash}`);

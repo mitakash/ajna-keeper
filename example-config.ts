@@ -14,6 +14,7 @@ const config: KeeperConfig = {
   keeperKeystore: '/home/anon/keystore-files/keeper-keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   wethAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+  uniswapV3Router: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
   multicallBlock: 5022,
   delayBetweenRuns: 15,
   delayBetweenActions: 1,
