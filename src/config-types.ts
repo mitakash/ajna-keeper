@@ -108,7 +108,7 @@ interface CollectLpRewardSettings {
   /** Minimum amount of token to collect. */
   minAmount: number;
   /** If true, will exchange LP rewards with Uniswap. */
-  shouldExchangeLPRewards?: boolean;
+  shouldExchangeRewardsToWeth?: boolean;
   /** The fee amount to use when exchanging LP rewards. */
   exchangeRewardsFeeAmount?: FeeAmount,
 }
@@ -142,6 +142,8 @@ export interface KeeperConfig {
   multicallAddress?: string;
   /** The address of the WETH token. */
   wethAddress: string;
+  /** Uniswap V3 router address */
+  uniswapV3Router: string;
   /** The block at which the multicall contract was deployed. Use this only if you have used multicallAddress. */
   multicallBlock?: number;
   /** Contract addresses passed to Ajna for this chain. See here for addresses https://faqs.ajna.finance/info/deployment-addresses-and-bridges */

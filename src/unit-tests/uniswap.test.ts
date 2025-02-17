@@ -3,7 +3,6 @@ import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
 import sinon from 'sinon';
-import * as erc20 from '../erc20';
 import { logger } from '../logging';
 import Uniswap, * as uniswap from '../uniswap';
 
@@ -111,6 +110,7 @@ describe('swapToWETH', () => {
     ]);
 
     sinon.stub(mockSwapRouter, 'connect').returns(mockSwapRouter);
+
   });
 
   afterEach(() => {
@@ -124,6 +124,7 @@ describe('swapToWETH', () => {
         '',
         ethers.utils.parseUnits('100', 8),
         FeeAmount.MEDIUM,
+        '',
         ''
       )
     ).to.be.rejectedWith('Invalid parameters provided to swapToWETH');
@@ -139,7 +140,8 @@ describe('swapToWETH', () => {
       '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
       ethers.utils.parseUnits('100', 8),
       FeeAmount.MEDIUM,
-      mockSwapRouter.address
+      mockSwapRouter.address,
+      ''
     );
     expect(spyWarn.calledOnce).to.be.true;
     expect(

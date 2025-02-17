@@ -33,7 +33,7 @@ export class LpCollector {
     private pool: FungiblePool,
     private signer: Signer,
     private poolConfig: Required<Pick<PoolConfig, 'collectLpReward'>>,
-    private config: Pick<KeeperConfig, 'dryRun' | 'wethAddress'>
+    private config: Pick<KeeperConfig, 'dryRun' | 'wethAddress' | 'uniswapV3Router'>
   ) {
     const poolContract = ERC20Pool__factory.connect(
       this.pool.poolAddress,
@@ -92,7 +92,7 @@ export class LpCollector {
     const {
       redeemAs,
       minAmount,
-      shouldExchangeLPRewards,
+      shouldExchangeRewardsToWeth,
       exchangeRewardsFeeAmount,
     } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
@@ -101,9 +101,6 @@ export class LpCollector {
     const { lpBalance, depositWithdrawable } =
       await bucket.getPosition(signerAddress);
     if (lpBalance.lt(rewardLp)) rewardLp = lpBalance;
-
-    let tokenCollected: string | null = null;
-    let amountCollected: BigNumber = BigNumber.from('0');
 
     if (redeemAs == TokenToCollect.QUOTE) {
       const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
@@ -127,16 +124,17 @@ export class LpCollector {
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
 
-            if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
-              tokenCollected = this.pool.quoteAddress;
-              amountCollected = quoteToWithdraw;
+            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount && this.config.wethAddress && this.config.uniswapV3Router) {
+              const tokenCollected = this.pool.quoteAddress;
+              const amountCollected = quoteToWithdraw;
 
               await swapToWETH(
                 this.signer,
                 tokenCollected,
                 amountCollected,
                 exchangeRewardsFeeAmount,
-                this.config.wethAddress
+                this.config.wethAddress,
+                this.config.uniswapV3Router,
               );
             }
 
@@ -171,16 +169,17 @@ export class LpCollector {
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
 
-            if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
-              tokenCollected = this.pool.collateralAddress;
-              amountCollected = collateralToWithdraw;
+            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount && this.config.wethAddress && this.config.uniswapV3Router) {
+              const tokenCollected = this.pool.collateralAddress;
+              const amountCollected = collateralToWithdraw;
 
               await swapToWETH(
                 this.signer,
                 tokenCollected,
                 amountCollected,
                 exchangeRewardsFeeAmount,
-                this.config.wethAddress
+                this.config.wethAddress,
+                this.config.uniswapV3Router,
               );
             }
 
