@@ -181,7 +181,7 @@ describe('getProviderAndSigner', function () {
 //     providerStub = sinon.stub(providers, "JsonRpcProvider").callsFake({
 //       getNetwork: async () => ({ chainId: 1 }),
 //     } as any);
-  
+
 //     passwordStub = sinon.stub(Utils, "askPassword").callsFake(() => {
 //       return Promise.resolve("test-password") as Promise<string> & { cancel: () => void };
 //     });
@@ -189,7 +189,7 @@ describe('getProviderAndSigner', function () {
 //     fromEncryptedJsonSyncStub = sinon.stub(Wallet, 'fromEncryptedJsonSync').callsFake(() => {
 //       return fakeWallet
 //     });
-  
+
 //     walletConnectStub = sinon.stub(Wallet.prototype, 'connect').callsFake(() => {
 //       return fakeWallet
 //     });
@@ -201,7 +201,7 @@ describe('getProviderAndSigner', function () {
 //       connect: sinon.stub().returnsThis(),
 //       signMessage: sinon.stub().resolves("0xSignedMessage"),
 //     } as unknown as Wallet;
-    
+
 //     addAccountStub = sinon.stub(Utils, 'addAccountFromKeystore').callsFake(async () => {
 //       return fakeWallet;
 //     });

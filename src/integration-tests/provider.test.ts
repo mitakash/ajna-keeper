@@ -5,7 +5,7 @@ import { decimaledToWei, weiToDecimaled } from '../utils';
 import 'dotenv';
 import { JsonRpcProvider } from '../provider';
 
-describe.only('JsonRpcProvider', () => {
+describe('JsonRpcProvider', () => {
   beforeEach(async () => {
     await resetHardhat();
   });

@@ -37,7 +37,11 @@
     "chai-as-promised": "^8.0.1",
     "dotenv": "^16.4.7",
     "hardhat": "^2.22.18",
+    "jsbi": "^4.3.0",
     "prettier": "^3.4.2",
     "sinon": "^19.0.2"
+  },
+  "resolutions": {
+    "jsbi": "4.3.0"
   }
 }

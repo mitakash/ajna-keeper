@@ -107,6 +107,10 @@ interface CollectLpRewardSettings {
   redeemAs: TokenToCollect;
   /** Minimum amount of token to collect. */
   minAmount: number;
+  /** If true, will exchange LP rewards with Uniswap. */
+  shouldExchangeLPRewards?: boolean;
+  /** The fee amount to use when exchanging LP rewards. */
+  exchangeRewardsFeeAmount?: FeeAmount,
 }
 
 export interface PoolConfig {
@@ -136,6 +140,8 @@ export interface KeeperConfig {
   dryRun?: boolean;
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */
   multicallAddress?: string;
+  /** The address of the WETH token. */
+  wethAddress: string;
   /** The block at which the multicall contract was deployed. Use this only if you have used multicallAddress. */
   multicallBlock?: number;
   /** Contract addresses passed to Ajna for this chain. See here for addresses https://faqs.ajna.finance/info/deployment-addresses-and-bridges */
