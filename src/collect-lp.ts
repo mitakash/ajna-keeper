@@ -92,7 +92,7 @@ export class LpCollector {
     const {
       redeemAs,
       minAmount,
-      shouldExchangeLPRewards,
+      shouldExchangeRewardsToWeth,
       exchangeRewardsFeeAmount,
     } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
@@ -127,7 +127,7 @@ export class LpCollector {
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
 
-            if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
+            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount) {
               tokenCollected = this.pool.quoteAddress;
               amountCollected = quoteToWithdraw;
 
@@ -171,7 +171,7 @@ export class LpCollector {
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
 
-            if (!!shouldExchangeLPRewards && exchangeRewardsFeeAmount) {
+            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount) {
               tokenCollected = this.pool.collateralAddress;
               amountCollected = collateralToWithdraw;
 

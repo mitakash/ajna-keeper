@@ -44,7 +44,7 @@ const config: KeeperConfig = {
       collectLpReward: {
         redeemAs: TokenToCollect.QUOTE,
         minAmount: 0.001,
-        shouldExchangeLPRewards: false,
+        shouldExchangeRewardsToWeth: false,
         exchangeRewardsFeeAmount: FeeAmount.MEDIUM,
       },
     },

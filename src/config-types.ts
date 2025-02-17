@@ -108,7 +108,7 @@ interface CollectLpRewardSettings {
   /** Minimum amount of token to collect. */
   minAmount: number;
   /** If true, will exchange LP rewards with Uniswap. */
-  shouldExchangeLPRewards?: boolean;
+  shouldExchangeRewardsToWeth?: boolean;
   /** The fee amount to use when exchanging LP rewards. */
   exchangeRewardsFeeAmount?: FeeAmount,
 }
