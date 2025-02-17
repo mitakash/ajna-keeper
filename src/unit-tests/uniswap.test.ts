@@ -111,7 +111,6 @@ describe('swapToWETH', () => {
     ]);
 
     sinon.stub(mockSwapRouter, 'connect').returns(mockSwapRouter);
-
   });
 
   afterEach(() => {

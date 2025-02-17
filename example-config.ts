@@ -4,7 +4,7 @@ import {
   PriceOriginPoolReference,
   PriceOriginSource,
   TokenToCollect,
-} from './src/config';
+} from './src/config-types';
 
 const config: KeeperConfig = {
   dryRun: true,
@@ -27,9 +27,7 @@ const config: KeeperConfig = {
     burnWrapper: '',
     lenderHelper: '',
   },
-  pricing: {
-    coinGeckoApiKey: '<api-key>',
-  },
+  coinGeckoApiKey: '<api-key>',
   pools: [
     {
       name: 'wstETH / WETH',

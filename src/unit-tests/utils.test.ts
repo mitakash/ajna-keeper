@@ -1,6 +1,7 @@
 import { FungiblePool } from '@ajna-finance/sdk';
+import { promises as fs } from 'fs';
 import { expect } from 'chai';
-import { BigNumber } from 'ethers';
+import { BigNumber, providers, Wallet } from 'ethers';
 import { KeeperConfig } from '../config-types';
 import {
   overrideMulticall,
@@ -8,6 +9,8 @@ import {
   weiToDecimaled,
   tokenChangeDecimals,
 } from '../utils';
+import Utils from '../utils';
+import sinon from 'sinon';
 
 const mockAddress = '0x123456abcabc123456abcabcd123456abcdabcd1';
 
@@ -108,36 +111,112 @@ describe('overrideMulticall', () => {
   });
 });
 
-// describe('getProviderAndSigner', () => {
-//   const mockKeystorePath = 'mock/path/keystore.json';
-//   const mockRpcUrl = 'https://mock-rpc-url';
-//   let mockProvider;
-//   let addAccountStub;
+describe('getProviderAndSigner', function () {
+  const fakeRpcUrl = 'http://localhost:8545';
+  const fakeKeystorePath = '/fake/path/keystore.json';
+  let addAccountStub: sinon.SinonStub;
+  let fakeWallet: Wallet;
 
-//   beforeEach(() => {
-//     mockProvider = sinon.createStubInstance(providers.JsonRpcProvider);
-//     sinon.stub(providers, 'JsonRpcProvider').returns(mockProvider);
-//     addAccountStub = sinon.stub().resolves({
-//       address: mockAddress,
-//       signMessage: sinon.stub().resolves('mock-signature'),
+  beforeEach(async () => {
+    fakeWallet = {
+      address: '0x1234567890abcdef',
+      provider: new providers.JsonRpcProvider(fakeRpcUrl),
+      signTransaction: sinon.stub().resolves('0xSignedTransaction'),
+      connect: sinon.stub().returnsThis(),
+      signMessage: sinon.stub().resolves('0xSignedMessage'),
+    } as unknown as Wallet;
+
+    addAccountStub = sinon
+      .stub(Utils, 'addAccountFromKeystore')
+      .callsFake(async () => {
+        return fakeWallet;
+      });
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('should return provider and signer', async function () {
+    const result = await Utils.getProviderAndSigner(
+      fakeKeystorePath,
+      fakeRpcUrl
+    );
+    expect(result).to.have.property('provider');
+    expect(result).to.have.property('signer');
+    expect(addAccountStub.calledOnceWith(fakeKeystorePath)).to.be.true;
+    expect(result.signer).to.have.property('address', fakeWallet.address);
+  });
+});
+
+// describe("addAccountFromKeystore", function () {
+//   const fakeRpcUrl = "http://localhost:8545";
+//   const fakeKeystorePath = "/fake/path/keystore.json";
+//   let providerStub: sinon.SinonStub;
+//   let addAccountStub: sinon.SinonStub;
+//   let fakeWallet: Wallet;
+//   let readFileStub: sinon.SinonStub;
+//   let fromEncryptedJsonSyncStub: sinon.SinonStub;
+//   let walletConnectStub: sinon.SinonStub;
+//   let passwordStub: sinon.SinonStub;
+
+//   beforeEach(async () => {
+//     readFileStub = sinon.stub(fs, "readFile").callsFake(async () => {
+//       return JSON.stringify({
+//         version: 3,
+//         id: "some-id",
+//         address: "0x123...",
+//         crypto: {}
+//       });
+//     });
+//     sinon.stub(inquirer, "password").callsFake(() => {
+//       console.log('PASSWORD STUB');
+//       const promise = Promise.resolve("test-password") as Promise<string> & { cancel: () => void };
+//       promise.cancel = () => {};
+//       return promise;
+//     });
+//     process.stdin.emit("keypress", null, { name: "return" });
+//     process.stdin.destroy();
+
+//     providerStub = sinon.stub(providers, "JsonRpcProvider").callsFake({
+//       getNetwork: async () => ({ chainId: 1 }),
+//     } as any);
+
+//     passwordStub = sinon.stub(Utils, "askPassword").callsFake(() => {
+//       return Promise.resolve("test-password") as Promise<string> & { cancel: () => void };
 //     });
 
-//     sinon.stub(Wallet, 'fromEncryptedJsonSync').returns(Wallet.createRandom());
+//     fromEncryptedJsonSyncStub = sinon.stub(Wallet, 'fromEncryptedJsonSync').callsFake(() => {
+//       return fakeWallet
+//     });
+
+//     walletConnectStub = sinon.stub(Wallet.prototype, 'connect').callsFake(() => {
+//       return fakeWallet
+//     });
+
+//     fakeWallet = {
+//       address: "0x1234567890abcdef",
+//       provider: new providers.JsonRpcProvider(fakeRpcUrl),
+//       signTransaction: sinon.stub().resolves("0xSignedTransaction"),
+//       connect: sinon.stub().returnsThis(),
+//       signMessage: sinon.stub().resolves("0xSignedMessage"),
+//     } as unknown as Wallet;
+
+//     addAccountStub = sinon.stub(Utils, 'addAccountFromKeystore').callsFake(async () => {
+//       return fakeWallet;
+//     });
 //   });
 
 //   afterEach(() => {
 //     sinon.restore();
 //   });
 
-//   it('should return a provider and a signer', async () => {
-//     const { provider, signer } = await getProviderAndSigner(
-//       mockKeystorePath,
-//       mockRpcUrl
-//     );
-
-//     expect(provider).to.be.instanceOf(providers.JsonRpcProvider);
-//     expect(signer).to.have.property('address').that.is.a('string');
-//     expect(signer).to.have.property('signMessage').that.is.a('function');
+//   it("should return provider and signer", async function () {
+//     const result = await Utils.getProviderAndSigner(fakeKeystorePath, fakeRpcUrl);
+//     expect(result).to.have.property("provider");
+//     expect(result).to.have.property("signer");
+//     expect(addAccountStub.calledOnceWith(fakeKeystorePath)).to.be.true;
+//     expect(result.signer).to.have.property("address", fakeWallet.address);
 //   });
 // });
 

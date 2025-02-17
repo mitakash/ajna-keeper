@@ -19,7 +19,13 @@ You must setup one bot per-chain, per-signer.
 
 You'll need `node` and related tools (`npm`, `yarn`). This was developed with node v22 but should work with later versions.
 
-Download node here: https://nodejs.org/en
+Download node here: https://nodejs.org/en Downloading `node` also installs `npm`.
+
+Install `yarn`
+
+```bash
+npm install --global yarn
+```
 
 Install node dependencies.
 
@@ -45,12 +51,22 @@ Create an account on Coingecko and go to the URL https://www.coingecko.com/en/de
 Here you will click "Add New Key" to add a new key.
 In your `config.ts` file replace `coinGeckoApiKey` with the key you just created.
 
+### Configure ajna
+
+In `config.ts` for the section `ajna`, you will need to provide addresses for all the ajna specific contracts. These addresses can be found here: https://faqs.ajna.finance/info/deployment-addresses-and-bridges
+
+### Configure multicall
+
+In `config.ts` you may need to provide an address for `multicallAddress` for your specific chain. These addresses can be found here https://www.multicall3.com/deployments
+If you add `multicallAddress`, then you will also need to add `multicallBlock` which is the block that multicall was added.
+
 ### Setup Ajna-Subgraph
 
 In a different folder clone the ajna-finance repo. It is recommended that you checkout the develop branch so that you have the latests networks settings for L2s.
 
 ```bash
 git clone https://github.com/ajna-finance/subgraph.git
+cd subgraph
 git checkout develop
 ```
 
@@ -123,6 +139,17 @@ See `example-config.ts` for reference.
 If the price source only has quote token priced in collateral, you may add `"invert": true` to `price` config to invert the configured price.
 
 ## Testing
+
+### Add Alchemy API key and Coingecko API to .env
+
+Add your alchemy API key and coingecko API key to .env
+
+```.env
+ALCHEMY_API_KEY="<api_key>"
+COINGECKO_API_KEY="<api_key>"
+```
+
+Note: You will need to enable mainnet in Alchemy since hardhat queries from mainnet.
 
 ### Running tests
 

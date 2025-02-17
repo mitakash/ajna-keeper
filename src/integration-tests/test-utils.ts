@@ -1,8 +1,8 @@
-import { providers } from 'ethers';
 import { HARDHAT_RPC_URL, MAINNET_CONFIG } from './test-config';
 import { delay } from '../utils';
+import { JsonRpcProvider } from '../provider';
 
-export const getProvider = () => new providers.JsonRpcProvider(HARDHAT_RPC_URL);
+export const getProvider = () => new JsonRpcProvider(HARDHAT_RPC_URL);
 
 export const resetHardhat = () =>
   getProvider().send('hardhat_reset', [
