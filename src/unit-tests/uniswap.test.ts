@@ -95,31 +95,6 @@ describe('swapToWETH', () => {
     mockSigner.getAddress.resolves(
       '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C'
     );
-    mockSigner.sendTransaction = sinon.stub().resolves({
-      hash: '0xTransactionHash',
-      wait: sinon.stub().resolves({
-        status: 1,
-        transactionHash: '0xTransactionHash',
-        blockNumber: 12345,
-        confirmations: 1,
-        from: '0xMockAddress',
-        to: '0xMockRouterAddress',
-        gasUsed: 21000,
-        logs: [
-          {
-            blockNumber: 12345,
-            blockHash: '0xMockBlockHash',
-            transactionIndex: 0,
-            removed: false,
-            address: '0xMockRouterAddress',
-            data: '0xMockData',
-            topics: ['0xMockTopic1', '0xMockTopic2'],
-            transactionHash: '0xTransactionHash',
-            logIndex: 1,
-          },
-        ],
-      }),
-    });
 
     Object.defineProperty(mockSigner, 'provider', { value: mockProvider });
 
@@ -129,32 +104,6 @@ describe('swapToWETH', () => {
       mockProvider
     );
 
-    mockSwapRouter.exactInputSingle.resolves({
-      hash: '0xTransactionHash',
-      wait: async () => ({
-        status: 1,
-        transactionHash: '0xTransactionHash',
-        blockNumber: 12345,
-        confirmations: 1,
-        from: '0xMockAddress',
-        to: '0xMockRouterAddress',
-        gasUsed: 21000,
-        logs: [
-          {
-            blockNumber: 12345,
-            blockHash: '0xMockBlockHash',
-            transactionIndex: 0,
-            removed: false,
-            address: '0xMockRouterAddress',
-            data: '0xMockData',
-            topics: ['0xMockTopic1', '0xMockTopic2'],
-            transactionHash: '0xTransactionHash',
-            logIndex: 1,
-          },
-        ],
-      }),
-    });
-
     mockSwapRouter.liquidity.resolves(BigNumber.from('1000000000000000000'));
     mockSwapRouter.slot0.resolves([
       BigNumber.from('79228162514264337593543950336'),
@@ -163,22 +112,6 @@ describe('swapToWETH', () => {
 
     sinon.stub(mockSwapRouter, 'connect').returns(mockSwapRouter);
 
-    sinon.stub(erc20, 'getDecimalsErc20').resolves(18);
-    sinon.stub(uniswap, 'getPoolInfo').resolves({
-      liquidity: BigNumber.from('1000000000000000000'),
-      sqrtPriceX96: BigNumber.from('79228162514264337593543950336'),
-      tick: 0,
-    });
-
-    const mockUniswapRouter = {
-      exactInputSingle: sinon.stub().resolves(BigNumber.from('1000')),
-      liquidity: sinon.stub().resolves(BigNumber.from('1000000000000000000')),
-      slot0: sinon
-        .stub()
-        .resolves([BigNumber.from('79228162514264337593543950336'), 0]),
-    };
-
-    sinon.stub(Contract.prototype, 'constructor').returns(mockUniswapRouter);
   });
 
   afterEach(() => {
