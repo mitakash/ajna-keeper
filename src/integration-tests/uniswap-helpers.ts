@@ -3,6 +3,8 @@ import { FeeAmount } from '@uniswap/v3-sdk';
 import { BigNumber, Contract, ethers, Signer } from 'ethers';
 import { getProvider } from './test-utils';
 
+const POSITION_MANAGER_ADDRESS = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
+
 type AddLiquidityParams = {
   signer: Signer;
   tokenA: Contract;
@@ -20,7 +22,6 @@ export async function addLiquidity({
   amountB,
   fee,
 }: AddLiquidityParams): Promise<number> {
-  const POSITION_MANAGER_ADDRESS = '0xC36442b4a4522E871399CD717aBDD847Ab11FE88';
   const positionManager = new Contract(
     POSITION_MANAGER_ADDRESS,
     NonfungiblePositionManagerABI,
