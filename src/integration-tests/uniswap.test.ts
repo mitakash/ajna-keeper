@@ -13,9 +13,9 @@ import {
 } from './test-utils';
 import { addLiquidity } from './uniswap-helpers';
 import { expect } from 'chai';
-import { getPoolInfo, swapToWETH } from '../uniswap';
-import sinon from 'sinon';
-import { logger } from '../logging';
+import { getPoolInfo, swapToWeth } from '../uniswap';
+import { getBalanceOfErc20 } from '../erc20';
+import { decimaledToWei, tokenChangeDecimals, weiToDecimaled } from '../utils';
 
 const UNISWAP_V3_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
 const NONFUNGIBLE_POSITION_MANAGER_ADDRESS =
@@ -147,7 +147,7 @@ describe('Uniswap V3 Integration Tests', function () {
     const provider = getProvider();
     const chainId = (await provider.getNetwork()).chainId;
 
-    const wbtctoken = new Token(
+    const wbtcToken = new Token(
       chainId,
       MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress,
       8,
@@ -167,23 +167,40 @@ describe('Uniswap V3 Integration Tests', function () {
     );
 
     const signerAddress = await wbtcSigner.getAddress();
-    const tokenToSwapBalanceBefore =
-      await tokenToSwapContract.balanceOf(signerAddress);
-    const wethBalanceBefore = await weth.balanceOf(signerAddress);
-
-    await swapToWETH(
+    const tokenToSwapBalanceBefore = await getBalanceOfErc20(
       wbtcSigner,
-      wbtctoken.address,
-      ethers.utils.parseUnits('0.1', 8),
+      MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress
+    );
+    const wethBalanceBefore = await getBalanceOfErc20(
+      wbtcSigner,
+      MAINNET_CONFIG.WETH_ADDRESS
+    );
+    const amountToSwapWad = decimaledToWei(0.1, 18);
+
+    await swapToWeth(
+      wbtcSigner,
+      wbtcToken.address,
+      amountToSwapWad,
       FeeAmount.MEDIUM,
       '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
       '0xE592427A0AEce92De3Edee1F18E0157C05861564'
     );
 
-    const tokenToSwapBalanceAfter =
-      await tokenToSwapContract.balanceOf(signerAddress);
-    const wethBalanceAfter = await weth.balanceOf(signerAddress);
-    expect(tokenToSwapBalanceAfter.lt(tokenToSwapBalanceBefore)).to.be.true;
-    expect(wethBalanceAfter.gt(wethBalanceBefore)).to.be.true;
+    const tokenToSwapBalanceAfter = await getBalanceOfErc20(
+      wbtcSigner,
+      MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress
+    );
+    const wethBalanceAfter = await getBalanceOfErc20(
+      wbtcSigner,
+      MAINNET_CONFIG.WETH_ADDRESS
+    );
+    const amountToSwap = tokenChangeDecimals(amountToSwapWad, 18, 8);
+    const amountSpent = tokenToSwapBalanceBefore.sub(tokenToSwapBalanceAfter);
+    expect(
+      amountSpent.eq(amountToSwap),
+      'Amount spent should equal the amount to spend'
+    ).to.be.true;
+    expect(wethBalanceAfter.gt(wethBalanceBefore), 'User should gain WETH').to
+      .be.true;
   });
 });

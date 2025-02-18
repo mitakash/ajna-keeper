@@ -20,19 +20,7 @@ import { BigNumber, Contract, ethers, Signer } from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
 import { NonceTracker } from './nonce';
-import { weiToDecimaled } from './utils';
-
-interface UniswapType {
-  getPoolInfo: any;
-  swapToWETH?: (
-    signer: Signer,
-    tokenToSwap: string,
-    amount: BigNumber,
-    feeAmount: FeeAmount,
-    wethAddress: string,
-    uniswapV3Router: string
-  ) => Promise<void>;
-}
+import { tokenChangeDecimals, weiToDecimaled } from './utils';
 
 interface PoolInfo {
   sqrtPriceX96: BigNumber;
@@ -40,7 +28,10 @@ interface PoolInfo {
   tick: number;
 }
 
-let Uniswap: UniswapType;
+const Uniswap = {
+  getPoolInfo,
+  swapToWeth,
+};
 
 export async function getPoolInfo(poolContract: Contract): Promise<PoolInfo> {
   const [liquidity, slot0] = await Promise.all([
@@ -55,16 +46,16 @@ export async function getPoolInfo(poolContract: Contract): Promise<PoolInfo> {
   };
 }
 
-export async function swapToWETH(
+export async function swapToWeth(
   signer: Signer,
   tokenToSwap: string,
-  amount: BigNumber,
+  amountWad: BigNumber,
   feeAmount: FeeAmount,
   wethAddress: string,
   uniswapV3Router: string
 ) {
-  if (!signer || !tokenToSwap || !amount || !feeAmount || !wethAddress) {
-    throw new Error('Invalid parameters provided to swapToWETH');
+  if (!signer || !tokenToSwap || !amountWad || !feeAmount || !wethAddress) {
+    throw new Error('Invalid parameters provided to swapToWeth');
   }
   const provider = signer.provider;
   if (!provider) {
@@ -87,6 +78,12 @@ export async function swapToWETH(
   ) {
     logger.warn(`Couldn't get token info`);
   }
+
+  const amount = tokenChangeDecimals(
+    amountWad,
+    18,
+    tokenToSwapContractDecimals
+  );
 
   let weth: Token;
   if (WETH9[chainId]) {
@@ -184,17 +181,16 @@ export async function swapToWETH(
 
   const route = new Route([pool], tokenToSwapToken, weth);
 
-  const quote = await pool.getOutputAmount(
-    CurrencyAmount.fromRawAmount(tokenToSwapToken, amount.toString())
+  const inputAmount = CurrencyAmount.fromRawAmount(
+    tokenToSwapToken,
+    amount.toString()
   );
+  const quote = await pool.getOutputAmount(inputAmount);
   const expectedOutputAmount = quote[0];
 
   const trade = Trade.createUncheckedTrade({
     route,
-    inputAmount: CurrencyAmount.fromRawAmount(
-      tokenToSwapToken,
-      amount.toString()
-    ),
+    inputAmount,
     outputAmount: expectedOutputAmount,
     tradeType: TradeType.EXACT_INPUT,
   });
@@ -247,7 +243,4 @@ export async function swapToWETH(
   }
 }
 
-export default Uniswap = {
-  getPoolInfo,
-  swapToWETH,
-};
+export default Uniswap;

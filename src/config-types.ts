@@ -110,7 +110,7 @@ interface CollectLpRewardSettings {
   /** If true, will exchange LP rewards with Uniswap. */
   shouldExchangeRewardsToWeth?: boolean;
   /** The fee amount to use when exchanging LP rewards. */
-  exchangeRewardsFeeAmount?: FeeAmount,
+  exchangeRewardsFeeAmount?: FeeAmount;
 }
 
 export interface PoolConfig {

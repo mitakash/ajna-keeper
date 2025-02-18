@@ -1,10 +1,8 @@
 import {
   AjnaConfigParams,
-  KickSettings,
   PoolConfig,
   PriceOrigin,
   PriceOriginSource,
-  TakeSettings,
 } from '../config-types';
 import { RequireFields } from '../utils';
 
@@ -17,6 +15,7 @@ export const USER1_MNEMONIC =
 export const MAINNET_CONFIG = {
   BLOCK_NUMBER: 21731352,
   WETH_ADDRESS: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
+  UNISWAP_V3_ROUTER: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
   AJNA_CONFIG: {
     erc20PoolFactory: '0x6146DD43C5622bB6D12A5240ab9CF4de14eDC625',
     erc721PoolFactory: '0x27461199d3b7381De66a85D685828E967E35AF4c',

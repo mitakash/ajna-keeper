@@ -11,6 +11,7 @@ import { handleArbTakes } from './take';
 import { collectBondFromPool } from './collect-bond';
 import { LpCollector } from './collect-lp';
 import { logger } from './logging';
+import { ExchangeTracker } from './exchange-tracker';
 
 type PoolMap = Map<string, FungiblePool>;
 
@@ -136,10 +137,17 @@ async function collectLpRewardsLoop({
 }: KeepPoolParams) {
   const poolsWithCollectLpSettings = config.pools.filter(hasCollectLpSettings);
   const lpCollectors: Map<string, LpCollector> = new Map();
+  const exchangeTracker = new ExchangeTracker(signer, config);
 
   for (const poolConfig of poolsWithCollectLpSettings) {
     const pool = poolMap.get(poolConfig.address)!;
-    const collector = new LpCollector(pool, signer, poolConfig, config);
+    const collector = new LpCollector(
+      pool,
+      signer,
+      poolConfig,
+      config,
+      exchangeTracker
+    );
     lpCollectors.set(poolConfig.address, collector);
     await collector.startSubscription();
   }
@@ -158,6 +166,7 @@ async function collectLpRewardsLoop({
         );
       }
     }
+    await exchangeTracker.exchangeAllTokens();
     await delay(config.delayBetweenRuns);
   }
 }

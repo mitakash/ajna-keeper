@@ -25,6 +25,7 @@ import {
   increaseTime,
   resetHardhat,
 } from './test-utils';
+import { ExchangeTracker } from '../exchange-tracker';
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -84,7 +85,12 @@ describe('LpCollector subscription', () => {
           minAmount: 0,
         },
       },
-      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
+      {},
+      new ExchangeTracker(signer, {
+        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        delayBetweenActions: 0,
+      })
     );
     await lpCollector.startSubscription();
     await handleArbTakes({
@@ -118,7 +124,12 @@ describe('LpCollector subscription', () => {
           minAmount: 0,
         },
       },
-      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
+      {},
+      new ExchangeTracker(wallet, {
+        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        delayBetweenActions: 0,
+      })
     );
     await lpCollector.startSubscription();
     const takerSigner = await impersonateSigner(
@@ -154,7 +165,12 @@ describe('LpCollector subscription', () => {
           minAmount: 0,
         },
       },
-      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
+      {},
+      new ExchangeTracker(kickerSigner, {
+        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        delayBetweenActions: 0,
+      })
     );
     await lpCollector.startSubscription();
     await delay(5);
@@ -200,7 +216,12 @@ describe('LpCollector collections', () => {
           minAmount: 0,
         },
       },
-      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
+      {},
+      new ExchangeTracker(signer, {
+        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        delayBetweenActions: 0,
+      })
     );
     await lpCollector.startSubscription();
     await handleArbTakes({

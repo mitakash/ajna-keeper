@@ -81,7 +81,7 @@ describe('getPoolInfo', () => {
   });
 });
 
-describe('swapToWETH', () => {
+describe('swapToWeth', () => {
   const mockProvider = new providers.JsonRpcProvider();
   let mockSigner: CustomSigner;
   let mockSwapRouter: CustomContract;
@@ -110,7 +110,6 @@ describe('swapToWETH', () => {
     ]);
 
     sinon.stub(mockSwapRouter, 'connect').returns(mockSwapRouter);
-
   });
 
   afterEach(() => {
@@ -119,7 +118,7 @@ describe('swapToWETH', () => {
 
   it('should throw an error for invalid parameters', async function () {
     await expect(
-      Uniswap.swapToWETH(
+      Uniswap.swapToWeth(
         null as any,
         '',
         ethers.utils.parseUnits('100', 8),
@@ -127,7 +126,7 @@ describe('swapToWETH', () => {
         '',
         ''
       )
-    ).to.be.rejectedWith('Invalid parameters provided to swapToWETH');
+    ).to.be.rejectedWith('Invalid parameters provided to swapToWeth');
   });
 
   it('should throw an error if signer does not have a provider', async function () {
@@ -135,7 +134,7 @@ describe('swapToWETH', () => {
     const invalidSigner = {
       getAddress: sinon.stub().resolves('0xMock'),
     } as unknown as Signer;
-    await Uniswap.swapToWETH(
+    await Uniswap.swapToWeth(
       invalidSigner,
       '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
       ethers.utils.parseUnits('100', 8),

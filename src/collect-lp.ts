@@ -19,8 +19,9 @@ import {
   bucketRemoveCollateralToken,
   bucketRemoveQuoteToken,
 } from './transactions';
-import { swapToWETH } from './uniswap';
+import { swapToWeth } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
+import { ExchangeTracker } from './exchange-tracker';
 
 /**
  * Collects lp rewarded from BucketTakes without collecting the user's deposits or loans.
@@ -37,7 +38,8 @@ export class LpCollector {
     private pool: FungiblePool,
     private signer: Signer,
     private poolConfig: Required<Pick<PoolConfig, 'collectLpReward'>>,
-    private config: Pick<KeeperConfig, 'dryRun' | 'wethAddress' | 'uniswapV3Router'>
+    private config: Pick<KeeperConfig, 'dryRun'>,
+    private exchangeTracker: ExchangeTracker
   ) {
     const poolContract = ERC20Pool__factory.connect(
       this.pool.poolAddress,
@@ -124,17 +126,11 @@ export class LpCollector {
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
 
-            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount && this.config.wethAddress && this.config.uniswapV3Router) {
-              const tokenCollected = this.pool.quoteAddress;
-              const amountCollected = quoteToWithdraw;
-
-              await swapToWETH(
-                this.signer,
-                tokenCollected,
-                amountCollected,
-                exchangeRewardsFeeAmount,
-                this.config.wethAddress,
-                this.config.uniswapV3Router,
+            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount) {
+              this.exchangeTracker.addTokenToBeExchanged(
+                this.pool.quoteAddress,
+                quoteToWithdraw,
+                exchangeRewardsFeeAmount
               );
             }
 
@@ -169,17 +165,11 @@ export class LpCollector {
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
 
-            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount && this.config.wethAddress && this.config.uniswapV3Router) {
-              const tokenCollected = this.pool.collateralAddress;
-              const amountCollected = collateralToWithdraw;
-
-              await swapToWETH(
-                this.signer,
-                tokenCollected,
-                amountCollected,
-                exchangeRewardsFeeAmount,
-                this.config.wethAddress,
-                this.config.uniswapV3Router,
+            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount) {
+              this.exchangeTracker.addTokenToBeExchanged(
+                this.pool.collateralAddress,
+                collateralToWithdraw,
+                exchangeRewardsFeeAmount
               );
             }
 
