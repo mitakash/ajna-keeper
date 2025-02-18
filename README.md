@@ -140,6 +140,9 @@ If the price source only has quote token priced in collateral, you may add `"inv
 
 ## Testing
 
+Follow instructions for [Installation and Prequisites](#installation-and-prerequisites).
+Then [get your alchemy API token](#installation-and-prerequisites) and [your Goingecko API token](#installation-and-prerequisites).
+
 ### Add Alchemy API key and Coingecko API to .env
 
 Add your alchemy API key and coingecko API key to .env
