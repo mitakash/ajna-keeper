@@ -16,6 +16,7 @@ import {
   tokenChangeDecimals,
   weiToDecimaled,
 } from './utils';
+import { poolKick, poolQuoteApprove } from './transactions';
 
 interface HandleKickParams {
   pool: FungiblePool;
@@ -178,8 +179,7 @@ async function approveBalanceForLoanToKick({
       logger.debug(
         `Approving quote. pool: ${pool.name}, amount: ${amountWithMargin}`
       );
-      const tx = await pool.quoteApprove(signer, amountWithMargin);
-      await tx.verifyAndSubmit();
+      await poolQuoteApprove(pool, signer, amountWithMargin);
       logger.debug(
         `Approved quote. pool: ${pool.name}, amount: ${amountWithMargin}`
       );
@@ -204,7 +204,7 @@ export async function kick({ pool, signer, config, loanToKick }: KickParams) {
   const { borrower, liquidationBond, limitPrice } = loanToKick;
 
   if (dryRun) {
-    logger.debug(
+    logger.info(
       `DryRun - Would kick loan - pool: ${pool.name}, borrower: ${borrower}`
     );
     return;
@@ -219,7 +219,7 @@ export async function kick({ pool, signer, config, loanToKick }: KickParams) {
 
     if (!bondApproved) {
       logger.info(
-        `Skipping kick of loan due to insufficient balance. pool: ${pool.name}, borrower: ${loanToKick.borrower}, bond: ${weiToDecimaled(liquidationBond)}`
+        `Failed to approve sufficient bond. Skipping kick of loan. pool: ${pool.name}, borrower: ${loanToKick.borrower}, bond: ${weiToDecimaled(liquidationBond)}`
       );
       return;
     }
@@ -229,8 +229,7 @@ export async function kick({ pool, signer, config, loanToKick }: KickParams) {
       limitPrice > 0
         ? pool.getBucketByPrice(decimaledToWei(limitPrice)).index
         : undefined;
-    const kickTx = await pool.kick(signer, borrower, limitIndex);
-    await kickTx.verifyAndSubmit();
+    await poolKick(pool, signer, borrower, limitIndex);
     logger.info(
       `Kick transaction confirmed. pool: ${pool.name}, borrower: ${borrower}`
     );
@@ -257,8 +256,7 @@ async function clearAllowances({
   if (allowance > BigNumber.from('0')) {
     try {
       logger.debug(`Clearing allowance. pool: ${pool.name}`);
-      const tx = await pool.quoteApprove(signer, BigNumber.from('0'));
-      await tx.verifyAndSubmit();
+      await poolQuoteApprove(pool, signer, BigNumber.from('0'));
       logger.debug(`Cleared allowance. pool: ${pool.name}`);
     } catch (error) {
       logger.error(`Failed to clear allowance. pool: ${pool.name}`, error);

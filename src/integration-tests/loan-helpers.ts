@@ -9,6 +9,7 @@ import {
   latestBlockTimestamp,
   setBalance,
 } from './test-utils';
+import { NonceTracker } from '../nonce';
 
 export const transferErc20 = async (
   signer: Signer,
@@ -41,6 +42,7 @@ export const depositQuoteToken = async ({
 
   const approveTx = await pool.quoteApprove(whaleSigner, amountBn);
   await approveTx.verifyAndSubmit();
+  await NonceTracker.getNonce(whaleSigner);
 
   const currTimestamp = await latestBlockTimestamp();
   const contract = new Contract(pool.poolAddress, Erc20PoolAbi, whaleSigner);
@@ -51,6 +53,7 @@ export const depositQuoteToken = async ({
     currTimestamp * 2
   );
   await addQuoteTx.verifyAndSubmit();
+  await NonceTracker.getNonce(whaleSigner);
 };
 
 interface DrawDebtParams {
@@ -72,8 +75,10 @@ export const drawDebt = async ({
 
   const qApproveTx = await pool.collateralApprove(signer, collateralAmt);
   await qApproveTx.verifyAndSubmit();
+  await NonceTracker.getNonce(signer);
 
   const borrowAmt = decimaledToWei(amountToBorrow);
   const drawTx = await pool.drawDebt(signer, borrowAmt, collateralAmt);
   await drawTx.verifyAndSubmit();
+  await NonceTracker.getNonce(signer);
 };

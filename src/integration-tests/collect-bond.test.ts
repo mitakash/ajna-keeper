@@ -25,6 +25,7 @@ import { depositQuoteToken, drawDebt } from './loan-helpers';
 import { collectBondFromPool } from '../collect-bond';
 import { handleKicks } from '../kick';
 import { handleArbTakes } from '../take';
+import { NonceTracker } from '../nonce';
 
 const getAmountWithdrawn = async (pool: FungiblePool, signer: Signer) => {
   const signerAddress = await signer.getAddress();
@@ -92,9 +93,7 @@ describe('collectBondFromPool', () => {
       config: {
         dryRun: false,
         subgraphUrl: '',
-        pricing: {
-          coinGeckoApiKey: '',
-        },
+        coinGeckoApiKey: '',
         delayBetweenActions: 0,
       },
     });
@@ -116,9 +115,7 @@ describe('collectBondFromPool', () => {
       config: {
         dryRun: false,
         subgraphUrl: '',
-        pricing: {
-          coinGeckoApiKey: '',
-        },
+        coinGeckoApiKey: '',
         delayBetweenActions: 0,
       },
     });
@@ -139,6 +136,7 @@ describe('collectBondFromPool', () => {
     );
     const settleTx = await liquidation.settle(signer);
     await settleTx.verifyAndSubmit();
+    await NonceTracker.getNonce(signer);
 
     await collectBondFromPool({ signer, pool, config: {} });
     const amtWithdrawn = await getAmountWithdrawn(pool, signer);

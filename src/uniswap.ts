@@ -19,6 +19,8 @@ import {
 import { BigNumber, Contract, ethers, Signer } from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
+import { NonceTracker } from './nonce';
+import { weiToDecimaled } from './utils';
 
 interface UniswapType {
   getPoolInfo: any;
@@ -106,23 +108,33 @@ export async function swapToWETH(
     tokenToSwapContractName
   );
 
-  try {
-    const currentAllowance = await tokenToSwapContract.allowance(
-      await signer.getAddress(),
-      uniswapV3Router
-    );
-    if (currentAllowance.lt(amount)) {
-      await (
-        await tokenToSwapContract.approve(uniswapV3Router, amount)
-      ).wait();
-      logger.info(`Approval successful for token ${tokenToSwapToken.symbol}`);
-    } else {
+  const signerAddress = await signer.getAddress();
+  const currentAllowance = await tokenToSwapContract.allowance(
+    signerAddress,
+    uniswapV3Router
+  );
+  if (currentAllowance.lt(amount)) {
+    try {
+      logger.debug(`Approving Uniswap for token: ${tokenToSwapToken.symbol}`);
+      const nonce = NonceTracker.getNonce(signer);
+      const tx = await tokenToSwapContract.approve(uniswapV3Router, amount, {
+        nonce,
+      });
+      await tx.wait();
       logger.info(
-        `Token ${tokenToSwapToken.symbol} already has sufficient allowance`
+        `Uniswap approval successful for token ${tokenToSwapToken.symbol}`
       );
+    } catch (error) {
+      logger.error(
+        `Failed to approve Uniswap swap for token: ${tokenToSwapToken.symbol}.`,
+        error
+      );
+      NonceTracker.resetNonce(signer, signerAddress);
     }
-  } catch (error) {
-    logger.error('Error approving transaction:', error);
+  } else {
+    logger.info(
+      `Token ${tokenToSwapToken.symbol} already has sufficient allowance`
+    );
   }
 
   const poolAddress = UniswapV3Pool.getAddress(
@@ -203,6 +215,10 @@ export async function swapToWETH(
   const currentBlockTimestamp = currentBlock.timestamp;
 
   try {
+    logger.debug(
+      `Swapping to WETH for token: ${tokenToSwapToken.symbol}, amount: ${weiToDecimaled(amount, tokenToSwapContractDecimals)}`
+    );
+    const nonce = NonceTracker.getNonce(signer);
     const tx = await swapRouter.exactInputSingle(
       {
         tokenIn: tokenToSwapToken.address,
@@ -213,16 +229,21 @@ export async function swapToWETH(
         amountIn: amount,
         amountOutMinimum: minOut,
         sqrtPriceLimitX96: ethers.constants.Zero,
-      }
+      },
+      { nonce }
     );
     await tx.wait();
-    logger.info(`Swap to WETH successful: ${tx.hash}`);
+    logger.info(
+      `Swap to WETH successful for token: ${tokenToSwapToken.symbol}, amount: ${weiToDecimaled(amount, tokenToSwapContractDecimals)}`
+    );
   } catch (swapError) {
     if (swapError instanceof Error) {
       logger.warn(`Swap to WETH failed: ${swapError.message}`);
     } else {
       logger.warn(`Swap to WETH failed: ${String(swapError)}`);
     }
+    const signerAddress = await signer.getAddress();
+    NonceTracker.resetNonce(signer, signerAddress);
   }
 }
 

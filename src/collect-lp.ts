@@ -15,6 +15,10 @@ import {
 import { BigNumber } from 'ethers';
 import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { logger } from './logging';
+import {
+  bucketRemoveCollateralToken,
+  bucketRemoveQuoteToken,
+} from './transactions';
 import { swapToWETH } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
 
@@ -115,11 +119,7 @@ export class LpCollector {
             logger.debug(
               `Collecting LP reward as quote. pool: ${this.pool.name}`
             );
-            const withdrawQuoteTx = await bucket.removeQuoteToken(
-              this.signer,
-              quoteToWithdraw
-            );
-            await withdrawQuoteTx.verifyAndSubmit();
+            await bucketRemoveQuoteToken(bucket, this.signer, quoteToWithdraw);
             logger.info(
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
@@ -160,11 +160,11 @@ export class LpCollector {
             logger.debug(
               `Collecting LP reward as collateral. pool ${this.pool.name}`
             );
-            const withdrawCollateralTx = await bucket.removeQuoteToken(
+            await bucketRemoveCollateralToken(
+              bucket,
               this.signer,
               collateralToWithdraw
             );
-            await withdrawCollateralTx.verifyAndSubmit();
             logger.info(
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
@@ -234,6 +234,9 @@ export class LpCollector {
     const bucketIndex = parseInt(index.toString());
     const prevReward = this.lpMap.get(bucketIndex) ?? BigNumber.from('0');
     const sumReward = prevReward.add(rewardLp);
+    logger.info(
+      `Received LP Rewards in pool: ${this.pool.name}, bucketIndex: ${index}, rewardLp: ${rewardLp}`
+    );
     this.lpMap.set(bucketIndex, sumReward);
   }
 

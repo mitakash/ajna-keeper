@@ -1,8 +1,9 @@
-import { FungiblePool, Signer } from '@ajna-finance/sdk';
+import { FungiblePool, Signer, WrappedTransaction } from '@ajna-finance/sdk';
 import { BigNumber } from 'ethers';
 import { KeeperConfig, PoolConfig } from './config-types';
 import { logger } from './logging';
 import { weiToDecimaled } from './utils';
+import { poolWithdrawBonds } from './transactions';
 
 interface CollectBondParams {
   pool: FungiblePool;
@@ -28,8 +29,7 @@ export async function collectBondFromPool({
         `Withdrawing bond. pool: ${pool.name}. bondSize: ${weiToDecimaled(claimable)}`
       );
       try {
-        const withdrawTx = await pool.withdrawBonds(signer);
-        await withdrawTx.verifyAndSubmit();
+        await poolWithdrawBonds(pool, signer);
         logger.info(
           `Withdrew bond. pool: ${pool.name}. bondSize: ${weiToDecimaled(claimable)}`
         );

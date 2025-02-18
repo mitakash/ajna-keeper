@@ -1,14 +1,6 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
 import { Token, WETH9 } from '@uniswap/sdk-core';
-import { expect } from 'chai';
-import { BigNumber, Wallet } from 'ethers';
-import { LpCollector } from '../collect-lp';
 import { configureAjna, TokenToCollect } from '../config-types';
-import { getBalanceOfErc20 } from '../erc20';
-import { handleKicks } from '../kick';
-import { handleArbTakes } from '../take';
-import { delay } from '../utils';
-import { depositQuoteToken, drawDebt } from './loan-helpers';
 import './subgraph-mock';
 import {
   makeGetLiquidationsFromSdk,
@@ -16,13 +8,22 @@ import {
   overrideGetLiquidations,
   overrideGetLoans,
 } from './subgraph-mock';
+import { expect } from 'chai';
+import { delay } from '../utils';
+import { depositQuoteToken, drawDebt } from './loan-helpers';
+import { handleKicks } from '../kick';
+import { handleArbTakes } from '../take';
+import { LpCollector } from '../collect-lp';
+import { BigNumber, Wallet } from 'ethers';
+import { waitForConditionToBeTrue } from '../utils';
+import { getBalanceOfErc20 } from '../erc20';
+import { NonceTracker } from '../nonce';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import {
   getProvider,
   impersonateSigner,
   increaseTime,
   resetHardhat,
-  waitForConditionToBeTrue,
 } from './test-utils';
 
 const setup = async () => {
@@ -56,9 +57,7 @@ const setup = async () => {
     config: {
       dryRun: false,
       subgraphUrl: '',
-      pricing: {
-        coinGeckoApiKey: '',
-      },
+      coinGeckoApiKey: '',
       delayBetweenActions: 0,
     },
   });
@@ -85,7 +84,7 @@ describe('LpCollector subscription', () => {
           minAmount: 0,
         },
       },
-      {}
+      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
     );
     await lpCollector.startSubscription();
     await handleArbTakes({
@@ -119,7 +118,7 @@ describe('LpCollector subscription', () => {
           minAmount: 0,
         },
       },
-      {}
+      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
     );
     await lpCollector.startSubscription();
     const takerSigner = await impersonateSigner(
@@ -155,7 +154,7 @@ describe('LpCollector subscription', () => {
           minAmount: 0,
         },
       },
-      {}
+      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
     );
     await lpCollector.startSubscription();
     await delay(5);
@@ -201,7 +200,7 @@ describe('LpCollector collections', () => {
           minAmount: 0,
         },
       },
-      {}
+      { wethAddress: MAINNET_CONFIG.WETH_ADDRESS }
     );
     await lpCollector.startSubscription();
     await handleArbTakes({
@@ -224,6 +223,7 @@ describe('LpCollector collections', () => {
     );
     const settleTx = await liquidation.settle(signer);
     await settleTx.verifyAndSubmit();
+    await NonceTracker.getNonce(signer);
 
     const balanceBeforeCollection = await getBalanceOfErc20(
       signer,

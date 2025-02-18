@@ -148,6 +148,27 @@ export async function arrayFromAsync<T>(
   return result;
 }
 
+/**
+ *
+ * @param fn Function which should resolve a true value eventually.
+ * @param pollingInterval Time between function checks in seconds.
+ * @param timeout Time until timeout in seconds.
+ */
+export const waitForConditionToBeTrue = async (
+  fn: () => Promise<boolean>,
+  pollingIntervalSeconds: number = 0.2,
+  timeoutSeconds: number = 40
+) => {
+  const startTime = Date.now();
+  while (!(await fn())) {
+    const timeWaited = (Date.now() - startTime) / 1000;
+    if (timeWaited > timeoutSeconds) {
+      throw new Error('Timed out before condition became true.');
+    }
+    await delay(pollingIntervalSeconds);
+  }
+};
+
 export default Utils = {
   addAccountFromKeystore,
   getProviderAndSigner,

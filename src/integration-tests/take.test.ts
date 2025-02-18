@@ -49,9 +49,7 @@ const setup = async () => {
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
       config: {
         subgraphUrl: '',
-        pricing: {
-          coinGeckoApiKey: '',
-        },
+        coinGeckoApiKey: '',
       },
     })
   );

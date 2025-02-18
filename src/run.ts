@@ -59,13 +59,17 @@ async function kickPoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
   while (true) {
     for (const poolConfig of poolsWithKickSettings) {
       const pool = poolMap.get(poolConfig.address)!;
-      await handleKicks({
-        pool,
-        poolConfig,
-        signer,
-        config,
-      });
-      await delay(config.delayBetweenActions);
+      try {
+        await handleKicks({
+          pool,
+          poolConfig,
+          signer,
+          config,
+        });
+        await delay(config.delayBetweenActions);
+      } catch (error) {
+        logger.error(`Failed to handle kicks for pool: ${pool.name}.`, error);
+      }
     }
     await delay(config.delayBetweenRuns);
   }
@@ -82,13 +86,20 @@ async function arbTakePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
   while (true) {
     for (const poolConfig of poolsWithTakeSettings) {
       const pool = poolMap.get(poolConfig.address)!;
-      await handleArbTakes({
-        pool,
-        poolConfig,
-        signer,
-        config,
-      });
-      await delay(config.delayBetweenActions);
+      try {
+        await handleArbTakes({
+          pool,
+          poolConfig,
+          signer,
+          config,
+        });
+        await delay(config.delayBetweenActions);
+      } catch (error) {
+        logger.error(
+          `Failed to handle arb take for pool: ${pool.name}.`,
+          error
+        );
+      }
     }
     await delay(config.delayBetweenRuns);
   }
@@ -107,8 +118,12 @@ async function collectBondLoop({ poolMap, config, signer }: KeepPoolParams) {
   while (true) {
     for (const poolConfig of poolsWithCollectBondSettings) {
       const pool = poolMap.get(poolConfig.address)!;
-      await collectBondFromPool({ pool, signer, config });
-      await delay(config.delayBetweenActions);
+      try {
+        await collectBondFromPool({ pool, signer, config });
+        await delay(config.delayBetweenActions);
+      } catch (error) {
+        logger.error(`Failed to collect bond from pool: ${pool.name}.`, error);
+      }
     }
     await delay(config.delayBetweenRuns);
   }
@@ -131,10 +146,17 @@ async function collectLpRewardsLoop({
 
   while (true) {
     for (const poolConfig of poolsWithCollectLpSettings) {
-      const pool = poolMap.get(poolConfig.address)!;
       const collector = lpCollectors.get(poolConfig.address)!;
-      await collector.collectLpRewards();
-      await delay(config.delayBetweenActions);
+      try {
+        await collector.collectLpRewards();
+        await delay(config.delayBetweenActions);
+      } catch (error) {
+        const pool = poolMap.get(poolConfig.address)!;
+        logger.error(
+          `Failed to collect LP reward from pool: ${pool.name}.`,
+          error
+        );
+      }
     }
     await delay(config.delayBetweenRuns);
   }
