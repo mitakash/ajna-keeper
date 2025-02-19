@@ -29,14 +29,14 @@ export class NonceTracker {
   public async getNonce(signer: Signer): Promise<number> {
     const address = await signer.getAddress();
     if (!this.nonces.get(address)) {
-      await this.resetNonce(signer, address);
+      this.resetNonce(signer, address);
     }
     const currNonce = this.nonces.get(address)!;
     this.nonces.set(address, incrementNonce(currNonce));
     return currNonce;
   }
 
-  public async resetNonce(signer: Signer, address: string) {
+  public resetNonce(signer: Signer, address: string) {
     this.nonces.set(address, signer.getTransactionCount('pending'));
   }
 }

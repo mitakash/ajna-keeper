@@ -13,8 +13,6 @@ const config: KeeperConfig = {
     'https://api.studio.thegraph.com/query/49479/ajna-base/version/latest',
   keeperKeystore: '/home/anon/keystore-files/keeper-keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
-  wethAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-  uniswapV3Router: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
   multicallBlock: 5022,
   delayBetweenRuns: 15,
   delayBetweenActions: 1,
@@ -41,6 +39,10 @@ const config: KeeperConfig = {
         minDebt: 0.07,
         priceFactor: 0.9,
       },
+      take: {
+        minCollateral: 0.01,
+        priceFactor: 0.9,
+      },
       collectBond: true,
       collectLpReward: {
         redeemAs: TokenToCollect.QUOTE,
@@ -60,6 +62,10 @@ const config: KeeperConfig = {
         minDebt: 50,
         priceFactor: 0.95,
       },
+      take: {
+        minCollateral: 0.01,
+        priceFactor: 0.9,
+      },
       collectBond: true,
       collectLpReward: {
         redeemAs: TokenToCollect.COLLATERAL,
@@ -76,6 +82,10 @@ const config: KeeperConfig = {
       kick: {
         minDebt: 0.08,
         priceFactor: 0.95,
+      },
+      take: {
+        minCollateral: 0.01,
+        priceFactor: 0.9,
       },
       collectBond: true,
       collectLpReward: {

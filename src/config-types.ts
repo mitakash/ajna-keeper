@@ -3,6 +3,8 @@ import path from 'path';
 import { Config, Address } from '@ajna-finance/sdk';
 import { FeeAmount } from '@uniswap/v3-sdk';
 import { logger } from './logging';
+import { getUniswapV3RouterAddress, getWethToken } from './uniswap';
+import { JsonRpcProvider } from './provider';
 
 export interface AjnaConfigParams {
   erc20PoolFactory: Address;
@@ -141,9 +143,9 @@ export interface KeeperConfig {
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */
   multicallAddress?: string;
   /** The address of the WETH token. */
-  wethAddress: string;
+  wethAddress?: string;
   /** Uniswap V3 router address */
-  uniswapV3Router: string;
+  uniswapV3Router?: string;
   /** The block at which the multicall contract was deployed. Use this only if you have used multicallAddress. */
   multicallBlock?: number;
   /** Contract addresses passed to Ajna for this chain. See here for addresses https://faqs.ajna.finance/info/deployment-addresses-and-bridges */
@@ -167,6 +169,7 @@ export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
       const fileContents = await fs.readFile(absolutePath, 'utf-8');
       const parsedFile = JSON.parse(fileContents);
       assertIsValidConfig(parsedFile);
+      await validateUniswapAddresses(parsedFile);
       return parsedFile;
     }
   } catch (error) {
@@ -203,4 +206,17 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
     ajnaConfig.burnWrapper ?? '',
     ajnaConfig.lenderHelper ?? ''
   );
+}
+
+/** Throws error if it cannot find the UniswapV3Router and WETH9 token from uniswap's built in addresses or from the KeeperConfig. */
+async function validateUniswapAddresses(config: KeeperConfig) {
+  const poolsWithExchangeToWeth = config.pools.filter((poolConfig) => {
+    !!poolConfig.collectLpReward?.shouldExchangeRewardsToWeth;
+  });
+  if (poolsWithExchangeToWeth.length > 0) {
+    const provider = new JsonRpcProvider(config.ethRpcUrl);
+    const { chainId } = await provider.getNetwork();
+    getUniswapV3RouterAddress(chainId, config.uniswapV3Router);
+    await getWethToken(chainId, provider, config.wethAddress);
+  }
 }

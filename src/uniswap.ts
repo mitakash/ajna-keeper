@@ -1,6 +1,7 @@
 import {
   CurrencyAmount,
   Percent,
+  SWAP_ROUTER_02_ADDRESSES,
   Token,
   TradeType,
   WETH9,
@@ -16,11 +17,12 @@ import {
   Trade,
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
-import { BigNumber, Contract, ethers, Signer } from 'ethers';
+import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
 import { NonceTracker } from './nonce';
 import { tokenChangeDecimals, weiToDecimaled } from './utils';
+import { approveErc20, getAllowanceOfErc20 } from './erc20';
 
 interface PoolInfo {
   sqrtPriceX96: BigNumber;
@@ -46,96 +48,121 @@ export async function getPoolInfo(poolContract: Contract): Promise<PoolInfo> {
   };
 }
 
+export function getUniswapV3RouterAddress(
+  chainId: number,
+  overrideAddress?: string
+) {
+  const uniswapV3Router = SWAP_ROUTER_02_ADDRESSES(chainId);
+  if (!uniswapV3Router) {
+    if (!!overrideAddress) {
+      return overrideAddress;
+    }
+    throw new Error(
+      'You must provide an address in the config for uniswapV3Router.'
+    );
+  }
+  return uniswapV3Router;
+}
+
+export async function getWethToken(
+  chainId: number,
+  provider: providers.Provider,
+  overrideAddress?: string
+) {
+  if (WETH9[chainId]) {
+    return WETH9[chainId];
+  } else {
+    if (overrideAddress) {
+      return await getTokenFromAddress(chainId, provider, overrideAddress);
+    } else {
+      throw new Error(
+        'You must provide and address in the config for wethAddress.'
+      );
+    }
+  }
+}
+
+export async function getTokenFromAddress(
+  chainId: number,
+  provider: providers.Provider,
+  tokenAddress: string
+) {
+  const contract = new Contract(tokenAddress, ERC20_ABI, provider);
+  const [symbol, name, decimals] = await Promise.all([
+    contract.symbol(),
+    contract.name(),
+    contract.decimals(),
+  ]);
+  if (!decimals) {
+    throw new Error(
+      `Could not get details for token at address: ${tokenAddress}`
+    );
+  }
+  return new Token(chainId, tokenAddress, decimals, symbol, name);
+}
+
 export async function swapToWeth(
   signer: Signer,
-  tokenToSwap: string,
+  tokenAddress: string,
   amountWad: BigNumber,
   feeAmount: FeeAmount,
-  wethAddress: string,
-  uniswapV3Router: string
+  wethAddress?: string,
+  uniswapV3Router?: string
 ) {
-  if (!signer || !tokenToSwap || !amountWad || !feeAmount || !wethAddress) {
+  if (!signer || !tokenAddress || !amountWad || !feeAmount || !wethAddress) {
     throw new Error('Invalid parameters provided to swapToWeth');
   }
   const provider = signer.provider;
   if (!provider) {
-    logger.warn('No provider available, skipping swap');
-    return;
+    throw new Error('No provider available, skipping swap');
   }
 
   const network = await provider.getNetwork();
   const chainId = network.chainId;
 
-  const tokenToSwapContract = new Contract(tokenToSwap, ERC20_ABI, signer);
-  const tokenToSwapContractSymbol = await tokenToSwapContract.symbol();
-  const tokenToSwapContractName = await tokenToSwapContract.name();
-  const tokenToSwapContractDecimals = await tokenToSwapContract.decimals();
+  const tokenToSwap = await getTokenFromAddress(
+    chainId,
+    provider,
+    tokenAddress
+  );
+  const weth = await getWethToken(chainId, provider, wethAddress);
+  uniswapV3Router = getUniswapV3RouterAddress(chainId, uniswapV3Router);
+
+  const amount = tokenChangeDecimals(amountWad, 18, tokenToSwap.decimals);
 
   if (
-    !tokenToSwapContractSymbol ||
-    !tokenToSwapContractName ||
-    !tokenToSwapContractDecimals
+    tokenToSwap.symbol === weth.symbol ||
+    tokenToSwap.address === weth.address
   ) {
-    logger.warn(`Couldn't get token info`);
-  }
-
-  const amount = tokenChangeDecimals(
-    amountWad,
-    18,
-    tokenToSwapContractDecimals
-  );
-
-  let weth: Token;
-  if (WETH9[chainId]) {
-    weth = WETH9[chainId];
-  } else {
-    weth = new Token(chainId, wethAddress, 18, 'WETH', 'Wrapped Ether');
-  }
-
-  if (tokenToSwapContractSymbol.toLowerCase() === 'weth') {
     logger.info('Collected tokens are already WETH, no swap necessary');
     return;
   }
 
-  const tokenToSwapToken = new Token(
-    chainId,
-    tokenToSwap,
-    tokenToSwapContractDecimals,
-    tokenToSwapContractSymbol,
-    tokenToSwapContractName
-  );
-
-  const signerAddress = await signer.getAddress();
-  const currentAllowance = await tokenToSwapContract.allowance(
-    signerAddress,
+  const currentAllowance = await getAllowanceOfErc20(
+    signer,
+    tokenAddress,
     uniswapV3Router
   );
   if (currentAllowance.lt(amount)) {
     try {
-      logger.debug(`Approving Uniswap for token: ${tokenToSwapToken.symbol}`);
-      const nonce = NonceTracker.getNonce(signer);
-      const tx = await tokenToSwapContract.approve(uniswapV3Router, amount, {
-        nonce,
-      });
-      await tx.wait();
+      logger.debug(`Approving Uniswap for token: ${tokenToSwap.symbol}`);
+      await approveErc20(signer, tokenAddress, uniswapV3Router, amount);
       logger.info(
-        `Uniswap approval successful for token ${tokenToSwapToken.symbol}`
+        `Uniswap approval successful for token ${tokenToSwap.symbol}`
       );
     } catch (error) {
       logger.error(
-        `Failed to approve Uniswap swap for token: ${tokenToSwapToken.symbol}.`,
+        `Failed to approve Uniswap swap for token: ${tokenToSwap.symbol}.`,
         error
       );
-      NonceTracker.resetNonce(signer, signerAddress);
+      throw error;
     }
   } else {
-    logger.info(
-      `Token ${tokenToSwapToken.symbol} already has sufficient allowance`
-    );
+    logger.info(`Token ${tokenToSwap.symbol} already has sufficient allowance`);
   }
 
   const poolAddress = UniswapV3Pool.getAddress(
-    tokenToSwapToken,
+    tokenToSwap,
     weth,
     FeeAmount.MEDIUM
   );
@@ -150,7 +177,7 @@ export async function swapToWeth(
     await poolContract.slot0();
   } catch {
     logger.info(
-      `Pool does not exist for ${tokenToSwapToken.symbol}/${weth.symbol}, skipping swap`
+      `Pool does not exist for ${tokenToSwap.symbol}/${weth.symbol}, skipping swap`
     );
     return;
   }
@@ -170,7 +197,7 @@ export async function swapToWeth(
   const sqrtPriceX96 = TickMath.getSqrtRatioAtTick(roundTick);
 
   const pool = new UniswapV3Pool(
-    tokenToSwapToken,
+    tokenToSwap,
     weth,
     feeAmount,
     sqrtPriceX96.toString(),
@@ -179,10 +206,10 @@ export async function swapToWeth(
     tickDataProvider
   );
 
-  const route = new Route([pool], tokenToSwapToken, weth);
+  const route = new Route([pool], tokenToSwap, weth);
 
   const inputAmount = CurrencyAmount.fromRawAmount(
-    tokenToSwapToken,
+    tokenToSwap,
     amount.toString()
   );
   const quote = await pool.getOutputAmount(inputAmount);
@@ -210,14 +237,15 @@ export async function swapToWeth(
   const currentBlock = await provider.getBlock('latest');
   const currentBlockTimestamp = currentBlock.timestamp;
 
+  const signerAddress = await signer.getAddress();
   try {
     logger.debug(
-      `Swapping to WETH for token: ${tokenToSwapToken.symbol}, amount: ${weiToDecimaled(amount, tokenToSwapContractDecimals)}`
+      `Swapping to WETH for token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, tokenToSwap.decimals)}`
     );
     const nonce = NonceTracker.getNonce(signer);
     const tx = await swapRouter.exactInputSingle(
       {
-        tokenIn: tokenToSwapToken.address,
+        tokenIn: tokenToSwap.address,
         tokenOut: weth.address,
         fee: feeAmount,
         recipient: recipient,
@@ -230,16 +258,12 @@ export async function swapToWeth(
     );
     await tx.wait();
     logger.info(
-      `Swap to WETH successful for token: ${tokenToSwapToken.symbol}, amount: ${weiToDecimaled(amount, tokenToSwapContractDecimals)}`
+      `Swap to WETH successful for token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, tokenToSwap.decimals)}`
     );
-  } catch (swapError) {
-    if (swapError instanceof Error) {
-      logger.warn(`Swap to WETH failed: ${swapError.message}`);
-    } else {
-      logger.warn(`Swap to WETH failed: ${String(swapError)}`);
-    }
-    const signerAddress = await signer.getAddress();
+  } catch (error) {
+    logger.error(`Swap to WETH failed for token: ${tokenAddress}`, error);
     NonceTracker.resetNonce(signer, signerAddress);
+    throw error;
   }
 }
 
