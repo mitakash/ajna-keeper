@@ -21,7 +21,7 @@ import {
 } from './transactions';
 import { swapToWeth } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
-import { ExchangeTracker } from './exchange-tracker';
+import { RewardActionTracker } from './reward-action-tracker';
 
 /**
  * Collects lp rewarded from BucketTakes without collecting the user's deposits or loans.
@@ -39,7 +39,7 @@ export class LpCollector {
     private signer: Signer,
     private poolConfig: Required<Pick<PoolConfig, 'collectLpReward'>>,
     private config: Pick<KeeperConfig, 'dryRun'>,
-    private exchangeTracker: ExchangeTracker
+    private exchangeTracker: RewardActionTracker
   ) {
     const poolContract = ERC20Pool__factory.connect(
       this.pool.poolAddress,
@@ -95,12 +95,8 @@ export class LpCollector {
     bucketIndex: number,
     rewardLp: BigNumber
   ): Promise<BigNumber> {
-    const {
-      redeemAs,
-      minAmount,
-      shouldExchangeRewardsToWeth,
-      exchangeRewardsFeeAmount,
-    } = this.poolConfig.collectLpReward;
+    const { redeemAs, minAmount, rewardAction } =
+      this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
     const bucket = await this.pool.getBucketByIndex(bucketIndex);
     const { exchangeRate, collateral } = await bucket.getStatus();
@@ -126,11 +122,11 @@ export class LpCollector {
               `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
             );
 
-            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount) {
-              this.exchangeTracker.addTokenToBeExchanged(
+            if (rewardAction) {
+              this.exchangeTracker.addToken(
+                rewardAction,
                 this.pool.quoteAddress,
-                quoteToWithdraw,
-                exchangeRewardsFeeAmount
+                quoteToWithdraw
               );
             }
 
@@ -165,11 +161,11 @@ export class LpCollector {
               `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
             );
 
-            if (!!shouldExchangeRewardsToWeth && exchangeRewardsFeeAmount) {
-              this.exchangeTracker.addTokenToBeExchanged(
+            if (rewardAction) {
+              this.exchangeTracker.addToken(
+                rewardAction,
                 this.pool.collateralAddress,
-                collateralToWithdraw,
-                exchangeRewardsFeeAmount
+                collateralToWithdraw
               );
             }
 

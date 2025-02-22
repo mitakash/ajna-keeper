@@ -122,29 +122,24 @@ describe('swapToWeth', () => {
         null as any,
         '',
         ethers.utils.parseUnits('100', 8),
-        FeeAmount.MEDIUM,
-        '',
-        ''
+        FeeAmount.MEDIUM
       )
     ).to.be.rejectedWith('Invalid parameters provided to swapToWeth');
   });
 
-  it('should throw an error if signer does not have a provider', async function () {
-    const spyWarn = sinon.spy(logger, 'warn');
+  it('should throw an error if signer does not have a provider', async () => {
     const invalidSigner = {
       getAddress: sinon.stub().resolves('0xMock'),
     } as unknown as Signer;
-    await Uniswap.swapToWeth(
+    const swapWethPromise = Uniswap.swapToWeth(
       invalidSigner,
       '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C',
       ethers.utils.parseUnits('100', 8),
       FeeAmount.MEDIUM,
-      mockSwapRouter.address,
-      ''
+      { uniswapV3Router: mockSwapRouter.address }
     );
-    expect(spyWarn.calledOnce).to.be.true;
-    expect(
-      spyWarn.calledWith(sinon.match('No provider available, skipping swap'))
-    ).to.be.true;
+    expect(swapWethPromise).to.be.rejectedWith(
+      'No provider available, skipping swap'
+    );
   });
 });

@@ -25,7 +25,7 @@ import {
   increaseTime,
   resetHardhat,
 } from './test-utils';
-import { ExchangeTracker } from '../exchange-tracker';
+import { RewardActionTracker } from '../reward-action-tracker';
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -86,9 +86,11 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new ExchangeTracker(signer, {
-        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(signer, {
+        uniswapOverrides: {
+          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        },
         delayBetweenActions: 0,
       })
     );
@@ -125,9 +127,11 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new ExchangeTracker(wallet, {
-        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(wallet, {
+        uniswapOverrides: {
+          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        },
         delayBetweenActions: 0,
       })
     );
@@ -166,9 +170,11 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new ExchangeTracker(kickerSigner, {
-        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(kickerSigner, {
+        uniswapOverrides: {
+          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        },
         delayBetweenActions: 0,
       })
     );
@@ -217,9 +223,11 @@ describe('LpCollector collections', () => {
         },
       },
       {},
-      new ExchangeTracker(signer, {
-        wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-        uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(signer, {
+        uniswapOverrides: {
+          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+        },
         delayBetweenActions: 0,
       })
     );

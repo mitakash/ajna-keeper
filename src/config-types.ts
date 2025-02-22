@@ -3,7 +3,7 @@ import path from 'path';
 import { Config, Address } from '@ajna-finance/sdk';
 import { FeeAmount } from '@uniswap/v3-sdk';
 import { logger } from './logging';
-import { getUniswapV3RouterAddress, getWethToken } from './uniswap';
+import { getWethToken } from './uniswap';
 import { JsonRpcProvider } from './provider';
 
 export interface AjnaConfigParams {
@@ -104,15 +104,34 @@ export enum TokenToCollect {
   COLLATERAL = 'collateral',
 }
 
+export enum RewardActionLabel {
+  EXCHANGE_ON_UNISWAP = 'exchange_on_uniswap',
+  TRANSFER = 'transfer',
+}
+
+export interface ExchangeRewardOnUniswap {
+  /** If set to uniswap, swap any collected rewards on Uniswap V3. */
+  action: RewardActionLabel.EXCHANGE_ON_UNISWAP;
+  /** The fee amount to use when exchanging LP rewards on Uniswap. */
+  fee: FeeAmount;
+}
+
+export interface TransferReward {
+  /** If set to transfer, send any collected rewards to the wallet specified by "to". */
+  action: RewardActionLabel.TRANSFER;
+  /** Wallet to receive redeemed LP rewards. */
+  to: string;
+}
+
+export type RewardAction = ExchangeRewardOnUniswap | TransferReward;
+
 interface CollectLpRewardSettings {
   /** Wether to redeem LP as Quote or Collateral. */
   redeemAs: TokenToCollect;
   /** Minimum amount of token to collect. */
   minAmount: number;
-  /** If true, will exchange LP rewards with Uniswap. */
-  shouldExchangeRewardsToWeth?: boolean;
-  /** The fee amount to use when exchanging LP rewards. */
-  exchangeRewardsFeeAmount?: FeeAmount;
+  /** What to do with Collected LP Rewards. If unset will leave rewards in wallet. */
+  rewardAction?: ExchangeRewardOnUniswap | TransferReward;
 }
 
 export interface PoolConfig {
@@ -131,6 +150,13 @@ export interface PoolConfig {
   collectLpReward?: CollectLpRewardSettings;
 }
 
+export interface UniswapV3Overrides {
+  /** The address of the WETH token. */
+  wethAddress?: string;
+  /** Uniswap V3 router address */
+  uniswapV3Router?: string;
+}
+
 export interface KeeperConfig {
   /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
   ethRpcUrl: string;
@@ -142,17 +168,16 @@ export interface KeeperConfig {
   dryRun?: boolean;
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */
   multicallAddress?: string;
-  /** The address of the WETH token. */
-  wethAddress?: string;
-  /** Uniswap V3 router address */
-  uniswapV3Router?: string;
   /** The block at which the multicall contract was deployed. Use this only if you have used multicallAddress. */
   multicallBlock?: number;
   /** Contract addresses passed to Ajna for this chain. See here for addresses https://faqs.ajna.finance/info/deployment-addresses-and-bridges */
   ajna: AjnaConfigParams;
   /** Your API key for Coingecko.com */
   coinGeckoApiKey: string;
+  /** List of pool specific settings. */
   pools: PoolConfig[];
+  /** Custom address overrides for Uniswap. Only need this if any of the collectLpRewards have the RewardAction: uniswap. */
+  uniswapOverrides?: UniswapV3Overrides;
   /** The time between between actions within Kick or ArbTake loops. Higher values reduce load on network and prevent usage errors. */
   delayBetweenActions: number;
   /** The time between each run of the Kick and ArbTake loops. */
@@ -163,7 +188,9 @@ export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
   try {
     if (filePath.endsWith('.ts')) {
       const imported = await import('../' + filePath);
-      return imported.default;
+      const config = imported.default;
+      await validateUniswapAddresses(config);
+      return config;
     } else {
       const absolutePath = path.resolve(filePath);
       const fileContents = await fs.readFile(absolutePath, 'utf-8');
@@ -208,15 +235,23 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
   );
 }
 
-/** Throws error if it cannot find the UniswapV3Router and WETH9 token from uniswap's built in addresses or from the KeeperConfig. */
+/** Throws error if it cannot find the WETH9 token from uniswap's built in addresses or from the KeeperConfig. */
 async function validateUniswapAddresses(config: KeeperConfig) {
-  const poolsWithExchangeToWeth = config.pools.filter((poolConfig) => {
-    !!poolConfig.collectLpReward?.shouldExchangeRewardsToWeth;
-  });
+  const poolsWithExchangeToWeth = config.pools.filter(
+    (poolConfig) =>
+      poolConfig.collectLpReward?.rewardAction?.action ==
+      RewardActionLabel.EXCHANGE_ON_UNISWAP
+  );
   if (poolsWithExchangeToWeth.length > 0) {
     const provider = new JsonRpcProvider(config.ethRpcUrl);
     const { chainId } = await provider.getNetwork();
-    getUniswapV3RouterAddress(chainId, config.uniswapV3Router);
-    await getWethToken(chainId, provider, config.wethAddress);
+    const weth = await getWethToken(
+      chainId,
+      provider,
+      config.uniswapOverrides?.wethAddress
+    );
+    logger.info(
+      `Exchanging LP rewards to ${weth.symbol}, address: ${weth.address}`
+    );
   }
 }

@@ -67,3 +67,24 @@ export async function approveErc20(
     throw error;
   }
 }
+
+export async function transferErc20(
+  signer: Signer,
+  tokenAddress: string,
+  recipient: string,
+  amount: BigNumber
+) {
+  const signerAddress = await signer.getAddress();
+  try {
+    const nonce = NonceTracker.getNonce(signer);
+    const contractUnconnected = new Contract(tokenAddress, Erc20Abi, signer);
+    const contract = contractUnconnected.connect(signer);
+    const tx: TransactionResponse = await contract.transfer(recipient, amount, {
+      nonce,
+    });
+    return await tx.wait();
+  } catch (error) {
+    NonceTracker.resetNonce(signer, signerAddress);
+    throw error;
+  }
+}

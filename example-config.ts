@@ -3,6 +3,7 @@ import {
   KeeperConfig,
   PriceOriginPoolReference,
   PriceOriginSource,
+  RewardActionLabel,
   TokenToCollect,
 } from './src/config-types';
 
@@ -47,8 +48,10 @@ const config: KeeperConfig = {
       collectLpReward: {
         redeemAs: TokenToCollect.QUOTE,
         minAmount: 0.001,
-        shouldExchangeRewardsToWeth: false,
-        exchangeRewardsFeeAmount: FeeAmount.MEDIUM,
+        rewardAction: {
+          action: RewardActionLabel.EXCHANGE_ON_UNISWAP,
+          fee: FeeAmount.LOW,
+        },
       },
     },
     {
@@ -70,6 +73,10 @@ const config: KeeperConfig = {
       collectLpReward: {
         redeemAs: TokenToCollect.COLLATERAL,
         minAmount: 0.001,
+        // rewardAction: {
+        //   action: RewardActionLabel.TRANSFER,
+        //   to: '0x0000000000000000000000000000000000000000'
+        // }
       },
     },
     {
