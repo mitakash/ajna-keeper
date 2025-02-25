@@ -1,9 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { Config, Address } from '@ajna-finance/sdk';
-import { FeeAmount } from '@uniswap/v3-sdk';
 import { logger } from './logging';
-import { getWethToken } from './uniswap';
 import { JsonRpcProvider } from './provider';
 
 export interface AjnaConfigParams {
@@ -95,25 +93,13 @@ export interface CollectSettings {
   collectBonds: boolean;
 }
 
-interface DexConfig {
-  fee: FeeAmount;
-}
-
 export enum TokenToCollect {
   QUOTE = 'quote',
   COLLATERAL = 'collateral',
 }
 
 export enum RewardActionLabel {
-  EXCHANGE_ON_UNISWAP = 'exchange_on_uniswap',
   TRANSFER = 'transfer',
-}
-
-export interface ExchangeRewardOnUniswap {
-  /** If set to uniswap, swap any collected rewards on Uniswap V3. */
-  action: RewardActionLabel.EXCHANGE_ON_UNISWAP;
-  /** The fee amount to use when exchanging LP rewards on Uniswap. */
-  fee: FeeAmount;
 }
 
 export interface TransferReward {
@@ -123,7 +109,7 @@ export interface TransferReward {
   to: string;
 }
 
-export type RewardAction = ExchangeRewardOnUniswap | TransferReward;
+export type RewardAction = TransferReward;
 
 interface CollectLpRewardSettings {
   /** Wether to redeem LP as Quote or Collateral. */
@@ -131,7 +117,7 @@ interface CollectLpRewardSettings {
   /** Minimum amount of token to collect. */
   minAmount: number;
   /** What to do with Collected LP Rewards. If unset will leave rewards in wallet. */
-  rewardAction?: ExchangeRewardOnUniswap | TransferReward;
+  rewardAction?: RewardAction;
 }
 
 export interface PoolConfig {
@@ -142,19 +128,10 @@ export interface PoolConfig {
   kick?: KickSettings;
   /** Will only take if settings are provided. */
   take?: TakeSettings;
-  /** Only set this value if you want winnings sent to dex and traded for L2 token. */
-  dexSettings?: DexConfig;
   /** Will only collect bond if true.*/
   collectBond?: boolean;
   /** Will only collect reward if settings are provided. */
   collectLpReward?: CollectLpRewardSettings;
-}
-
-export interface UniswapV3Overrides {
-  /** The address of the WETH token. */
-  wethAddress?: string;
-  /** Uniswap V3 router address */
-  uniswapV3Router?: string;
 }
 
 export interface KeeperConfig {
@@ -176,8 +153,6 @@ export interface KeeperConfig {
   coinGeckoApiKey: string;
   /** List of pool specific settings. */
   pools: PoolConfig[];
-  /** Custom address overrides for Uniswap. Only need this if any of the collectLpRewards have the RewardAction: uniswap. */
-  uniswapOverrides?: UniswapV3Overrides;
   /** The time between between actions within Kick or ArbTake loops. Higher values reduce load on network and prevent usage errors. */
   delayBetweenActions: number;
   /** The time between each run of the Kick and ArbTake loops. */
@@ -189,14 +164,12 @@ export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
     if (filePath.endsWith('.ts')) {
       const imported = await import('../' + filePath);
       const config = imported.default;
-      await validateUniswapAddresses(config);
       return config;
     } else {
       const absolutePath = path.resolve(filePath);
       const fileContents = await fs.readFile(absolutePath, 'utf-8');
       const parsedFile = JSON.parse(fileContents);
       assertIsValidConfig(parsedFile);
-      await validateUniswapAddresses(parsedFile);
       return parsedFile;
     }
   } catch (error) {
@@ -233,25 +206,4 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
     ajnaConfig.burnWrapper ?? '',
     ajnaConfig.lenderHelper ?? ''
   );
-}
-
-/** Throws error if it cannot find the WETH9 token from uniswap's built in addresses or from the KeeperConfig. */
-async function validateUniswapAddresses(config: KeeperConfig) {
-  const poolsWithExchangeToWeth = config.pools.filter(
-    (poolConfig) =>
-      poolConfig.collectLpReward?.rewardAction?.action ==
-      RewardActionLabel.EXCHANGE_ON_UNISWAP
-  );
-  if (poolsWithExchangeToWeth.length > 0) {
-    const provider = new JsonRpcProvider(config.ethRpcUrl);
-    const { chainId } = await provider.getNetwork();
-    const weth = await getWethToken(
-      chainId,
-      provider,
-      config.uniswapOverrides?.wethAddress
-    );
-    logger.info(
-      `Exchanging LP rewards to ${weth.symbol}, address: ${weth.address}`
-    );
-  }
 }

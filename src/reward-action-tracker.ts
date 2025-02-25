@@ -1,16 +1,13 @@
 import { BigNumber, Signer } from 'ethers';
 import {
-  ExchangeRewardOnUniswap,
   KeeperConfig,
   RewardAction,
   RewardActionLabel,
   TransferReward,
 } from './config-types';
-import uniswap from './uniswap';
 import { logger } from './logging';
-import { delay, tokenChangeDecimals, weiToDecimaled } from './utils';
+import { tokenChangeDecimals, weiToDecimaled } from './utils';
 import { getDecimalsErc20, transferErc20 } from './erc20';
-import { FeeAmount } from '@uniswap/v3-sdk';
 
 export function deterministicJsonStringify(obj: any): string {
   // Note: this works fine as long as the object is not nested.
@@ -46,10 +43,7 @@ export class RewardActionTracker {
 
   constructor(
     private signer: Signer,
-    private config: Pick<
-      KeeperConfig,
-      'uniswapOverrides' | 'delayBetweenActions'
-    >
+    private config: Pick<KeeperConfig, 'delayBetweenActions'>
   ) {}
 
   async handleAllTokens() {
@@ -58,9 +52,7 @@ export class RewardActionTracker {
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
-      if (rewardAction.action == RewardActionLabel.EXCHANGE_ON_UNISWAP) {
-        await this.swapOnUniswap(rewardAction, token, amountWad);
-      } else if (rewardAction.action == RewardActionLabel.TRANSFER) {
+      if (rewardAction.action == RewardActionLabel.TRANSFER) {
         await this.transferReward(rewardAction, token, amountWad);
       }
     }
@@ -84,32 +76,6 @@ export class RewardActionTracker {
     const key = serializeRewardAction(rewardAction, tokenCollected);
     const currAmount = this.feeTokenAmountMap.get(key) ?? BigNumber.from('0');
     this.feeTokenAmountMap.set(key, currAmount.sub(amountWadToSub));
-  }
-
-  async swapOnUniswap(
-    rewardAction: ExchangeRewardOnUniswap,
-    token: string,
-    amountWad: BigNumber
-  ) {
-    try {
-      await uniswap.swapToWeth(
-        this.signer,
-        token,
-        amountWad,
-        rewardAction.fee,
-        this.config.uniswapOverrides
-      );
-      this.removeToken(rewardAction, token, amountWad);
-      logger.info(
-        `Successfully exchanged token on Uniswap. token: ${token}, fee: ${rewardAction.fee / 10000}%, amountWad: ${weiToDecimaled(amountWad)}`
-      );
-      await delay(this.config.delayBetweenActions);
-    } catch (error) {
-      logger.error(
-        `Failed to exchange token on Uniswap. token: ${token}, amountWad: ${weiToDecimaled(amountWad)}`,
-        error
-      );
-    }
   }
 
   async transferReward(

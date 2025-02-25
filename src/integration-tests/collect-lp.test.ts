@@ -1,5 +1,4 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
-import { Token, WETH9 } from '@uniswap/sdk-core';
 import { configureAjna, TokenToCollect } from '../config-types';
 import './subgraph-mock';
 import {
@@ -86,13 +85,7 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new RewardActionTracker(signer, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
-        },
-        delayBetweenActions: 0,
-      })
+      new RewardActionTracker(signer, { delayBetweenActions: 0 })
     );
     await lpCollector.startSubscription();
     await handleArbTakes({
@@ -127,13 +120,7 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new RewardActionTracker(wallet, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
-        },
-        delayBetweenActions: 0,
-      })
+      new RewardActionTracker(wallet, { delayBetweenActions: 0 })
     );
     await lpCollector.startSubscription();
     const takerSigner = await impersonateSigner(
@@ -170,13 +157,7 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new RewardActionTracker(kickerSigner, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
-        },
-        delayBetweenActions: 0,
-      })
+      new RewardActionTracker(kickerSigner, { delayBetweenActions: 0 })
     );
     await lpCollector.startSubscription();
     await delay(5);
@@ -223,13 +204,7 @@ describe('LpCollector collections', () => {
         },
       },
       {},
-      new RewardActionTracker(signer, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
-        },
-        delayBetweenActions: 0,
-      })
+      new RewardActionTracker(signer, { delayBetweenActions: 0 })
     );
     await lpCollector.startSubscription();
     await handleArbTakes({

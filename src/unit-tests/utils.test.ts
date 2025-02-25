@@ -1,6 +1,5 @@
 import { FungiblePool } from '@ajna-finance/sdk';
-import { promises as fs } from 'fs';
-import { expect } from 'chai';
+import { expect, use } from 'chai';
 import { BigNumber, providers, Wallet } from 'ethers';
 import { KeeperConfig } from '../config-types';
 import {
@@ -12,6 +11,9 @@ import {
 } from '../utils';
 import Utils from '../utils';
 import sinon from 'sinon';
+import chaiAsPromised from 'chai-as-promised';
+
+use(chaiAsPromised);
 
 const mockAddress = '0x123456abcabc123456abcabcd123456abcdabcd1';
 

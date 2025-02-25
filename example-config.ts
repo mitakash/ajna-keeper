@@ -1,4 +1,3 @@
-import { FeeAmount } from '@uniswap/v3-sdk';
 import {
   KeeperConfig,
   PriceOriginPoolReference,
@@ -49,8 +48,8 @@ const config: KeeperConfig = {
         redeemAs: TokenToCollect.QUOTE,
         minAmount: 0.001,
         rewardAction: {
-          action: RewardActionLabel.EXCHANGE_ON_UNISWAP,
-          fee: FeeAmount.LOW,
+          action: RewardActionLabel.TRANSFER,
+          to: '0x0000000000000000000000000000000000000000',
         },
       },
     },
@@ -73,10 +72,10 @@ const config: KeeperConfig = {
       collectLpReward: {
         redeemAs: TokenToCollect.COLLATERAL,
         minAmount: 0.001,
-        // rewardAction: {
-        //   action: RewardActionLabel.TRANSFER,
-        //   to: '0x0000000000000000000000000000000000000000'
-        // }
+        rewardAction: {
+          action: RewardActionLabel.TRANSFER,
+          to: '0x0000000000000000000000000000000000000000',
+        },
       },
     },
     {

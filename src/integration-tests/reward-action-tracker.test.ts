@@ -1,4 +1,3 @@
-import { FeeAmount } from '@uniswap/v3-sdk';
 import { RewardActionLabel } from '../config-types';
 import {
   getProvider,
@@ -8,7 +7,7 @@ import {
 } from './test-utils';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import { RewardActionTracker } from '../reward-action-tracker';
-import { decimaledToWei, weiToDecimaled } from '../utils';
+import { decimaledToWei } from '../utils';
 import { Wallet } from 'ethers';
 import { getBalanceOfErc20 } from '../erc20';
 import { expect } from 'chai';
@@ -27,16 +26,8 @@ describe('RewardActionTracker', () => {
       decimaledToWei(1000).toHexString()
     );
     const receiver = Wallet.fromMnemonic(USER1_MNEMONIC).connect(getProvider());
-    const wethAddress = MAINNET_CONFIG.WETH_ADDRESS;
-    const uniswapV3Router = MAINNET_CONFIG.UNISWAP_V3_ROUTER;
     const tokenToSwap = MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress;
-    const et = new RewardActionTracker(signer, {
-      uniswapOverrides: {
-        wethAddress: wethAddress,
-        uniswapV3Router: uniswapV3Router,
-      },
-      delayBetweenActions: 0,
-    });
+    const et = new RewardActionTracker(signer, { delayBetweenActions: 0 });
     et.addToken(
       { action: RewardActionLabel.TRANSFER, to: receiver.address },
       tokenToSwap,
