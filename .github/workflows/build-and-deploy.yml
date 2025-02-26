@@ -1,0 +1,82 @@
+name: Build Docker image and deploy to Kubernetes cluster
+
+on:
+  push:
+    branches:
+      - master
+  
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Build-Deploy
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      AWS_REGION: us-east-2
+      CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
+      ECR_REPOSITORY: ajna-keeper-staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.GA_OIDC_EKS_STAGING }}
+          role-session-name: AjnaKeeper
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Extract commit hash
+        id: vars
+        shell: bash
+        run: |
+          echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SHA_TAG: ${{ steps.vars.outputs.sha_short }}
+          LATEST_TAG: latest
+          ENVIRONMENT_TAG: staging
+        run: |
+          # Build a docker container and push it to ECR
+          echo "Building image: ${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHA_TAG}"
+          docker build -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${SHA_TAG} \
+                       -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${LATEST_TAG} \
+                       -t ${ECR_REGISTRY}/${ECR_REPOSITORY}:${ENVIRONMENT_TAG} \
+                       -f Dockerfile \
+                       .
+          echo "Pushing image to ECR..."
+          docker push ${ECR_REGISTRY}/${ECR_REPOSITORY} --all-tags
+          
+          # Set output variables for use in subsequent steps
+          echo "image=${ECR_REGISTRY}/${ECR_REPOSITORY}" >> $GITHUB_OUTPUT
+          echo "tag=${SHA_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Replace placeholders in config files
+        run: |
+          echo "Replacing {{CLUSTER_NAME}} with ${CLUSTER_NAME} in config files"
+          sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-keeper.yaml
+
+      - name: Deploying app to Kubernetes with Helm
+        uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
+        with:
+          values: image.repository=${{ steps.build-image.outputs.image }},image.tag=${{ steps.build-image.outputs.tag }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          config-files: deploy/staging/ajna-keeper.yaml
+          chart-path: techops-services/common
+          namespace: keepers
+          timeout: 5m0s
+          name: ajna-keeper
+          chart-repository: https://techops-services.github.io/helm-charts
+          version: 0.0.37
+          atomic: true
