@@ -1,0 +1,113 @@
+replicaCount: 1
+
+service:
+  enabled: false
+
+deployment:
+  enabled: true
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+          - on-demand
+
+image:
+  pullPolicy: Always
+
+# Liveness probe - checks if the application is running
+livenessProbe:
+  exec:
+    command:
+    - /bin/sh
+    - -c
+    - ps aux | grep "node.*index.ts" | grep -v grep
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Readiness probe - checks if the application is ready to serve requests
+readinessProbe:
+  exec:
+    command:
+    - /bin/sh
+    - -c
+    - ps aux | grep "node.*index.ts" | grep -v grep
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Environment variables
+env:
+  DRY_RUN:
+    type: "kv"
+    value: "true"
+  KEEPER_KEYSTORE:
+    type: "kv"
+    value: "/app/keystores/keeper-keystore.json"
+  KEYSTORE_FILE:
+    type: "parameterStore"
+    name: "keystore-file"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/keystore-file
+  KEYSTORE_PASSWORD:
+    type: "parameterStore"
+    name: "keystore-password"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/keystore-password
+  ETH_RPC_URL:
+    type: "parameterStore"
+    name: "ethrpc-url"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/ethrpc-url
+  COINGECKO_API_KEY:
+    type: "parameterStore"
+    name: "coingecko-apikey"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/coingecko-apikey
+  SUBGRAPH_URL:
+    type: "parameterStore"
+    name: "subgraph-url"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/subgraph-url
+  POOLS_CONF:
+    type: parameterStore
+    name: pools
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/pools
+
+externalSecrets:
+  clusterSecretStoreName: {{CLUSTER_NAME}}
+
+# Resource limits and requests
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 250m
+    memory: 256Mi
+
+# Security context
+# securityContext:
+#   runAsNonRoot: true
+#   runAsUser: 1000
+#   runAsGroup: 1000
+#   fsGroup: 1000
+
+# Pod annotations
+podAnnotations: {}
+
+# Labels
+labels: {}
+
+# Selector labels
+selectorLabels: {}
+
+# Autoscaling
+autoscaling:
+  enabled: false
+
+# Service account
+serviceAccount:
+  create: false
