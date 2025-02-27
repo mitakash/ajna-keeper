@@ -1,6 +1,5 @@
-import { createLogger, transports, format, LogEntry, level } from 'winston';
+import { createLogger, transports, LogEntry } from 'winston';
 import Transport, { TransportStreamOptions } from 'winston-transport';
-import { Transports } from 'winston/lib/winston/transports';
 
 const LOGS_FOLDER = 'logs';
 
@@ -25,14 +24,19 @@ export const logger = createLogger({
     new transports.File({
       filename: `${LOGS_FOLDER}/${EPOCH_SECONDS}-debug.log`,
       level: 'debug',
+      options: { mode: 0o600 },
     }),
     new transports.File({
       filename: `${LOGS_FOLDER}/${EPOCH_SECONDS}-info.log`,
       level: 'info',
+      options: { mode: 0o600 },
     }),
     new transports.File({
       filename: `${LOGS_FOLDER}/${EPOCH_SECONDS}-error.log`,
       level: 'error',
+      options: { mode: 0o600 },
     }),
   ],
 });
+
+export function setLogsFolderPermissions() {}

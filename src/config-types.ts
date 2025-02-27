@@ -123,7 +123,7 @@ export interface TransferReward {
   to: string;
 }
 
-export type RewardAction = ExchangeRewardOnUniswap | TransferReward;
+export type RewardAction = TransferReward;
 
 interface CollectLpRewardSettings {
   /** Wether to redeem LP as Quote or Collateral. */
@@ -131,7 +131,7 @@ interface CollectLpRewardSettings {
   /** Minimum amount of token to collect. */
   minAmount: number;
   /** What to do with Collected LP Rewards. If unset will leave rewards in wallet. */
-  rewardAction?: ExchangeRewardOnUniswap | TransferReward;
+  rewardAction?: RewardAction;
 }
 
 export interface PoolConfig {
@@ -189,14 +189,14 @@ export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
     if (filePath.endsWith('.ts')) {
       const imported = await import('../' + filePath);
       const config = imported.default;
-      await validateUniswapAddresses(config);
+      // await validateUniswapAddresses(config);
       return config;
     } else {
       const absolutePath = path.resolve(filePath);
       const fileContents = await fs.readFile(absolutePath, 'utf-8');
       const parsedFile = JSON.parse(fileContents);
       assertIsValidConfig(parsedFile);
-      await validateUniswapAddresses(parsedFile);
+      // await validateUniswapAddresses(parsedFile);
       return parsedFile;
     }
   } catch (error) {
@@ -235,23 +235,23 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
   );
 }
 
-/** Throws error if it cannot find the WETH9 token from uniswap's built in addresses or from the KeeperConfig. */
-async function validateUniswapAddresses(config: KeeperConfig) {
-  const poolsWithExchangeToWeth = config.pools.filter(
-    (poolConfig) =>
-      poolConfig.collectLpReward?.rewardAction?.action ==
-      RewardActionLabel.EXCHANGE_ON_UNISWAP
-  );
-  if (poolsWithExchangeToWeth.length > 0) {
-    const provider = new JsonRpcProvider(config.ethRpcUrl);
-    const { chainId } = await provider.getNetwork();
-    const weth = await getWethToken(
-      chainId,
-      provider,
-      config.uniswapOverrides?.wethAddress
-    );
-    logger.info(
-      `Exchanging LP rewards to ${weth.symbol}, address: ${weth.address}`
-    );
-  }
-}
+// /** Throws error if it cannot find the WETH9 token from uniswap's built in addresses or from the KeeperConfig. */
+// async function validateUniswapAddresses(config: KeeperConfig) {
+//   const poolsWithExchangeToWeth = config.pools.filter(
+//     (poolConfig) =>
+//       poolConfig.collectLpReward?.rewardAction?.action ==
+//       RewardActionLabel.EXCHANGE_ON_UNISWAP
+//   );
+//   if (poolsWithExchangeToWeth.length > 0) {
+//     const provider = new JsonRpcProvider(config.ethRpcUrl);
+//     const { chainId } = await provider.getNetwork();
+//     const weth = await getWethToken(
+//       chainId,
+//       provider,
+//       config.uniswapOverrides?.wethAddress
+//     );
+//     logger.info(
+//       `Exchanging LP rewards to ${weth.symbol}, address: ${weth.address}`
+//     );
+//   }
+// }

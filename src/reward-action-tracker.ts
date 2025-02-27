@@ -58,11 +58,11 @@ export class RewardActionTracker {
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
-      if (rewardAction.action == RewardActionLabel.EXCHANGE_ON_UNISWAP) {
-        await this.swapOnUniswap(rewardAction, token, amountWad);
-      } else if (rewardAction.action == RewardActionLabel.TRANSFER) {
+      if (rewardAction.action == RewardActionLabel.TRANSFER) {
         await this.transferReward(rewardAction, token, amountWad);
-      }
+      } // else if (rewardAction.action == RewardActionLabel.EXCHANGE_ON_UNISWAP) {
+      //   await this.swapOnUniswap(rewardAction, token, amountWad);
+      // }
     }
   }
 
@@ -86,31 +86,31 @@ export class RewardActionTracker {
     this.feeTokenAmountMap.set(key, currAmount.sub(amountWadToSub));
   }
 
-  async swapOnUniswap(
-    rewardAction: ExchangeRewardOnUniswap,
-    token: string,
-    amountWad: BigNumber
-  ) {
-    try {
-      await uniswap.swapToWeth(
-        this.signer,
-        token,
-        amountWad,
-        rewardAction.fee,
-        this.config.uniswapOverrides
-      );
-      this.removeToken(rewardAction, token, amountWad);
-      logger.info(
-        `Successfully exchanged token on Uniswap. token: ${token}, fee: ${rewardAction.fee / 10000}%, amountWad: ${weiToDecimaled(amountWad)}`
-      );
-      await delay(this.config.delayBetweenActions);
-    } catch (error) {
-      logger.error(
-        `Failed to exchange token on Uniswap. token: ${token}, amountWad: ${weiToDecimaled(amountWad)}`,
-        error
-      );
-    }
-  }
+  // async swapOnUniswap(
+  //   rewardAction: ExchangeRewardOnUniswap,
+  //   token: string,
+  //   amountWad: BigNumber
+  // ) {
+  //   try {
+  //     await uniswap.swapToWeth(
+  //       this.signer,
+  //       token,
+  //       amountWad,
+  //       rewardAction.fee,
+  //       this.config.uniswapOverrides
+  //     );
+  //     this.removeToken(rewardAction, token, amountWad);
+  //     logger.info(
+  //       `Successfully exchanged token on Uniswap. token: ${token}, fee: ${rewardAction.fee / 10000}%, amountWad: ${weiToDecimaled(amountWad)}`
+  //     );
+  //     await delay(this.config.delayBetweenActions);
+  //   } catch (error) {
+  //     logger.error(
+  //       `Failed to exchange token on Uniswap. token: ${token}, amountWad: ${weiToDecimaled(amountWad)}`,
+  //       error
+  //     );
+  //   }
+  // }
 
   async transferReward(
     rewardAction: TransferReward,
