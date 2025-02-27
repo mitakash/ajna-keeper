@@ -19,7 +19,6 @@ import {
   bucketRemoveCollateralToken,
   bucketRemoveQuoteToken,
 } from './transactions';
-import { swapToWeth } from './uniswap';
 import { decimaledToWei, weiToDecimaled } from './utils';
 import { RewardActionTracker } from './reward-action-tracker';
 

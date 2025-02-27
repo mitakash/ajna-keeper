@@ -61,7 +61,7 @@ export async function getWethToken(
     return WETH9[chainId];
   }
   throw new Error(
-    'You must provide and address in the config for wethAddress.'
+    'You must provide an address in the config for wethAddress.'
   );
 }
 
