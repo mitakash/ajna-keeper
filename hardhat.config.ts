@@ -14,10 +14,10 @@ module.exports = {
         blockNumber: 21731352,
       },
       avalanche: {
-        url: "https://api.avax.network/ext/bc/C/rpc",
+        url: 'https://api.avax.network/ext/bc/C/rpc',
         chainId: 43114,
-        accounts: [process.env.PRIVATE_KEY]
-      }
+        accounts: [process.env.PRIVATE_KEY],
+      },
     },
   },
 };

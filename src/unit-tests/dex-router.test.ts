@@ -49,7 +49,9 @@ describe('DexRouter', () => {
 
     mockProvider.estimateGas = sinon.stub().resolves(BigNumber.from('100000'));
     mockProvider.getResolver = sinon.stub().resolves(null);
-    mockProvider.getNetwork = sinon.stub().resolves({ chainId: chainId, name: 'mockNetwork' });
+    mockProvider.getNetwork = sinon
+      .stub()
+      .resolves({ chainId: chainId, name: 'mockNetwork' });
 
     signer = {
       provider: mockProvider,
@@ -68,46 +70,74 @@ describe('DexRouter', () => {
 
   describe('constructor', () => {
     it('should throw if signer is undefined', () => {
-      expect(() => new DexRouter(undefined as any)).to.throw('Signer is required');
+      expect(() => new DexRouter(undefined as any)).to.throw(
+        'Signer is required'
+      );
     });
 
     it('should throw if provider is unavailable', () => {
       const invalidSigner = { provider: undefined } as any;
-      expect(() => new DexRouter(invalidSigner)).to.throw('No provider available');
+      expect(() => new DexRouter(invalidSigner)).to.throw(
+        'No provider available'
+      );
     });
   });
 
   describe('swap', () => {
     it('should throw if chainId is missing', async () => {
-      await expect(dexRouter.swap(0, amount, tokenIn, tokenOut, to, false))
-        .to.be.rejectedWith('Invalid parameters provided to swap');
+      await expect(
+        dexRouter.swap(0, amount, tokenIn, tokenOut, to, false)
+      ).to.be.rejectedWith('Invalid parameters provided to swap');
     });
 
     it('should throw if amount is missing', async () => {
-      await expect(dexRouter.swap(chainId, undefined as any, tokenIn, tokenOut, to, false))
-        .to.be.rejectedWith('Invalid parameters provided to swap');
+      await expect(
+        dexRouter.swap(chainId, undefined as any, tokenIn, tokenOut, to, false)
+      ).to.be.rejectedWith('Invalid parameters provided to swap');
     });
 
     it('should throw if tokenIn is missing', async () => {
-      await expect(dexRouter.swap(chainId, amount, undefined as any, tokenOut, to, false))
-        .to.be.rejectedWith('Invalid parameters provided to swap');
+      await expect(
+        dexRouter.swap(chainId, amount, undefined as any, tokenOut, to, false)
+      ).to.be.rejectedWith('Invalid parameters provided to swap');
     });
 
     it('should throw if tokenOut is missing', async () => {
-      await expect(dexRouter.swap(chainId, amount, tokenIn, undefined as any, to, false))
-        .to.be.rejectedWith('Invalid parameters provided to swap');
+      await expect(
+        dexRouter.swap(chainId, amount, tokenIn, undefined as any, to, false)
+      ).to.be.rejectedWith('Invalid parameters provided to swap');
     });
 
     it('should throw if to is missing', async () => {
-      await expect(dexRouter.swap(chainId, amount, tokenIn, tokenOut, undefined as any, false))
-        .to.be.rejectedWith('Invalid parameters provided to swap');
+      await expect(
+        dexRouter.swap(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          undefined as any,
+          false
+        )
+      ).to.be.rejectedWith('Invalid parameters provided to swap');
     });
 
     it('should throw if balance is insufficient', async () => {
-      mockProvider.getBalance = sinon.stub().resolves(BigNumber.from('50000000000000'));
-      mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [BigNumber.from('500000000000000000')]));
-      await expect(dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, false))
-        .to.be.rejectedWith(`Insufficient balance for ${tokenIn}: 500000000000000000 < 1000000000000000000`);
+      mockProvider.getBalance = sinon
+        .stub()
+        .resolves(BigNumber.from('50000000000000'));
+      mockProvider.call = sinon
+        .stub()
+        .resolves(
+          ethers.utils.defaultAbiCoder.encode(
+            ['uint256'],
+            [BigNumber.from('500000000000000000')]
+          )
+        );
+      await expect(
+        dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, false)
+      ).to.be.rejectedWith(
+        `Insufficient balance for ${tokenIn}: 500000000000000000 < 1000000000000000000`
+      );
     });
 
     describe('useOneInch = true', () => {
@@ -134,26 +164,57 @@ describe('DexRouter', () => {
       });
 
       it('should approve token if allowance is insufficient', async () => {
-        const getAllowanceStub = sinon.stub(erc20, 'getAllowanceOfErc20').resolves(BigNumber.from('0'));
+        const getAllowanceStub = sinon
+          .stub(erc20, 'getAllowanceOfErc20')
+          .resolves(BigNumber.from('0'));
         const approveStub = sinon.stub(erc20, 'approveErc20').resolves();
 
-        mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
+        mockProvider.call = sinon
+          .stub()
+          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
-        await dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, true, slippage, feeAmount);
-        expect(approveStub.calledOnceWith(signer, tokenIn, fromAddress, amount)).to.be.true;
-        expect((logger.info as sinon.SinonStub).calledWith(`1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`)).to.be.true;
+        await dexRouter.swap(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          to,
+          true,
+          slippage,
+          feeAmount
+        );
+        expect(approveStub.calledOnceWith(signer, tokenIn, fromAddress, amount))
+          .to.be.true;
+        expect(
+          (logger.info as sinon.SinonStub).calledWith(
+            `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+          )
+        ).to.be.true;
 
         getAllowanceStub.restore();
         approveStub.restore();
       });
 
       it('should skip approval if allowance is sufficient', async () => {
-        const getAllowanceStub = sinon.stub(erc20, 'getAllowanceOfErc20').resolves(amount);
+        const getAllowanceStub = sinon
+          .stub(erc20, 'getAllowanceOfErc20')
+          .resolves(amount);
         const approveStub = sinon.stub(erc20, 'approveErc20');
 
-        mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
+        mockProvider.call = sinon
+          .stub()
+          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
-        await dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, true, slippage, feeAmount);
+        await dexRouter.swap(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          to,
+          true,
+          slippage,
+          feeAmount
+        );
         expect(approveStub.notCalled).to.be.true;
 
         getAllowanceStub.restore();
@@ -161,14 +222,34 @@ describe('DexRouter', () => {
       });
 
       it('should throw if approval fails', async () => {
-        const getAllowanceStub = sinon.stub(erc20, 'getAllowanceOfErc20').resolves(BigNumber.from('0'));
-        const approveStub = sinon.stub(erc20, 'approveErc20').rejects(new Error('Approval failed'));
+        const getAllowanceStub = sinon
+          .stub(erc20, 'getAllowanceOfErc20')
+          .resolves(BigNumber.from('0'));
+        const approveStub = sinon
+          .stub(erc20, 'approveErc20')
+          .rejects(new Error('Approval failed'));
 
-        mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
+        mockProvider.call = sinon
+          .stub()
+          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
-        await expect(dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, true, slippage, feeAmount))
-          .to.be.rejectedWith('Approval failed');
-        expect((logger.error as sinon.SinonStub).calledWith(`Failed to approve token ${tokenIn} for 1inch`)).to.be.true;
+        await expect(
+          dexRouter.swap(
+            chainId,
+            amount,
+            tokenIn,
+            tokenOut,
+            to,
+            true,
+            slippage,
+            feeAmount
+          )
+        ).to.be.rejectedWith('Approval failed');
+        expect(
+          (logger.error as sinon.SinonStub).calledWith(
+            `Failed to approve token ${tokenIn} for 1inch`
+          )
+        ).to.be.true;
 
         getAllowanceStub.restore();
         approveStub.restore();
@@ -176,21 +257,43 @@ describe('DexRouter', () => {
 
       it('should call swapWithOneInch and execute transaction', async () => {
         process.env.ONEINCH = 'https://api.1inch.io/v5.0';
-        const getAllowanceStub = sinon.stub(erc20, 'getAllowanceOfErc20').resolves(amount);
+        const getAllowanceStub = sinon
+          .stub(erc20, 'getAllowanceOfErc20')
+          .resolves(amount);
 
-        mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
+        mockProvider.call = sinon
+          .stub()
+          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
-        await dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, true, slippage, feeAmount);
-        expect(axiosGetStub.calledOnceWith(`${process.env.ONEINCH}/${chainId}/swap`, {
-          params: {
-            fromTokenAddress: tokenIn,
-            toTokenAddress: tokenOut,
-            amount: amount.toString(),
-            fromAddress,
-            slippage,
-          },
-        })).to.be.true;
-        expect((logger.info as sinon.SinonStub).calledWith(`1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`)).to.be.true;
+        await dexRouter.swap(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          to,
+          true,
+          slippage,
+          feeAmount
+        );
+        expect(
+          axiosGetStub.calledOnceWith(
+            `${process.env.ONEINCH}/${chainId}/swap`,
+            {
+              params: {
+                fromTokenAddress: tokenIn,
+                toTokenAddress: tokenOut,
+                amount: amount.toString(),
+                fromAddress,
+                slippage,
+              },
+            }
+          )
+        ).to.be.true;
+        expect(
+          (logger.info as sinon.SinonStub).calledWith(
+            `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+          )
+        ).to.be.true;
 
         getAllowanceStub.restore();
       });
@@ -218,21 +321,44 @@ describe('DexRouter', () => {
     });
 
     afterEach(() => {
-        sinon.restore();
+      sinon.restore();
     });
 
     it('should execute swap with 1inch successfully', async () => {
-      mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
-      await dexRouter['swapWithOneInch'](chainId, amount, tokenIn, tokenOut, slippage);
-      expect(axiosGetStub.calledOnceWith(`${process.env.ONEINCH}/${chainId}/swap`)).to.be.true;
-      expect((logger.info as sinon.SinonStub).calledWith(`1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`)).to.be.true;
+      mockProvider.call = sinon
+        .stub()
+        .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
+      await dexRouter['swapWithOneInch'](
+        chainId,
+        amount,
+        tokenIn,
+        tokenOut,
+        slippage
+      );
+      expect(
+        axiosGetStub.calledOnceWith(`${process.env.ONEINCH}/${chainId}/swap`)
+      ).to.be.true;
+      expect(
+        (logger.info as sinon.SinonStub).calledWith(
+          `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+        )
+      ).to.be.true;
     });
 
     it('should throw and log error if axios fails', async () => {
       axiosGetStub.rejects(new Error('API error'));
-      mockProvider.call = sinon.stub().resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
-      await expect(dexRouter['swapWithOneInch'](chainId, amount, tokenIn, tokenOut, slippage))
-        .to.be.rejectedWith('API error');
+      mockProvider.call = sinon
+        .stub()
+        .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
+      await expect(
+        dexRouter['swapWithOneInch'](
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          slippage
+        )
+      ).to.be.rejectedWith('API error');
       expect((logger.info as sinon.SinonStub).notCalled).to.be.true;
     });
   });

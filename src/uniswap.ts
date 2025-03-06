@@ -60,9 +60,7 @@ export async function getWethToken(
   } else if (WETH9[chainId]) {
     return WETH9[chainId];
   }
-  throw new Error(
-    'You must provide an address in the config for wethAddress.'
-  );
+  throw new Error('You must provide an address in the config for wethAddress.');
 }
 
 export async function getTokenFromAddress(

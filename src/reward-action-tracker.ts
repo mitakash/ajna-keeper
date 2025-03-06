@@ -1,17 +1,15 @@
 import { BigNumber, Signer } from 'ethers';
 import {
-  ExchangeRewardOnUniswap,
+  ExchangeReward,
   KeeperConfig,
   RewardAction,
   RewardActionLabel,
   TransferReward,
 } from './config-types';
-import uniswap from './uniswap';
 import { logger } from './logging';
 import { DexRouter } from './dex-router';
 import { delay, tokenChangeDecimals, weiToDecimaled } from './utils';
 import { getDecimalsErc20, transferErc20 } from './erc20';
-import { FeeAmount } from '@uniswap/v3-sdk';
 import { TokenConfig } from './echange-tracker';
 
 export function deterministicJsonStringify(obj: any): string {
@@ -37,7 +35,7 @@ function deserializeRewardAction(serial: string): {
   token: string;
 } {
   const { token, ...rewardAction } = JSON.parse(serial);
-  if (!(typeof token == 'string')) {
+  if (typeof token !== 'string') {
     throw new Error(`Could not deserialize token from ${serial}`);
   }
   return { token, rewardAction };
@@ -45,52 +43,158 @@ function deserializeRewardAction(serial: string): {
 
 export class RewardActionTracker {
   private feeTokenAmountMap: Map<string, BigNumber> = new Map();
-  
+
   constructor(
     private signer: Signer,
     private config: Pick<
-    KeeperConfig,
-    'uniswapOverrides' | 'delayBetweenActions'
+      KeeperConfig,
+      'uniswapOverrides' | 'delayBetweenActions' | 'pools'
     >,
-    private dexRouter: DexRouter,
+    private dexRouter: DexRouter
   ) {}
 
-  private async swapToken(chainId: number, tokenAddress: string, amount: BigNumber, targetToken: string, useOneInch: boolean, slippage: number): Promise<void> {
+  private async swapToken(
+    chainId: number,
+    tokenAddress: string,
+    amount: BigNumber,
+    targetToken: string,
+    useOneInch: boolean,
+    slippage: number,
+    feeAmount?: number
+  ): Promise<void> {
     const tokenAddresses = {
-      avax: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      usdc: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E",
-      weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+      avax: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+      usdc: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
+      weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     };
     const address = await this.signer.getAddress();
-  
-    const targetAddress = chainId === 43114 && targetToken in tokenAddresses
-      ? tokenAddresses[targetToken as keyof typeof tokenAddresses]
-      : this.config.uniswapOverrides?.wethAddress;
 
-    if (targetAddress) {
-      await this.dexRouter.swap(chainId, amount, tokenAddress, targetAddress, address, useOneInch, slippage);
+    const targetAddress =
+      chainId === 43114 && targetToken in tokenAddresses
+        ? tokenAddresses[targetToken as keyof typeof tokenAddresses]
+        : this.config.uniswapOverrides?.wethAddress;
+
+    if (!targetAddress) {
+      throw new Error(
+        `No target address found for token ${targetToken} on chain ${chainId}`
+      );
+    }
+
+    await this.dexRouter.swap(
+      chainId,
+      amount,
+      tokenAddress,
+      targetAddress,
+      address,
+      useOneInch,
+      slippage,
+      feeAmount,
+      this.config.uniswapOverrides
+    );
+  }
+
+  public async handleRewardsForToken(
+    token: TokenConfig,
+    chainId: number
+  ): Promise<void> {
+    const amount = BigNumber.from('10000000000000000000');
+    const tokenAddress = token.address.toLowerCase();
+    const useOneInch =
+      token.useOneInch !== undefined ? token.useOneInch : chainId === 43114;
+    const slippage = token.slippage;
+    const feeAmount = token.feeAmount;
+
+    try {
+      await this.swapToken(
+        chainId,
+        tokenAddress,
+        amount,
+        token.targetToken,
+        useOneInch,
+        slippage,
+        feeAmount
+      );
+      logger.info(
+        `Successfully swapped ${weiToDecimaled(amount)} of ${tokenAddress} to ${token.targetToken}`
+      );
+    } catch (error) {
+      logger.error(
+        `Failed to swap ${weiToDecimaled(amount)} of ${tokenAddress} to ${token.targetToken}`,
+        error
+      );
+      throw error;
     }
   }
 
-  public async handleRewardsForToken(token: TokenConfig, chainId: number): Promise<void> {
-    const amount = BigNumber.from("10000000000000000000");
-    const tokenAddress = token.address.toLowerCase();
-    const useOneInch = token.useOneInch !== undefined ? token.useOneInch : (chainId === 43114);
-
-    await this.swapToken(chainId, tokenAddress, amount, token.targetToken, useOneInch, token.slippage);
-  }
-
-  public async handleAllTokens() {
+  public async handleAllTokens(): Promise<void> {
     const nonZeroEntries = Array.from(this.feeTokenAmountMap.entries()).filter(
       ([key, amountWad]) => amountWad.gt(BigNumber.from('0'))
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
-      if (rewardAction.action == RewardActionLabel.TRANSFER) {
-        await this.transferReward(rewardAction, token, amountWad);
-      } // else if (rewardAction.action == RewardActionLabel.EXCHANGE_ON_UNISWAP) {
-      //   await this.swapOnUniswap(rewardAction, token, amountWad);
-      // }
+
+      switch (rewardAction.action) {
+        case RewardActionLabel.TRANSFER:
+          await this.transferReward(
+            rewardAction as TransferReward,
+            token,
+            amountWad
+          );
+          break;
+
+        case RewardActionLabel.EXCHANGE:
+          const pool = this.config.pools.find(
+            (p) =>
+              p.collectLpReward?.rewardAction?.action ===
+                RewardActionLabel.EXCHANGE &&
+              p.collectLpReward?.rewardAction?.address.toLowerCase() ===
+                token.toLowerCase()
+          );
+          const tokenConfig = pool?.collectLpReward
+            ?.rewardAction as TokenConfig;
+
+          const slippage =
+            tokenConfig?.slippage ??
+            (rewardAction as ExchangeReward).slippage ??
+            1;
+          const targetToken =
+            tokenConfig?.targetToken ??
+            (rewardAction as ExchangeReward).targetToken ??
+            'weth';
+          const useOneInch =
+            tokenConfig?.useOneInch ??
+            (rewardAction as ExchangeReward).useOneInch ??
+            false;
+          const feeAmount =
+            (rewardAction as ExchangeReward).fee ?? tokenConfig?.feeAmount;
+
+          try {
+            await this.swapToken(
+              await this.signer.getChainId(),
+              token,
+              amountWad,
+              targetToken,
+              useOneInch,
+              slippage,
+              feeAmount
+            );
+            this.removeToken(rewardAction, token, amountWad);
+            logger.info(
+              `Successfully swapped ${weiToDecimaled(amountWad)} of ${token} to ${targetToken}`
+            );
+            await delay(this.config.delayBetweenActions);
+          } catch (error) {
+            logger.error(
+              `Failed to swap ${weiToDecimaled(amountWad)} of ${token}`,
+              error
+            );
+            throw error;
+          }
+          break;
+
+        default:
+          logger.warn('Unsupported reward action');
+      }
     }
   }
 
@@ -114,32 +218,6 @@ export class RewardActionTracker {
     this.feeTokenAmountMap.set(key, currAmount.sub(amountWadToSub));
   }
 
-  // async swapOnUniswap(
-  //   rewardAction: ExchangeRewardOnUniswap,
-  //   token: string,
-  //   amountWad: BigNumber
-  // ) {
-  //   try {
-  //     await uniswap.swapToWeth(
-  //       this.signer,
-  //       token,
-  //       amountWad,
-  //       rewardAction.fee,
-  //       this.config.uniswapOverrides
-  //     );
-  //     this.removeToken(rewardAction, token, amountWad);
-  //     logger.info(
-  //       `Successfully exchanged token on Uniswap. token: ${token}, fee: ${rewardAction.fee / 10000}%, amountWad: ${weiToDecimaled(amountWad)}`
-  //     );
-  //     await delay(this.config.delayBetweenActions);
-  //   } catch (error) {
-  //     logger.error(
-  //       `Failed to exchange token on Uniswap. token: ${token}, amountWad: ${weiToDecimaled(amountWad)}`,
-  //       error
-  //     );
-  //   }
-  // }
-
   async transferReward(
     rewardAction: TransferReward,
     token: string,
@@ -154,13 +232,14 @@ export class RewardActionTracker {
       await transferErc20(this.signer, token, rewardAction.to, amount);
       this.removeToken(rewardAction, token, amountWad);
       logger.info(
-        `Successfully transfered reward token to ${rewardAction.to}, amountWad: ${weiToDecimaled(amountWad)}, tokenAddress: ${token}`
+        `Successfully transferred reward token to ${rewardAction.to}, amountWad: ${weiToDecimaled(amountWad)}, tokenAddress: ${token}`
       );
     } catch (error) {
       logger.error(
         `Failed to transfer token to ${rewardAction.to}, amountWad: ${weiToDecimaled(amountWad)}, tokenAddress: ${token}`,
         error
       );
+      throw error;
     }
   }
 }

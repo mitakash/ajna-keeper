@@ -15,7 +15,13 @@ export class DexRouter {
     this.signer = signer;
   }
 
-  private async swapWithOneInch(chainId: number, amount: BigNumber, tokenIn: string, tokenOut: string, slippage: number) {
+  private async swapWithOneInch(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    slippage: number
+  ) {
     const url = `${process.env.ONEINCH}/${chainId}/swap`;
     const fromAddress = await this.signer.getAddress();
     const params = {
@@ -40,7 +46,9 @@ export class DexRouter {
 
     const txResponse = await this.signer.sendTransaction(tx);
     await txResponse.wait();
-    logger.info(`1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`);
+    logger.info(
+      `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+    );
   }
 
   public async swap(
@@ -68,12 +76,18 @@ export class DexRouter {
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
     const balance = await erc20.balanceOf(fromAddress);
     if (balance.lt(amount)) {
-      throw new Error(`Insufficient balance for ${tokenIn}: ${balance.toString()} < ${amount.toString()}`);
+      throw new Error(
+        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${amount.toString()}`
+      );
     }
 
     if (useOneInch) {
       const oneInchRouter = fromAddress;
-      const currentAllowance = await getAllowanceOfErc20(this.signer, tokenIn, oneInchRouter);
+      const currentAllowance = await getAllowanceOfErc20(
+        this.signer,
+        tokenIn,
+        oneInchRouter
+      );
       if (currentAllowance.lt(amount)) {
         try {
           logger.debug(`Approving 1inch for token: ${tokenIn}`);
@@ -88,10 +102,21 @@ export class DexRouter {
       await this.swapWithOneInch(chainId, amount, tokenIn, tokenOut, slippage);
     } else {
       try {
-        await swapToWeth(this.signer, tokenIn, amount, feeAmount, uniswapOverrides);
-        logger.info(`Uniswap V3 swap via swapToWeth successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`);
+        await swapToWeth(
+          this.signer,
+          tokenIn,
+          amount,
+          feeAmount,
+          uniswapOverrides
+        );
+        logger.info(
+          `Uniswap V3 swap via swapToWeth successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+        );
       } catch (error) {
-        logger.error(`Uniswap V3 swap via swapToWeth failed for token: ${tokenIn}`, error);
+        logger.error(
+          `Uniswap V3 swap via swapToWeth failed for token: ${tokenIn}`,
+          error
+        );
         throw error;
       }
     }

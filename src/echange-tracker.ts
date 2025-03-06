@@ -1,10 +1,11 @@
+import { FeeAmount } from '@uniswap/v3-sdk';
 import { RewardActionTracker } from './reward-action-tracker';
-
 export interface TokenConfig {
   address: string;
   targetToken: string;
   slippage: number;
   useOneInch?: boolean;
+  feeAmount?: FeeAmount;
 }
 
 export class ExchangeTracker {

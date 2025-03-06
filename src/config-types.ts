@@ -104,16 +104,10 @@ export enum TokenToCollect {
   COLLATERAL = 'collateral',
 }
 
-export enum RewardActionLabel {
-  EXCHANGE_ON_UNISWAP = 'exchange_on_uniswap',
-  TRANSFER = 'transfer',
-}
 
-export interface ExchangeRewardOnUniswap {
-  /** If set to uniswap, swap any collected rewards on Uniswap V3. */
-  action: RewardActionLabel.EXCHANGE_ON_UNISWAP;
-  /** The fee amount to use when exchanging LP rewards on Uniswap. */
-  fee: FeeAmount;
+export enum RewardActionLabel {
+  TRANSFER = 'transfer',
+  EXCHANGE = 'exchange',
 }
 
 export interface TransferReward {
@@ -123,7 +117,16 @@ export interface TransferReward {
   to: string;
 }
 
-export type RewardAction = TransferReward;
+export interface ExchangeReward {
+  action: RewardActionLabel.EXCHANGE;
+  address: string;
+  targetToken: string;
+  slippage: number;
+  useOneInch?: boolean;
+  fee?: number;
+}
+
+export type RewardAction = TransferReward | ExchangeReward;
 
 interface CollectLpRewardSettings {
   /** Wether to redeem LP as Quote or Collateral. */
