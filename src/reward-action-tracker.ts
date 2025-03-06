@@ -50,7 +50,6 @@ export class RewardActionTracker {
       KeeperConfig,
       'uniswapOverrides' | 'delayBetweenActions' | 'pools'
     >,
-    private dexRouter: DexRouter
   ) {}
 
   private async swapToken(
@@ -80,7 +79,9 @@ export class RewardActionTracker {
       );
     }
 
-    await this.dexRouter.swap(
+    const dexRouter = new DexRouter(this.signer);
+
+    await dexRouter.swap(
       chainId,
       amount,
       tokenAddress,
