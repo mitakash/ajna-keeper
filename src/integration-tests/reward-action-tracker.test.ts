@@ -8,10 +8,11 @@ import {
 } from './test-utils';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import { RewardActionTracker } from '../reward-action-tracker';
-import { decimaledToWei, weiToDecimaled } from '../utils';
+import { decimaledToWei } from '../utils';
 import { Wallet } from 'ethers';
 import { getBalanceOfErc20 } from '../erc20';
 import { expect } from 'chai';
+import { DexRouter } from '../dex-router';
 
 describe('RewardActionTracker', () => {
   beforeEach(async () => {
@@ -30,13 +31,19 @@ describe('RewardActionTracker', () => {
     const wethAddress = MAINNET_CONFIG.WETH_ADDRESS;
     const uniswapV3Router = MAINNET_CONFIG.UNISWAP_V3_ROUTER;
     const tokenToSwap = MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress;
-    const et = new RewardActionTracker(signer, {
-      uniswapOverrides: {
-        wethAddress: wethAddress,
-        uniswapV3Router: uniswapV3Router,
+    const dexRouter = new DexRouter(signer);
+    const et = new RewardActionTracker(
+      signer,
+      {
+        uniswapOverrides: {
+          wethAddress: wethAddress,
+          uniswapV3Router: uniswapV3Router,
+        },
+        delayBetweenActions: 0,
+        pools: [],
       },
-      delayBetweenActions: 0,
-    });
+      dexRouter
+    );
     et.addToken(
       { action: RewardActionLabel.TRANSFER, to: receiver.address },
       tokenToSwap,

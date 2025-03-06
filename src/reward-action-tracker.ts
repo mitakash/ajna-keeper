@@ -1,3 +1,4 @@
+import { FeeAmount } from '@uniswap/v3-sdk';
 import { BigNumber, Signer } from 'ethers';
 import {
   ExchangeReward,
@@ -6,11 +7,18 @@ import {
   RewardActionLabel,
   TransferReward,
 } from './config-types';
-import { logger } from './logging';
 import { DexRouter } from './dex-router';
-import { delay, tokenChangeDecimals, weiToDecimaled } from './utils';
 import { getDecimalsErc20, transferErc20 } from './erc20';
-import { TokenConfig } from './echange-tracker';
+import { logger } from './logging';
+import { delay, tokenChangeDecimals, weiToDecimaled } from './utils';
+
+export interface TokenConfig {
+  address: string;
+  targetToken: string;
+  slippage: number;
+  useOneInch?: boolean;
+  feeAmount?: FeeAmount;
+}
 
 export function deterministicJsonStringify(obj: any): string {
   // Note: this works fine as long as the object is not nested.
@@ -48,8 +56,13 @@ export class RewardActionTracker {
     private signer: Signer,
     private config: Pick<
       KeeperConfig,
-      'uniswapOverrides' | 'delayBetweenActions' | 'pools'
+      | 'uniswapOverrides'
+      | 'delayBetweenActions'
+      | 'pools'
+      | 'oneInchRouters'
+      | 'tokenAddresses'
     >,
+    private dexRouter: DexRouter
   ) {}
 
   private async swapToken(
@@ -61,16 +74,11 @@ export class RewardActionTracker {
     slippage: number,
     feeAmount?: number
   ): Promise<void> {
-    const tokenAddresses = {
-      avax: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
-      usdc: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E',
-      weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
-    };
     const address = await this.signer.getAddress();
 
     const targetAddress =
-      chainId === 43114 && targetToken in tokenAddresses
-        ? tokenAddresses[targetToken as keyof typeof tokenAddresses]
+      chainId === 43114 && targetToken in (this.config.tokenAddresses || {})
+        ? this.config.tokenAddresses![targetToken]
         : this.config.uniswapOverrides?.wethAddress;
 
     if (!targetAddress) {
@@ -79,9 +87,7 @@ export class RewardActionTracker {
       );
     }
 
-    const dexRouter = new DexRouter(this.signer);
-
-    await dexRouter.swap(
+    await this.dexRouter.swap(
       chainId,
       amount,
       tokenAddress,
@@ -92,39 +98,6 @@ export class RewardActionTracker {
       feeAmount,
       this.config.uniswapOverrides
     );
-  }
-
-  public async handleRewardsForToken(
-    token: TokenConfig,
-    chainId: number
-  ): Promise<void> {
-    const amount = BigNumber.from('10000000000000000000');
-    const tokenAddress = token.address.toLowerCase();
-    const useOneInch =
-      token.useOneInch !== undefined ? token.useOneInch : chainId === 43114;
-    const slippage = token.slippage;
-    const feeAmount = token.feeAmount;
-
-    try {
-      await this.swapToken(
-        chainId,
-        tokenAddress,
-        amount,
-        token.targetToken,
-        useOneInch,
-        slippage,
-        feeAmount
-      );
-      logger.info(
-        `Successfully swapped ${weiToDecimaled(amount)} of ${tokenAddress} to ${token.targetToken}`
-      );
-    } catch (error) {
-      logger.error(
-        `Failed to swap ${weiToDecimaled(amount)} of ${tokenAddress} to ${token.targetToken}`,
-        error
-      );
-      throw error;
-    }
   }
 
   public async handleAllTokens(): Promise<void> {

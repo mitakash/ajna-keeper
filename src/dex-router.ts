@@ -7,12 +7,19 @@ import { swapToWeth } from './uniswap';
 
 export class DexRouter {
   private signer: Signer;
+  private oneInchRouters: { [chainId: number]: string };
 
-  constructor(signer: Signer) {
+  constructor(
+    signer: Signer,
+    options: {
+      oneInchRouters?: { [chainId: number]: string };
+    } = {}
+  ) {
     if (!signer) throw new Error('Signer is required');
     const provider = signer.provider;
     if (!provider) throw new Error('No provider available');
     this.signer = signer;
+    this.oneInchRouters = options.oneInchRouters || {};
   }
 
   private async swapWithOneInch(
@@ -82,7 +89,11 @@ export class DexRouter {
     }
 
     if (useOneInch) {
-      const oneInchRouter = fromAddress;
+      const oneInchRouter = this.oneInchRouters[chainId];
+      if (!oneInchRouter) {
+        throw new Error(`No 1inch router defined for chainId ${chainId}`);
+      }
+
       const currentAllowance = await getAllowanceOfErc20(
         this.signer,
         tokenIn,
@@ -90,7 +101,9 @@ export class DexRouter {
       );
       if (currentAllowance.lt(amount)) {
         try {
-          logger.debug(`Approving 1inch for token: ${tokenIn}`);
+          logger.debug(
+            `Approving 1inch router ${oneInchRouter} for token: ${tokenIn}`
+          );
           await approveErc20(this.signer, tokenIn, oneInchRouter, amount);
           logger.info(`Approval successful for token ${tokenIn}`);
         } catch (error) {

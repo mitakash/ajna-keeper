@@ -185,6 +185,10 @@ export interface KeeperConfig {
   delayBetweenActions: number;
   /** The time between each run of the Kick and ArbTake loops. */
   delayBetweenRuns: number;
+  /** 1inch list of routers */
+  oneInchRouters?: { [chainId: number]: string };
+  /** List of token addresses */
+  tokenAddresses?: { [tokenSymbol: string]: string };
 }
 
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
