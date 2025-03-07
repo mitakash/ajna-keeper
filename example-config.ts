@@ -17,6 +17,16 @@ const config: KeeperConfig = {
   multicallBlock: 5022,
   delayBetweenRuns: 15,
   delayBetweenActions: 1,
+  oneInchRouters: {
+    1: '0x1111111254EEB25477B68fb85Ed929f73A960582',
+    8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',
+    43114: '0x1111111254EEB25477B68fb85Ed929f73A960582',
+  },
+  tokenAddresses: {
+    avax: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    weth: '0x4200000000000000000000000000000000000006',
+  },
   ajna: {
     erc20PoolFactory: '0x214f62B5836D83f3D6c4f71F174209097B1A779C',
     erc721PoolFactory: '0xeefEC5d1Cc4bde97279d01D88eFf9e0fEe981769',
@@ -49,7 +59,11 @@ const config: KeeperConfig = {
         redeemAs: TokenToCollect.QUOTE,
         minAmount: 0.001,
         rewardAction: {
-          action: RewardActionLabel.EXCHANGE_ON_UNISWAP,
+          action: RewardActionLabel.EXCHANGE,
+          address: '0xaddressOfWstETH',
+          targetToken: 'weth',
+          slippage: 1,
+          useOneInch: false,
           fee: FeeAmount.LOW,
         },
       },
@@ -73,10 +87,10 @@ const config: KeeperConfig = {
       collectLpReward: {
         redeemAs: TokenToCollect.COLLATERAL,
         minAmount: 0.001,
-        // rewardAction: {
-        //   action: RewardActionLabel.TRANSFER,
-        //   to: '0x0000000000000000000000000000000000000000'
-        // }
+        rewardAction: {
+          action: RewardActionLabel.TRANSFER,
+          to: '0x0000000000000000000000000000000000000000',
+        },
       },
     },
     {

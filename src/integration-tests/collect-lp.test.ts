@@ -26,6 +26,7 @@ import {
   resetHardhat,
 } from './test-utils';
 import { RewardActionTracker } from '../reward-action-tracker';
+import { DexRouter } from '../dex-router';
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -76,6 +77,7 @@ describe('LpCollector subscription', () => {
     const signer = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress2
     );
+    const dexRouter = new DexRouter(signer);
     const lpCollector = new LpCollector(
       pool,
       signer,
@@ -86,13 +88,18 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new RewardActionTracker(signer, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(
+        signer,
+        {
+          uniswapOverrides: {
+            wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+            uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+          },
+          delayBetweenActions: 0,
+          pools: [],
         },
-        delayBetweenActions: 0,
-      })
+        dexRouter
+      )
     );
     await lpCollector.startSubscription();
     await handleArbTakes({
@@ -117,6 +124,7 @@ describe('LpCollector subscription', () => {
     const pool = await setup();
     const wallet = Wallet.fromMnemonic(USER1_MNEMONIC);
     const noActionSigner = wallet.connect(getProvider());
+    const dexRouter = new DexRouter(noActionSigner);
     const lpCollector = new LpCollector(
       pool,
       noActionSigner,
@@ -127,13 +135,18 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new RewardActionTracker(wallet, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(
+        noActionSigner,
+        {
+          uniswapOverrides: {
+            wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+            uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+          },
+          delayBetweenActions: 0,
+          pools: [],
         },
-        delayBetweenActions: 0,
-      })
+        dexRouter
+      )
     );
     await lpCollector.startSubscription();
     const takerSigner = await impersonateSigner(
@@ -160,6 +173,7 @@ describe('LpCollector subscription', () => {
     const kickerSigner = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );
+    const dexRouter = new DexRouter(kickerSigner);
     const lpCollector = new LpCollector(
       pool,
       kickerSigner,
@@ -170,13 +184,18 @@ describe('LpCollector subscription', () => {
         },
       },
       {},
-      new RewardActionTracker(kickerSigner, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(
+        kickerSigner,
+        {
+          uniswapOverrides: {
+            wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+            uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+          },
+          delayBetweenActions: 0,
+          pools: [],
         },
-        delayBetweenActions: 0,
-      })
+        dexRouter
+      )
     );
     await lpCollector.startSubscription();
     await delay(5);
@@ -212,6 +231,7 @@ describe('LpCollector collections', () => {
     const signer = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );
+    const dexRouter = new DexRouter(signer);
 
     const lpCollector = new LpCollector(
       pool,
@@ -223,13 +243,18 @@ describe('LpCollector collections', () => {
         },
       },
       {},
-      new RewardActionTracker(signer, {
-        uniswapOverrides: {
-          wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
-          uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+      new RewardActionTracker(
+        signer,
+        {
+          uniswapOverrides: {
+            wethAddress: MAINNET_CONFIG.WETH_ADDRESS,
+            uniswapV3Router: MAINNET_CONFIG.UNISWAP_V3_ROUTER,
+          },
+          delayBetweenActions: 0,
+          pools: [],
         },
-        delayBetweenActions: 0,
-      })
+        dexRouter
+      )
     );
     await lpCollector.startSubscription();
     await handleArbTakes({
