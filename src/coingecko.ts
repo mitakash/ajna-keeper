@@ -4,7 +4,7 @@ import {
   PriceOriginCoinGeckoQuery,
 } from './config-types';
 
-interface CoinGeckoRespone {
+interface CoinGeckoResponse {
   [coinName: string]: {
     usd: number;
   };
@@ -23,7 +23,7 @@ async function getPrice(query: string, apiKey: string): Promise<number> {
 
   try {
     const res = await fetch(url, options);
-    const resJson: CoinGeckoRespone = await res.json();
+    const resJson: CoinGeckoResponse = await res.json();
     return Object.values(Object.values(resJson)[0])[0];
   } catch (error) {
     logger.error(

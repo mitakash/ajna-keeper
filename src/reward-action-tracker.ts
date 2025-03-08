@@ -1,16 +1,13 @@
-import { BigNumber, Signer } from 'ethers';
+import { BigNumber, Signer, constants } from 'ethers';
 import {
-  ExchangeRewardOnUniswap,
   KeeperConfig,
   RewardAction,
   RewardActionLabel,
-  TransferReward,
+  TransferReward
 } from './config-types';
-import uniswap from './uniswap';
-import { logger } from './logging';
-import { delay, tokenChangeDecimals, weiToDecimaled } from './utils';
 import { getDecimalsErc20, transferErc20 } from './erc20';
-import { FeeAmount } from '@uniswap/v3-sdk';
+import { logger } from './logging';
+import { tokenChangeDecimals, weiToDecimaled } from './utils';
 
 export function deterministicJsonStringify(obj: any): string {
   // Note: this works fine as long as the object is not nested.
@@ -54,7 +51,7 @@ export class RewardActionTracker {
 
   async handleAllTokens() {
     const nonZeroEntries = Array.from(this.feeTokenAmountMap.entries()).filter(
-      ([key, amountWad]) => amountWad.gt(BigNumber.from('0'))
+      ([key, amountWad]) => amountWad.gt(constants.Zero)
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
@@ -72,7 +69,7 @@ export class RewardActionTracker {
     amountWadToAdd: BigNumber
   ) {
     const key = serializeRewardAction(rewardAction, tokenCollected);
-    const currAmount = this.feeTokenAmountMap.get(key) ?? BigNumber.from('0');
+    const currAmount = this.feeTokenAmountMap.get(key) ?? constants.Zero;
     this.feeTokenAmountMap.set(key, currAmount.add(amountWadToAdd));
   }
 
@@ -82,7 +79,7 @@ export class RewardActionTracker {
     amountWadToSub: BigNumber
   ) {
     const key = serializeRewardAction(rewardAction, tokenCollected);
-    const currAmount = this.feeTokenAmountMap.get(key) ?? BigNumber.from('0');
+    const currAmount = this.feeTokenAmountMap.get(key) ?? constants.Zero;
     this.feeTokenAmountMap.set(key, currAmount.sub(amountWadToSub));
   }
 
