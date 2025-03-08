@@ -1,6 +1,16 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
-import { Token, WETH9 } from '@uniswap/sdk-core';
+import { expect } from 'chai';
+import { BigNumber, Wallet, constants } from 'ethers';
+import { LpCollector } from '../collect-lp';
 import { configureAjna, TokenToCollect } from '../config-types';
+import { DexRouter } from '../dex-router';
+import { getBalanceOfErc20 } from '../erc20';
+import { handleKicks } from '../kick';
+import { NonceTracker } from '../nonce';
+import { RewardActionTracker } from '../reward-action-tracker';
+import { handleArbTakes } from '../take';
+import { delay, waitForConditionToBeTrue } from '../utils';
+import { depositQuoteToken, drawDebt } from './loan-helpers';
 import './subgraph-mock';
 import {
   makeGetLiquidationsFromSdk,
@@ -8,16 +18,6 @@ import {
   overrideGetLiquidations,
   overrideGetLoans,
 } from './subgraph-mock';
-import { expect } from 'chai';
-import { delay } from '../utils';
-import { depositQuoteToken, drawDebt } from './loan-helpers';
-import { handleKicks } from '../kick';
-import { handleArbTakes } from '../take';
-import { LpCollector } from '../collect-lp';
-import { BigNumber, Wallet } from 'ethers';
-import { waitForConditionToBeTrue } from '../utils';
-import { getBalanceOfErc20 } from '../erc20';
-import { NonceTracker } from '../nonce';
 import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import {
   getProvider,
@@ -25,8 +25,6 @@ import {
   increaseTime,
   resetHardhat,
 } from './test-utils';
-import { RewardActionTracker } from '../reward-action-tracker';
-import { DexRouter } from '../dex-router';
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -115,7 +113,7 @@ describe('LpCollector subscription', () => {
     await waitForConditionToBeTrue(async () => {
       const entries = Array.from(lpCollector.lpMap.entries());
       const rewardLp: BigNumber | undefined = entries?.[0]?.[1];
-      return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
+      return !!rewardLp && rewardLp.gt(constants.Zero);
     });
     await lpCollector.stopSubscription();
   });
@@ -215,7 +213,7 @@ describe('LpCollector subscription', () => {
     await waitForConditionToBeTrue(async () => {
       const entries = Array.from(lpCollector.lpMap.entries());
       const rewardLp: BigNumber | undefined = entries?.[0]?.[1];
-      return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
+      return !!rewardLp && rewardLp.gt(constants.Zero);
     });
     await lpCollector.stopSubscription();
   });
@@ -270,7 +268,7 @@ describe('LpCollector collections', () => {
     await waitForConditionToBeTrue(async () => {
       const entries = Array.from(lpCollector.lpMap.entries());
       const rewardLp: BigNumber | undefined = entries?.[0]?.[1];
-      return !!rewardLp && rewardLp.gt(BigNumber.from('0'));
+      return !!rewardLp && rewardLp.gt(constants.Zero);
     });
     const liquidation = pool.getLiquidation(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress
