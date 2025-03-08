@@ -57,8 +57,8 @@ export class LpCollector {
 
   public async startSubscription() {
     if (!this.started) {
-      this.started = true;
       await this.subscribeToLpRewards();
+      this.started = true;
     }
   }
 
