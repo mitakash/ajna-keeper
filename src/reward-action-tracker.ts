@@ -35,7 +35,7 @@ function deserializeRewardAction(serial: string): {
   token: string;
 } {
   const { token, ...rewardAction } = JSON.parse(serial);
-  if (!(typeof token == 'string')) {
+  if (!(typeof token === 'string')) {
     throw new Error(`Could not deserialize token from ${serial}`);
   }
   return { token, rewardAction };
@@ -58,9 +58,9 @@ export class RewardActionTracker {
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
-      if (rewardAction.action == RewardActionLabel.TRANSFER) {
+      if (rewardAction.action === RewardActionLabel.TRANSFER) {
         await this.transferReward(rewardAction, token, amountWad);
-      } // else if (rewardAction.action == RewardActionLabel.EXCHANGE_ON_UNISWAP) {
+      } // else if (rewardAction.action === RewardActionLabel.EXCHANGE_ON_UNISWAP) {
       //   await this.swapOnUniswap(rewardAction, token, amountWad);
       // }
     }
