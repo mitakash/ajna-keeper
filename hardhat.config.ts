@@ -13,6 +13,11 @@ module.exports = {
         url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
         blockNumber: 21731352,
       },
+      avalanche: {
+        url: 'https://api.avax.network/ext/bc/C/rpc',
+        chainId: 43114,
+        accounts: [process.env.PRIVATE_KEY],
+      },
     },
   },
 };
