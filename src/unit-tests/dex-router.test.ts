@@ -180,7 +180,7 @@ describe('DexRouter', () => {
       it('should approve token if allowance is insufficient', async () => {
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
-          .resolves(BigNumber.from('1'));
+          .resolves(constants.One);
         const approveStub = sinon.stub(erc20, 'approveErc20').resolves();
 
         mockProvider.call = sinon
