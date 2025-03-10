@@ -1,5 +1,4 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
-import { Token, WETH9 } from '@uniswap/sdk-core';
 import { configureAjna, TokenToCollect } from '../config-types';
 import './subgraph-mock';
 import {
