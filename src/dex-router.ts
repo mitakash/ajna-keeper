@@ -1,9 +1,11 @@
 import axios from 'axios';
+import 'dotenv/config';
 import { BigNumber, Contract, Signer, providers } from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
-import { logger } from './logging';
 import { approveErc20, getAllowanceOfErc20 } from './erc20';
+import { logger } from './logging';
 import { swapToWeth } from './uniswap';
+import { tokenChangeDecimals } from './utils';
 
 export class DexRouter {
   private signer: Signer;
@@ -20,6 +22,16 @@ export class DexRouter {
     if (!provider) throw new Error('No provider available');
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
+    if (!process.env.ONEINCH_API) {
+      throw new Error(
+        'ONEINCH_API is not configured in the environment variables'
+      );
+    }
+    if (!process.env.ONEINCH_API_KEY) {
+      throw new Error(
+        'ONEINCH_API_KEY is not configured in the environment variables'
+      );
+    }
   }
 
   private async swapWithOneInch(
@@ -29,8 +41,13 @@ export class DexRouter {
     tokenOut: string,
     slippage: number
   ) {
-    const url = `${process.env.ONEINCH}/${chainId}/swap`;
+    const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const fromAddress = await this.signer.getAddress();
+
+    if (slippage < 0 || slippage > 100) {
+      throw new Error('Slippage must be between 0 and 100');
+    }
+
     const params = {
       fromTokenAddress: tokenIn,
       toTokenAddress: tokenOut,
@@ -39,23 +56,43 @@ export class DexRouter {
       slippage,
     };
 
-    const response = await axios.get(url, { params });
-    const tx = response.data.tx;
+    try {
+      const response = await axios.get(url, {
+        params,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+        },
+      });
 
-    const provider = this.signer.provider as providers.Provider;
-    const gasEstimate = await provider.estimateGas({
-      to: tx.to,
-      data: tx.data,
-      value: tx.value,
-      from: fromAddress,
-    });
-    tx.gas = gasEstimate.add(gasEstimate.div(10)).toString(); // 10%
+      if (!response.data.tx) {
+        throw new Error('No valid transaction received from 1inch');
+      }
 
-    const txResponse = await this.signer.sendTransaction(tx);
-    await txResponse.wait();
-    logger.info(
-      `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
-    );
+      const tx = response.data.tx;
+      logger.debug('Params sent to 1inch:', params);
+      logger.debug('Transaction from 1inch:', tx);
+
+      const provider = this.signer.provider as providers.Provider;
+      const gasEstimate = await provider.estimateGas({
+        to: tx.to,
+        data: tx.data,
+        value: tx.value,
+        from: fromAddress,
+      });
+      tx.gas = gasEstimate.add(gasEstimate.div(10)).toString();
+
+      const txResponse = await this.signer.sendTransaction(tx);
+      const receipt = await txResponse.wait();
+      logger.info(
+        `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${txResponse.hash}`
+      );
+      return receipt;
+    } catch (error: Error | any) {
+      const errorMsg = error.response?.data?.description || error.message;
+      logger.error(`Failed to swap with 1inch: ${errorMsg}`, error);
+      throw error;
+    }
   }
 
   public async swap(
@@ -81,14 +118,18 @@ export class DexRouter {
     const fromAddress = await this.signer.getAddress();
 
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
+    const decimals = await erc20.decimals();
     const balance = await erc20.balanceOf(fromAddress);
-    if (balance.lt(amount)) {
+    const adjustedAmount = tokenChangeDecimals(amount, 18, decimals);
+
+    if (balance.lt(adjustedAmount)) {
       throw new Error(
-        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${amount.toString()}`
+        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${adjustedAmount.toString()}`
       );
     }
 
-    if (useOneInch) {
+    const effectiveUseOneInch = chainId === 43114 ? true : useOneInch;
+    if (effectiveUseOneInch) {
       const oneInchRouter = this.oneInchRouters[chainId];
       if (!oneInchRouter) {
         throw new Error(`No 1inch router defined for chainId ${chainId}`);
