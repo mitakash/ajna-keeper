@@ -1,4 +1,3 @@
-import { FeeAmount } from '@uniswap/v3-sdk';
 import { RewardActionLabel } from '../config-types';
 import {
   getProvider,
