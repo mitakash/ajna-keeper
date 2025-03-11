@@ -138,6 +138,194 @@ See `example-config.ts` for reference.
 
 If the price source only has quote token priced in collateral, you may add `"invert": true` to `price` config to invert the configured price.
 
+### Dex Router
+
+#### Configuring for 1inch
+
+To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.
+
+##### Environment Variables
+Create a .env file in your project root with:
+
+```
+ONEINCH_API=https://api.1inch.io/v5.0
+ONEINCH_API_KEY=your-1inch-api-key-here
+```
+
+- ONEINCH_API: The 1inch API base URL (e.g., https://api.1inch.io/v6.0).
+- ONEINCH_API_KEY: Your API key from 1inch (get it from their developer portal).
+
+##### Config.ts Requirements
+Edit config.ts to include these fields:
+
+`oneInchRouters`:
+
+A dictionary of 1inch router addresses for each chain ID you want to support.
+
+- Format: `{ [chainId]: "router-address" }`
+- Example:
+```
+oneInchRouters: {
+  1: "0x1111111254EEB25477B68fb85Ed929f73A960582",    // Ethereum Mainnet
+  8453: "0x1111111254EEB25477B68fb85Ed929f73A960582", // Base
+  43114: "0x1111111254EEB25477B68fb85Ed929f73A960582" // Avalanche
+},
+```
+
+`tokenAddresses`:
+A dictionary of token addresses for swaps (required for Avalanche, optional otherwise).
+
+- Format: `{ [tokenName]: "token-address" }`
+- Example:
+
+```
+tokenAddresses: {
+  weth: "0x4200000000000000000000000000000000000006", // WETH on Base
+  usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
+  avax: "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"  // Native AVAX
+},
+```
+
+`pools.collectLpReward.rewardAction`:
+For pools where you want to swap rewards with 1inch, set `useOneInch: true` in the `rewardAction`.
+
+- Format:
+
+```
+{
+  name: "Your Pool Name",
+  address: "0xpoolAddress",
+  // Other pool settings...
+  collectLpReward: {
+    redeemAs: "QUOTE", // or "COLLATERAL"
+    minAmount: 0.001,
+    rewardAction: {
+      action: "EXCHANGE",
+      address: "0xtokenAddress", // Token to swap
+      targetToken: "weth",      // Target token (e.g., "weth", "usdc")
+      slippage: 1,             // Slippage percentage (0-100)
+      useOneInch: true         // Set to true for 1inch
+    }
+  }
+}
+```
+
+- Example:
+
+```
+pools: [
+  {
+    name: "wstETH / WETH",
+    address: "0x63a366fc5976ff72999c89f69366f388b7d233e8",
+    collectLpReward: {
+      redeemAs: "QUOTE",
+      minAmount: 0.001,
+      rewardAction: {
+        action: "EXCHANGE",
+        address: "0xaddressOfWstETH",
+        targetToken: "weth",
+        slippage: 1,
+        useOneInch: true
+      }
+    }
+  }
+],
+```
+
+##### Notes
+- If `useOneInch` is `true` but `oneInchRouters` is missing a `chainId`, the script will fail.
+- Ensure the `.env` file is loaded (via `dotenv/config`) in your project.
+
+#### Configuring for Uniswap V3
+To enable Uniswap V3 swaps, you need fewer settings in config.ts. No .env file is required.
+
+##### Config.ts Requirements
+Edit `config.ts` to include these optional fields:
+
+`uniswapOverrides` (Optional):
+Customize Uniswap V3 settings. If not provided, it defaults to WETH swaps.
+
+- Format:
+
+```
+uniswapOverrides: {
+  wethAddress: "weth-contract-address",
+  uniswapV3Router: "uniswap-v3-router-address"
+}
+```
+
+- Example:
+
+```
+uniswapOverrides: {
+  wethAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH on Ethereum
+  uniswapV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564" // Uniswap V3 Router
+},
+```
+
+`tokenAddresses` (Optional):
+Useful for specifying target tokens (e.g., WETH) if not using `uniswapOverrides`.
+
+- Example:
+```
+tokenAddresses: {
+  weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH on Ethereum
+  usdc: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"  // USDC on Ethereum
+},
+```
+
+`pools.collectLpReward.rewardAction`:
+For pools where you want to swap rewards with Uniswap V3, set `useOneInch: false` and optionally add a `fee`.
+
+- Format:
+```
+{
+  name: "Your Pool Name",
+  address: "0xpoolAddress",
+  // Other pool settings...
+  collectLpReward: {
+    redeemAs: "QUOTE", // or "COLLATERAL"
+    minAmount: 0.001,
+    rewardAction: {
+      action: "EXCHANGE",
+      address: "0xtokenAddress", // Token to swap
+      targetToken: "weth",      // Target token (e.g., "weth", "usdc")
+      slippage: 1,             // Slippage (ignored for Uniswap)
+      useOneInch: false,       // Set to false for Uniswap
+      fee: 3000               // Fee tier (500, 3000, 10000)
+    }
+  }
+}
+```
+
+- Example:
+
+```
+pools: [
+  {
+    name: "WETH / USDC",
+    address: "0x0b17159f2486f669a1f930926638008e2ccb4287",
+    collectLpReward: {
+      redeemAs: "COLLATERAL",
+      minAmount: 0.001,
+      rewardAction: {
+        action: "EXCHANGE",
+        address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+        targetToken: "usdc",
+        slippage: 1,
+        useOneInch: false,
+        fee: 3000 // 0.3% fee tier
+      }
+    }
+  }
+],
+```
+
+##### Notes
+- `fee` is the Uniswap V3 pool fee tier (e.g., `500` for 0.05%, `3000` for 0.3%, `10000` for 1%).
+- slippage is ignored for Uniswap swaps.
+- If `targetToken` isn’t WETH, ensure it matches `uniswapOverrides.wethAddress` or adjust the underlying logic.
+
 ## Testing
 
 Follow instructions for [Installation and Prequisites](#installation-and-prerequisites).
