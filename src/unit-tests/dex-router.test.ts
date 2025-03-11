@@ -280,27 +280,41 @@ describe('DexRouter', () => {
       });
 
       it('should call swapWithOneInch and execute transaction', async () => {
+        const getAllowanceStub = sinon
+          .stub(erc20, 'getAllowanceOfErc20')
+          .resolves(amount);
 
-  await dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, true, slippage, feeAmount);
+        await dexRouter.swap(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          to,
+          true,
+          slippage,
+          feeAmount
+        );
 
-  expect(axiosGetStub.called).to.be.true;
-  expect(axiosGetStub.calledOnceWith(
-    `${process.env.ONEINCH_API}/${chainId}/swap`,
-    {
-      params: {
-        fromTokenAddress: tokenIn,
-        toTokenAddress: tokenOut,
-        amount: '100000000',
-        fromAddress,
-        slippage,
-      },
-      headers: {
-        Accept: 'application/json',
-        Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
-      },
-    }
-  )).to.be.true;
-});
+        expect(axiosGetStub.called).to.be.true;
+        expect(
+          axiosGetStub.calledOnceWith(
+            `${process.env.ONEINCH_API}/${chainId}/swap`,
+            {
+              params: {
+                fromTokenAddress: tokenIn,
+                toTokenAddress: tokenOut,
+                amount: '100000000',
+                fromAddress,
+                slippage,
+              },
+              headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+              },
+            }
+          )
+        ).to.be.true;
+      });
     });
   });
 
