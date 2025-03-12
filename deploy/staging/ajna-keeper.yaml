@@ -47,7 +47,7 @@ readinessProbe:
 env:
   DRY_RUN:
     type: "kv"
-    value: "true"
+    value: "false"
   KEEPER_KEYSTORE:
     type: "kv"
     value: "/app/keystores/keeper-keystore.json"
