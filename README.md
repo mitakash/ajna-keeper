@@ -145,6 +145,7 @@ If the price source only has quote token priced in collateral, you may add `"inv
 To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.
 
 ##### Environment Variables
+
 Create a .env file in your project root with:
 
 ```
@@ -156,6 +157,7 @@ ONEINCH_API_KEY=your-1inch-api-key-here
 - ONEINCH_API_KEY: Your API key from 1inch (get it from their developer portal).
 
 ##### Config.ts Requirements
+
 Edit config.ts to include these fields:
 
 `oneInchRouters`:
@@ -164,6 +166,7 @@ A dictionary of 1inch router addresses for each chain ID you want to support.
 
 - Format: `{ [chainId]: "router-address" }`
 - Example:
+
 ```
 oneInchRouters: {
   1: "0x1111111254EEB25477B68fb85Ed929f73A960582",    // Ethereum Mainnet
@@ -233,13 +236,16 @@ pools: [
 ```
 
 ##### Notes
+
 - If `useOneInch` is `true` but `oneInchRouters` is missing a `chainId`, the script will fail.
 - Ensure the `.env` file is loaded (via `dotenv/config`) in your project.
 
 #### Configuring for Uniswap V3
+
 To enable Uniswap V3 swaps, you need fewer settings in config.ts. No .env file is required.
 
 ##### Config.ts Requirements
+
 Edit `config.ts` to include these optional fields:
 
 `uniswapOverrides` (Optional):
@@ -267,6 +273,7 @@ uniswapOverrides: {
 Useful for specifying target tokens (e.g., WETH) if not using `uniswapOverrides`.
 
 - Example:
+
 ```
 tokenAddresses: {
   weth: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH on Ethereum
@@ -278,6 +285,7 @@ tokenAddresses: {
 For pools where you want to swap rewards with Uniswap V3, set `useOneInch: false` and optionally add a `fee`.
 
 - Format:
+
 ```
 {
   name: "Your Pool Name",
@@ -322,6 +330,7 @@ pools: [
 ```
 
 ##### Notes
+
 - `fee` is the Uniswap V3 pool fee tier (e.g., `500` for 0.05%, `3000` for 0.3%, `10000` for 1%).
 - slippage is ignored for Uniswap swaps.
 - If `targetToken` isn’t WETH, ensure it matches `uniswapOverrides.wethAddress` or adjust the underlying logic.

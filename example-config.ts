@@ -9,6 +9,7 @@ import {
 
 const config: KeeperConfig = {
   dryRun: true,
+  logLevel: 'info',
   ethRpcUrl: 'https://base-mainnet.g.alchemy.com/v2/<api-key>',
   subgraphUrl:
     'https://api.studio.thegraph.com/query/49479/ajna-base/version/latest',
