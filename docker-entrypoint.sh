@@ -29,9 +29,18 @@ AJNA_TOKEN=${AJNA_TOKEN:-"0xf0f326af3b1Ed943ab95C29470730CC8Cf66ae47"}
 AJNA_GRANT_FUND=${AJNA_GRANT_FUND:-""}
 AJNA_BURN_WRAPPER=${AJNA_BURN_WRAPPER:-""}
 AJNA_LENDER_HELPER=${AJNA_LENDER_HELPER:-""}
-ONEINCH_API=${ONEINCH_API:-"https://api.1inch.io/v5.0"}
+ONEINCH_API=${ONEINCH_API:-"https://api.1inch.io/v6.0"}
 ONEINCH_API_KEY=${ONEINCH_API_KEY:-""}
 LOG_LEVEL=${LOG_LEVEL:-"info"}
+
+# Generate .env file for dotenv with only ONEINCH_API variables
+echo "Generating .env file with ONEINCH_API variables..."
+cat > /app/.env << EOF
+ONEINCH_API=${ONEINCH_API}
+ONEINCH_API_KEY=${ONEINCH_API_KEY}
+EOF
+
+echo ".env file generated at /app/.env"
 
 # Create a temporary file for the pools JSON
 POOLS_JSON_FILE=$(mktemp)
