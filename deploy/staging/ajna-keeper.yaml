@@ -75,6 +75,14 @@ env:
     type: parameterStore
     name: pools
     parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/pools
+  ONEINCH_API:
+    type: "parameterStore"
+    name: "oneinch-api"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/oneinch-api
+  ONEINCH_API_KEY:
+    type: "parameterStore"
+    name: "oneinch-apikey"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/oneinch-apikey
 
 externalSecrets:
   clusterSecretStoreName: {{CLUSTER_NAME}}
