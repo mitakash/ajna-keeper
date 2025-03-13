@@ -16,8 +16,8 @@ jobs:
     environment: production
     env:
       AWS_REGION: us-east-2
-      CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
       ECR_REPOSITORY: ajna-keeper-staging
+      CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
 
     steps:
       - name: Checkout
@@ -66,8 +66,21 @@ jobs:
         run: |
           echo "Replacing {{CLUSTER_NAME}} with ${CLUSTER_NAME} in config files"
           sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-keeper.yaml
+          sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-subgraph.yaml
 
-      - name: Deploying app to Kubernetes with Helm
+      - name: Deploy subgraph to Kubernetes
+        run: |
+          echo "Deploying subgraph infrastructure to Kubernetes"
+          kubectl apply -f deploy/staging/subgraph/ajna-subgraph.yaml
+          
+          # Wait for the graph-node to be ready
+          echo "Waiting for graph-node to be ready..."
+          kubectl rollout status deployment/graph-node -n keepers --timeout=300s
+          
+          # Deploy the subgraph definition
+          echo "Deploying subgraph definition"
+
+      - name: Deploy ajna-keeper to Kubernetes with Helm
         uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
         with:
           values: image.repository=${{ steps.build-image.outputs.image }},image.tag=${{ steps.build-image.outputs.tag }}
