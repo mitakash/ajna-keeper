@@ -10,8 +10,8 @@ RUN apk add --no-cache git
 # Copy package files
 COPY package.json yarn.lock ./
 
-# Install dependencies using yarn with frozen lockfile
-RUN yarn --frozen-lockfile
+# Install dependencies using yarn without frozen lockfile
+RUN yarn install
 
 # Copy the rest of the application
 COPY . .
