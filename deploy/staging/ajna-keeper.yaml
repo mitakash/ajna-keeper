@@ -83,6 +83,9 @@ env:
     type: "parameterStore"
     name: "oneinch-apikey"
     parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/oneinch-apikey
+  LOG_LEVEL:
+    type: "kv"
+    value: "info"
 
 externalSecrets:
   clusterSecretStoreName: {{CLUSTER_NAME}}
