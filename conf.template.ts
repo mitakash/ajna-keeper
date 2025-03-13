@@ -17,6 +17,7 @@ const config: KeeperConfig = {
   multicallBlock: $MULTICALL_BLOCK,
   delayBetweenRuns: $DELAY_BETWEEN_RUNS,
   delayBetweenActions: $DELAY_BETWEEN_ACTIONS,
+  logLevel: '$LOG_LEVEL',
   ajna: {
     erc20PoolFactory: '$AJNA_ERC20_POOL_FACTORY',
     erc721PoolFactory: '$AJNA_ERC721_POOL_FACTORY',

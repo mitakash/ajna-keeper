@@ -29,8 +29,9 @@ AJNA_TOKEN=${AJNA_TOKEN:-"0xf0f326af3b1Ed943ab95C29470730CC8Cf66ae47"}
 AJNA_GRANT_FUND=${AJNA_GRANT_FUND:-""}
 AJNA_BURN_WRAPPER=${AJNA_BURN_WRAPPER:-""}
 AJNA_LENDER_HELPER=${AJNA_LENDER_HELPER:-""}
-ONEINCH_API=${ONEINCH_API:-"https://api.1inch.io/v6.0"}
+ONEINCH_API=${ONEINCH_API:-"https://api.1inch.io/v5.0"}
 ONEINCH_API_KEY=${ONEINCH_API_KEY:-""}
+LOG_LEVEL=${LOG_LEVEL:-"info"}
 
 # Create a temporary file for the pools JSON
 POOLS_JSON_FILE=$(mktemp)
@@ -49,6 +50,7 @@ cat /app/conf.template.ts | \
     sed "s|\$MULTICALL_BLOCK|${MULTICALL_BLOCK}|g" | \
     sed "s|\$DELAY_BETWEEN_RUNS|${DELAY_BETWEEN_RUNS}|g" | \
     sed "s|\$DELAY_BETWEEN_ACTIONS|${DELAY_BETWEEN_ACTIONS}|g" | \
+    sed "s|\$LOG_LEVEL|${LOG_LEVEL}|g" | \
     sed "s|\$AJNA_ERC20_POOL_FACTORY|${AJNA_ERC20_POOL_FACTORY}|g" | \
     sed "s|\$AJNA_ERC721_POOL_FACTORY|${AJNA_ERC721_POOL_FACTORY}|g" | \
     sed "s|\$AJNA_POOL_UTILS|${AJNA_POOL_UTILS}|g" | \
