@@ -71,7 +71,7 @@ jobs:
       - name: Deploy subgraph to Kubernetes
         run: |
           echo "Deploying subgraph infrastructure to Kubernetes"
-          kubectl apply -f deploy/staging/subgraph/ajna-subgraph.yaml
+          kubectl apply -f deploy/staging/ajna-subgraph.yaml
           
           # Wait for the graph-node to be ready
           echo "Waiting for graph-node to be ready..."
