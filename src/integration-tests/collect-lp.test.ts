@@ -229,6 +229,7 @@ describe('LpCollector collections', () => {
     await resetHardhat();
   });
 
+  // TODO: Refactor this into two tests, one redeeming quote first and another redeeming collateral first
   it('Collects tracked rewards', async () => {
     const pool = await setup();
     const signer = await impersonateSigner(

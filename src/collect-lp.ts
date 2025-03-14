@@ -147,7 +147,7 @@ export class LpCollector {
         );
       }
 
-      // Otherwise, default to redeeming quote token first
+    // Otherwise, default to redeeming quote token first
     } else {
       const quoteToWithdraw = min(depositRedeemable, deposit);
       if (quoteToWithdraw.gt(decimaledToWei(minAmountQuote))) {
