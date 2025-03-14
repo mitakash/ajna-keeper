@@ -129,12 +129,14 @@ export interface ExchangeReward {
 export type RewardAction = TransferReward | ExchangeReward;
 
 interface CollectLpRewardSettings {
-  /** Wether to redeem LP as Quote or Collateral. */
-  redeemAs: TokenToCollect;
+  /** Wether to redeem LP as Quote or Collateral first. If unset will default to Quote first. */
+  redeemFirst?: TokenToCollect;
   /** Minimum amount of token to collect. */
-  minAmount: number;
+  minAmountQuote: number;
+  minAmountCollateral: number;
   /** What to do with Collected LP Rewards. If unset will leave rewards in wallet. */
-  rewardAction?: RewardAction;
+  rewardActionQuote?: RewardAction;
+  rewardActionCollateral?: RewardAction;
 }
 
 export interface PoolConfig {

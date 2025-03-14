@@ -119,13 +119,20 @@ export class RewardActionTracker {
         case RewardActionLabel.EXCHANGE:
           const pool = this.config.pools.find(
             (p) =>
-              p.collectLpReward?.rewardAction?.action ===
-                RewardActionLabel.EXCHANGE &&
-              p.collectLpReward?.rewardAction?.address.toLowerCase() ===
-                token.toLowerCase()
-          );
-          const tokenConfig = pool?.collectLpReward
-            ?.rewardAction as TokenConfig;
+              (
+                p.collectLpReward?.rewardActionQuote?.action ===
+                  RewardActionLabel.EXCHANGE &&
+                p.collectLpReward?.rewardActionQuote?.address.toLowerCase() ===
+                  token.toLowerCase()
+              ) || (
+                p.collectLpReward?.rewardActionCollateral?.action ===
+                  RewardActionLabel.EXCHANGE &&
+                p.collectLpReward?.rewardActionCollateral?.address.toLowerCase() ===
+                  token.toLowerCase()
+              )
+          )
+
+          const tokenConfig = rewardAction as TokenConfig;
 
           const slippage =
             tokenConfig?.slippage ??
