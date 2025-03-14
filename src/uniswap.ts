@@ -18,7 +18,7 @@ import {
   Trade,
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
-import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
+import { BigNumber, Contract, ethers, providers, Signer, constants } from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
 import { NonceTracker } from './nonce';
@@ -214,7 +214,7 @@ export async function swapToWeth(
     trade.minimumAmountOut(slippageTolerance).quotient.toString()
   );
 
-  if (minOut.lte(BigNumber.from('0'))) {
+  if (minOut.lte(constants.Zero)) {
     minOut = amount.div(BigNumber.from('10000'));
   }
 

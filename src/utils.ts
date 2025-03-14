@@ -60,7 +60,7 @@ export function overrideMulticall(
 ): void {
   if (
     chainConfig?.multicallAddress &&
-    chainConfig?.multicallBlock != undefined
+    chainConfig?.multicallBlock !== undefined
   ) {
     fungiblePool.ethcallProvider.multicall3 = {
       address: chainConfig.multicallAddress,

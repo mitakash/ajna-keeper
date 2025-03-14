@@ -1,11 +1,11 @@
 import { FeeAmount } from '@uniswap/v3-sdk';
-import { BigNumber, Signer } from 'ethers';
+import { BigNumber, Signer, constants } from 'ethers';
 import {
   ExchangeReward,
   KeeperConfig,
   RewardAction,
   RewardActionLabel,
-  TransferReward,
+  TransferReward
 } from './config-types';
 import { DexRouter } from './dex-router';
 import { getDecimalsErc20, transferErc20 } from './erc20';
@@ -102,7 +102,7 @@ export class RewardActionTracker {
 
   public async handleAllTokens(): Promise<void> {
     const nonZeroEntries = Array.from(this.feeTokenAmountMap.entries()).filter(
-      ([key, amountWad]) => amountWad.gt(BigNumber.from('0'))
+      ([key, amountWad]) => amountWad.gt(constants.Zero)
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
@@ -178,7 +178,7 @@ export class RewardActionTracker {
     amountWadToAdd: BigNumber
   ) {
     const key = serializeRewardAction(rewardAction, tokenCollected);
-    const currAmount = this.feeTokenAmountMap.get(key) ?? BigNumber.from('0');
+    const currAmount = this.feeTokenAmountMap.get(key) ?? constants.Zero;
     this.feeTokenAmountMap.set(key, currAmount.add(amountWadToAdd));
   }
 
@@ -188,7 +188,7 @@ export class RewardActionTracker {
     amountWadToSub: BigNumber
   ) {
     const key = serializeRewardAction(rewardAction, tokenCollected);
-    const currAmount = this.feeTokenAmountMap.get(key) ?? BigNumber.from('0');
+    const currAmount = this.feeTokenAmountMap.get(key) ?? constants.Zero;
     this.feeTokenAmountMap.set(key, currAmount.sub(amountWadToSub));
   }
 

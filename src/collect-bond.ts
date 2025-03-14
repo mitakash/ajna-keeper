@@ -1,9 +1,9 @@
-import { FungiblePool, Signer, WrappedTransaction } from '@ajna-finance/sdk';
-import { BigNumber } from 'ethers';
-import { KeeperConfig, PoolConfig } from './config-types';
+import { FungiblePool, Signer } from '@ajna-finance/sdk';
+import { constants } from 'ethers';
+import { KeeperConfig } from './config-types';
 import { logger } from './logging';
-import { weiToDecimaled } from './utils';
 import { poolWithdrawBonds } from './transactions';
+import { weiToDecimaled } from './utils';
 
 interface CollectBondParams {
   pool: FungiblePool;
@@ -19,7 +19,7 @@ export async function collectBondFromPool({
   // Note: this does not settleAuctions.
   const signerAddress = await signer.getAddress();
   const { claimable, locked } = await pool.kickerInfo(signerAddress);
-  if (locked.eq(BigNumber.from('0')) && claimable.gt(BigNumber.from('0'))) {
+  if (locked.eq(constants.Zero) && claimable.gt(constants.Zero)) {
     if (!!config.dryRun) {
       logger.info(
         `DryRun - Would withdraw bond. pool: ${pool.name}. bondSize: ${weiToDecimaled(claimable)}`

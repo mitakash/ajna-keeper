@@ -1,7 +1,7 @@
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
-import { BigNumber, Contract, Signer, ethers, providers } from 'ethers';
+import { BigNumber, Contract, Signer, ethers, providers, constants } from 'ethers';
 import axios from 'axios';
 import { DexRouter } from '../dex-router';
 import { logger } from '../logging';
@@ -221,7 +221,7 @@ describe('DexRouter', () => {
       it('should approve token if allowance is insufficient', async () => {
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
-          .resolves(BigNumber.from('1'));
+          .resolves(constants.One);
         const approveStub = sinon.stub(erc20, 'approveErc20').resolves();
 
         await dexRouter.swap(
@@ -260,7 +260,7 @@ describe('DexRouter', () => {
       it('should throw if approval fails', async () => {
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
-          .resolves(BigNumber.from('0'));
+          .resolves(constants.Zero);
         const approveStub = sinon
           .stub(erc20, 'approveErc20')
           .rejects(new Error('Approval failed'));

@@ -1,5 +1,5 @@
 import { FungiblePool, Signer } from '@ajna-finance/sdk';
-import { BigNumber } from 'ethers';
+import { BigNumber, constants } from 'ethers';
 import { KeeperConfig, PoolConfig } from './config-types';
 import {
   getAllowanceOfErc20,
@@ -77,15 +77,17 @@ export async function* getLoansToKick({
   const getSumEstimatedBond = (borrowers: string[]) =>
     borrowers.reduce<BigNumber>(
       (sum, borrower) => sum.add(loanMap.get(borrower)!.liquidationBond),
-      BigNumber.from('0')
+      constants.Zero
     );
 
   for (let i = 0; i < borrowersSortedByBond.length; i++) {
     const borrower = borrowersSortedByBond[i];
-    const poolPrices = await pool.getPrices();
+    const [poolPrices, loanDetails] = await Promise.all([
+      pool.getPrices(),
+      pool.getLoan(borrower)
+    ]);
     const { lup, hpb } = poolPrices;
-    const { thresholdPrice, liquidationBond, debt, neutralPrice } =
-      await pool.getLoan(borrower);
+    const { thresholdPrice, liquidationBond, debt, neutralPrice } = loanDetails;
     const estimatedRemainingBond = liquidationBond.add(
       getSumEstimatedBond(borrowersSortedByBond.slice(i + 1))
     );
@@ -155,8 +157,10 @@ async function approveBalanceForLoanToKick({
   loanToKick,
 }: ApproveBalanceParams): Promise<boolean> {
   const { liquidationBond, estimatedRemainingBond } = loanToKick;
-  const balanceNative = await getBalanceOfErc20(signer, pool.quoteAddress);
-  const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+  const [balanceNative, quoteDecimals] = await Promise.all([
+    getBalanceOfErc20(signer, pool.quoteAddress),
+    getDecimalsErc20(signer, pool.quoteAddress)
+  ]);
   const balanceWad = tokenChangeDecimals(balanceNative, quoteDecimals);
   if (balanceWad < liquidationBond) {
     return false;
@@ -253,10 +257,10 @@ async function clearAllowances({
     pool.quoteAddress,
     pool.poolAddress
   );
-  if (allowance > BigNumber.from('0')) {
+  if (allowance > constants.Zero) {
     try {
       logger.debug(`Clearing allowance. pool: ${pool.name}`);
-      await poolQuoteApprove(pool, signer, BigNumber.from('0'));
+      await poolQuoteApprove(pool, signer, constants.Zero);
       logger.debug(`Cleared allowance. pool: ${pool.name}`);
     } catch (error) {
       logger.error(`Failed to clear allowance. pool: ${pool.name}`, error);
