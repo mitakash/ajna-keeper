@@ -1,7 +1,9 @@
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
+
 import { expect } from 'chai';
 import { BigNumber, Wallet, constants } from 'ethers';
 import { LpCollector } from '../collect-lp';
+
 import { configureAjna, TokenToCollect } from '../config-types';
 import { DexRouter } from '../dex-router';
 import { getBalanceOfErc20 } from '../erc20';

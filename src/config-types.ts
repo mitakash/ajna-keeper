@@ -163,6 +163,8 @@ export interface UniswapV3Overrides {
 export interface KeeperConfig {
   /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
   ethRpcUrl: string;
+  /** The log level of the keeper. */
+  logLevel: string;
   /** The url of the subgraph. */
   subgraphUrl: string;
   /** Path to encrypted keystore json file. See README for instructions on how to create this file.*/

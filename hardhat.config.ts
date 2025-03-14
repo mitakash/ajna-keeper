@@ -1,5 +1,6 @@
 /** @type import('hardhat/config').HardhatUserConfig */
 require('dotenv').config();
+require('@nomiclabs/hardhat-ethers');
 
 module.exports = {
   solidity: '0.8.28',
@@ -13,11 +14,10 @@ module.exports = {
         url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
         blockNumber: 21731352,
       },
-      avalanche: {
-        url: 'https://api.avax.network/ext/bc/C/rpc',
-        chainId: 43114,
-        accounts: [process.env.PRIVATE_KEY],
-      },
+    },
+    avalanche: {
+      chainId: 43114,
+      url: 'https://api.avax.network/ext/bc/C/rpc',
     },
   },
 };

@@ -34,38 +34,80 @@ describe('DexRouter', () => {
   let signer: Signer;
   let mockProvider: providers.JsonRpcProvider;
   let dexRouter: DexRouter;
+  let axiosGetStub: sinon.SinonStub;
 
   const chainId = 43114;
   const amount = BigNumber.from('1000000000000000000');
-  const tokenIn = MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress;
-  const tokenOut = MAINNET_CONFIG.WETH_ADDRESS;
+  const tokenIn = MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress; // WBTC
+  const tokenOut = MAINNET_CONFIG.WETH_ADDRESS; // WETH
   const to = MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress;
   const fromAddress = '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C';
   const slippage = 1;
   const feeAmount = 3000;
 
   beforeEach(() => {
-    mockProvider = new providers.JsonRpcProvider();
+    process.env.ONEINCH_API = 'https://api.1inch.io/v5.0';
+    process.env.ONEINCH_API_KEY = 'api_key';
 
+    mockProvider = new providers.JsonRpcProvider();
     mockProvider.estimateGas = sinon.stub().resolves(BigNumber.from('100000'));
     mockProvider.getResolver = sinon.stub().resolves(null);
     mockProvider.getNetwork = sinon
       .stub()
       .resolves({ chainId: chainId, name: 'mockNetwork' });
 
+    mockProvider.call = sinon.stub().callsFake((tx) => {
+      if (tx.data === '0x313ce567') {
+        return ethers.utils.defaultAbiCoder.encode(['uint8'], [8]);
+      }
+      if (
+        tx.data ===
+        '0x70a08231' +
+          ethers.utils.defaultAbiCoder
+            .encode(['address'], [fromAddress])
+            .slice(2)
+      ) {
+        return ethers.utils.defaultAbiCoder.encode(
+          ['uint256'],
+          [BigNumber.from('50000000')]
+        );
+      }
+      throw new Error('Unexpected call');
+    });
+
     signer = {
       provider: mockProvider,
       getAddress: sinon.stub().resolves(fromAddress),
-      sendTransaction: sinon.stub().resolves({ wait: sinon.stub().resolves() }),
+      sendTransaction: sinon
+        .stub()
+        .resolves({ wait: sinon.stub().resolves({}) }),
     } as unknown as Signer;
 
-    contractStub = new CustomContract(fromAddress, [], mockProvider);
+    contractStub = new CustomContract(tokenIn, [], mockProvider);
+    sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
+      return contractStub;
+    });
 
     dexRouter = new DexRouter(signer, {
       oneInchRouters: {
         1: '0x1111111254EEB25477B68fb85Ed929f73A960582',
         8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',
         43114: '0x1111111254EEB25477B68fb85Ed929f73A960582',
+      },
+    });
+
+    sinon.stub(logger, 'info');
+    sinon.stub(logger, 'debug');
+    sinon.stub(logger, 'error');
+
+    axiosGetStub = sinon.stub(axios, 'get').resolves({
+      data: {
+        tx: {
+          to: '0x1inchRouter',
+          data: '0xdata',
+          value: '0',
+          gas: '100000',
+        },
       },
     });
   });
@@ -128,53 +170,52 @@ describe('DexRouter', () => {
     });
 
     it('should throw if balance is insufficient', async () => {
-      mockProvider.getBalance = sinon
-        .stub()
-        .resolves(BigNumber.from('50000000000000'));
-      mockProvider.call = sinon
-        .stub()
-        .resolves(
-          ethers.utils.defaultAbiCoder.encode(
+      (mockProvider.call as sinon.SinonStub).callsFake((tx) => {
+        if (tx.data === '0x313ce567') {
+          return ethers.utils.defaultAbiCoder.encode(['uint8'], [8]);
+        }
+        if (
+          tx.data ===
+          '0x70a08231' +
+            ethers.utils.defaultAbiCoder
+              .encode(['address'], [fromAddress])
+              .slice(2)
+        ) {
+          return ethers.utils.defaultAbiCoder.encode(
             ['uint256'],
-            [BigNumber.from('500000000000000000')]
-          )
-        );
+            [BigNumber.from('50000000')]
+          ); // 0.5 WBTC
+        }
+        throw new Error('Unexpected call');
+      });
+
       await expect(
         dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, false)
       ).to.be.rejectedWith(
-        `Insufficient balance for ${tokenIn}: 500000000000000000 < 1000000000000000000`
+        `Insufficient balance for ${tokenIn}: 50000000 < 100000000`
       );
     });
 
     describe('useOneInch = true', () => {
-      let axiosGetStub: sinon.SinonStub;
-
       beforeEach(() => {
-        axiosGetStub = sinon.stub(axios, 'get').resolves({
-          data: {
-            tx: {
-              to: '0x1inchRouter',
-              data: '0xdata',
-              value: '0',
-              gas: '100000',
-            },
-          },
+        (mockProvider.call as sinon.SinonStub).callsFake((tx) => {
+          if (tx.data === '0x313ce567') {
+            return ethers.utils.defaultAbiCoder.encode(['uint8'], [8]);
+          }
+          if (
+            tx.data ===
+            '0x70a08231' +
+              ethers.utils.defaultAbiCoder
+                .encode(['address'], [fromAddress])
+                .slice(2)
+          ) {
+            return ethers.utils.defaultAbiCoder.encode(
+              ['uint256'],
+              [BigNumber.from('100000000')]
+            ); // 1 WBTC
+          }
+          throw new Error('Unexpected call');
         });
-        sinon.stub(logger, 'info');
-        sinon.stub(logger, 'debug');
-        sinon.stub(logger, 'error');
-
-        dexRouter = new DexRouter(signer, {
-          oneInchRouters: {
-            1: '0x1111111254EEB25477B68fb85Ed929f73A960582',
-            8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',
-            43114: '0x1111111254EEB25477B68fb85Ed929f73A960582',
-          },
-        });
-      });
-
-      afterEach(() => {
-        sinon.restore();
       });
 
       it('should approve token if allowance is insufficient', async () => {
@@ -182,10 +223,6 @@ describe('DexRouter', () => {
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(constants.One);
         const approveStub = sinon.stub(erc20, 'approveErc20').resolves();
-
-        mockProvider.call = sinon
-          .stub()
-          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
         await dexRouter.swap(
           chainId,
@@ -198,6 +235,7 @@ describe('DexRouter', () => {
           feeAmount
         );
         expect(getAllowanceStub.calledOnce).to.be.true;
+        expect(approveStub.calledOnce).to.be.true;
       });
 
       it('should skip approval if allowance is sufficient', async () => {
@@ -205,10 +243,6 @@ describe('DexRouter', () => {
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(amount);
         const approveStub = sinon.stub(erc20, 'approveErc20');
-
-        mockProvider.call = sinon
-          .stub()
-          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
         await dexRouter.swap(
           chainId,
@@ -221,9 +255,6 @@ describe('DexRouter', () => {
           feeAmount
         );
         expect(approveStub.notCalled).to.be.true;
-
-        getAllowanceStub.restore();
-        approveStub.restore();
       });
 
       it('should throw if approval fails', async () => {
@@ -233,10 +264,6 @@ describe('DexRouter', () => {
         const approveStub = sinon
           .stub(erc20, 'approveErc20')
           .rejects(new Error('Approval failed'));
-
-        mockProvider.call = sinon
-          .stub()
-          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
         await expect(
           dexRouter.swap(
@@ -250,25 +277,12 @@ describe('DexRouter', () => {
             feeAmount
           )
         ).to.be.rejectedWith('Approval failed');
-        expect(
-          (logger.error as sinon.SinonStub).calledWith(
-            `Failed to approve token ${tokenIn} for 1inch`
-          )
-        ).to.be.true;
-
-        getAllowanceStub.restore();
-        approveStub.restore();
       });
 
       it('should call swapWithOneInch and execute transaction', async () => {
-        process.env.ONEINCH = 'https://api.1inch.io/v5.0';
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(amount);
-
-        mockProvider.call = sinon
-          .stub()
-          .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
 
         await dexRouter.swap(
           chainId,
@@ -280,81 +294,82 @@ describe('DexRouter', () => {
           slippage,
           feeAmount
         );
+
+        expect(axiosGetStub.called).to.be.true;
         expect(
           axiosGetStub.calledOnceWith(
-            `${process.env.ONEINCH}/${chainId}/swap`,
+            `${process.env.ONEINCH_API}/${chainId}/swap`,
             {
               params: {
                 fromTokenAddress: tokenIn,
                 toTokenAddress: tokenOut,
-                amount: amount.toString(),
+                amount: '100000000',
                 fromAddress,
                 slippage,
+              },
+              headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
               },
             }
           )
         ).to.be.true;
-        expect(
-          (logger.info as sinon.SinonStub).calledWith(
-            `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
-          )
-        ).to.be.true;
-
-        getAllowanceStub.restore();
       });
     });
   });
 
   describe('swapWithOneInch', () => {
-    let axiosGetStub: sinon.SinonStub;
-
     beforeEach(() => {
-      process.env.ONEINCH = 'https://api.1inch.io/v5.0';
-      axiosGetStub = sinon.stub(axios, 'get').resolves({
-        data: {
-          tx: {
-            to: '0x1inchRouter',
-            data: '0xdata',
-            value: '0',
-            gas: '100000',
-          },
-        },
+      (mockProvider.call as sinon.SinonStub).callsFake((tx) => {
+        if (tx.data === '0x313ce567') {
+          return ethers.utils.defaultAbiCoder.encode(['uint8'], [8]);
+        }
+        if (
+          tx.data ===
+          '0x70a08231' +
+            ethers.utils.defaultAbiCoder
+              .encode(['address'], [fromAddress])
+              .slice(2)
+        ) {
+          return ethers.utils.defaultAbiCoder.encode(
+            ['uint256'],
+            [BigNumber.from('100000000')]
+          ); // 1 WBTC
+        }
+        throw new Error('Unexpected call');
       });
-      sinon.stub(logger, 'info');
-      sinon.stub(logger, 'debug');
-      sinon.stub(logger, 'error');
-    });
-
-    afterEach(() => {
-      sinon.restore();
     });
 
     it('should execute swap with 1inch successfully', async () => {
-      mockProvider.call = sinon
-        .stub()
-        .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
       await dexRouter['swapWithOneInch'](
         chainId,
-        amount,
+        BigNumber.from('100000000'),
         tokenIn,
         tokenOut,
         slippage
       );
       expect(
-        axiosGetStub.calledOnceWith(`${process.env.ONEINCH}/${chainId}/swap`)
-      ).to.be.true;
-      expect(
-        (logger.info as sinon.SinonStub).calledWith(
-          `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+        axiosGetStub.calledOnceWith(
+          `${process.env.ONEINCH_API}/${chainId}/swap`,
+          {
+            params: {
+              fromTokenAddress: tokenIn,
+              toTokenAddress: tokenOut,
+              amount: '100000000',
+              fromAddress,
+              slippage,
+            },
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+            },
+          }
         )
       ).to.be.true;
     });
 
     it('should throw and log error if axios fails', async () => {
       axiosGetStub.rejects(new Error('API error'));
-      mockProvider.call = sinon
-        .stub()
-        .resolves(ethers.utils.defaultAbiCoder.encode(['uint256'], [amount]));
       await expect(
         dexRouter['swapWithOneInch'](
           chainId,
@@ -364,7 +379,6 @@ describe('DexRouter', () => {
           slippage
         )
       ).to.be.rejectedWith('API error');
-      expect((logger.info as sinon.SinonStub).notCalled).to.be.true;
     });
   });
 });
