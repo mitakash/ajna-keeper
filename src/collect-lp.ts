@@ -12,15 +12,15 @@ import {
   BucketTakeLPAwardedEventFilter,
   ERC20Pool,
 } from '@ajna-finance/sdk/dist/types/contracts/ERC20Pool';
-import { BigNumber } from 'ethers';
+import { BigNumber, constants } from 'ethers';
 import { KeeperConfig, PoolConfig, TokenToCollect } from './config-types';
 import { logger } from './logging';
+import { RewardActionTracker } from './reward-action-tracker';
 import {
   bucketRemoveCollateralToken,
   bucketRemoveQuoteToken,
 } from './transactions';
 import { decimaledToWei, weiToDecimaled } from './utils';
-import { RewardActionTracker } from './reward-action-tracker';
 
 /**
  * Collects lp rewarded from BucketTakes without collecting the user's deposits or loans.
@@ -73,7 +73,7 @@ export class LpCollector {
     if (!this.started)
       throw new Error('Must start subscriptions before collecting rewards');
     const lpMapEntries = Array.from(this.lpMap.entries()).filter(
-      ([bucketIndex, rewardLp]) => rewardLp.gt(BigNumber.from('0'))
+      ([bucketIndex, rewardLp]) => rewardLp.gt(constants.Zero)
     );
     for (let [bucketIndex, rewardLp] of lpMapEntries) {
       const lpConsumed = await this.collectLpRewardFromBucket(
@@ -103,7 +103,7 @@ export class LpCollector {
       await bucket.getPosition(signerAddress);
     if (lpBalance.lt(rewardLp)) rewardLp = lpBalance;
 
-    if (redeemAs == TokenToCollect.QUOTE) {
+    if (redeemAs === TokenToCollect.QUOTE) {
       const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
       const quoteToWithdraw = min(depositWithdrawable, rewardQuote);
       if (quoteToWithdraw.gt(decimaledToWei(minAmount))) {
@@ -179,7 +179,7 @@ export class LpCollector {
         }
       }
     }
-    return BigNumber.from('0');
+    return constants.Zero;
   }
 
   private async subscribeToLpRewards() {
@@ -215,9 +215,9 @@ export class LpCollector {
   };
 
   private addReward(index: BigNumber, rewardLp: BigNumber) {
-    if (rewardLp.eq(BigNumber.from('0'))) return;
+    if (rewardLp.eq(constants.Zero)) return;
     const bucketIndex = parseInt(index.toString());
-    const prevReward = this.lpMap.get(bucketIndex) ?? BigNumber.from('0');
+    const prevReward = this.lpMap.get(bucketIndex) ?? constants.Zero;
     const sumReward = prevReward.add(rewardLp);
     logger.info(
       `Received LP Rewards in pool: ${this.pool.name}, bucketIndex: ${index}, rewardLp: ${rewardLp}`
@@ -226,9 +226,9 @@ export class LpCollector {
   }
 
   private subtractReward(bucketIndex: number, lp: BigNumber) {
-    const prevReward = this.lpMap.get(bucketIndex) ?? BigNumber.from('0');
+    const prevReward = this.lpMap.get(bucketIndex) ?? constants.Zero;
     const newReward = prevReward.sub(lp);
-    if (newReward.lte(BigNumber.from('0'))) {
+    if (newReward.lte(constants.Zero)) {
       this.lpMap.delete(bucketIndex);
     } else {
       this.lpMap.set(bucketIndex, newReward);
@@ -242,7 +242,7 @@ export class LpCollector {
     );
     const tx = await evt.getTransaction();
     const parsedTransaction = poolContract.interface.parseTransaction(tx);
-    if (parsedTransaction.functionFragment.name != 'bucketTake') {
+    if (parsedTransaction.functionFragment.name !== 'bucketTake') {
       throw new Error(
         `Cannot get bucket index from transaction: ${parsedTransaction.functionFragment.name}`
       );

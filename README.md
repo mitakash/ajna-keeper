@@ -85,10 +85,11 @@ Follow the setup instructions in ajna-subgraph/README.
 
 ### Setting up a keystore.
 
-Keeper uses ethers [Encrypted JSON Wallet](hhttps://docs.ethers.org/v5/api/signer/#Wallet-fromEncryptedJson), which is encrypted using a password.
+Keeper uses ethers [Encrypted JSON Wallet](https://docs.ethers.org/v5/api/signer/#Wallet-fromEncryptedJson), which is encrypted using a password.
 
 The easiest way to create an encrypted JSON wallet is to use the create-keystore script provided in keeper:
 Run the script with `yarn create-keystore`. Then follow the onscreen prompts.
+Ensure that the generated wallet is saved in the directory specified by the `keeperKeystore` property in `config.ts`.
 
 ### Execution
 
