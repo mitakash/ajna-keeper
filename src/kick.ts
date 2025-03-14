@@ -84,7 +84,7 @@ export async function* getLoansToKick({
     const borrower = borrowersSortedByBond[i];
     const [poolPrices, loanDetails] = await Promise.all([
       pool.getPrices(),
-      pool.getLoan(borrower)
+      pool.getLoan(borrower),
     ]);
     const { lup, hpb } = poolPrices;
     const { thresholdPrice, liquidationBond, debt, neutralPrice } = loanDetails;
@@ -159,7 +159,7 @@ async function approveBalanceForLoanToKick({
   const { liquidationBond, estimatedRemainingBond } = loanToKick;
   const [balanceNative, quoteDecimals] = await Promise.all([
     getBalanceOfErc20(signer, pool.quoteAddress),
-    getDecimalsErc20(signer, pool.quoteAddress)
+    getDecimalsErc20(signer, pool.quoteAddress),
   ]);
   const balanceWad = tokenChangeDecimals(balanceNative, quoteDecimals);
   if (balanceWad < liquidationBond) {

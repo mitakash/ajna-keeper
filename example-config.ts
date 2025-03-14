@@ -122,17 +122,17 @@ const config: KeeperConfig = {
       name: 'savUSD / USDC',
       address: '0x936e0fdec18d4dc5055b3e091fa063bc75d6215c',
       price: {
-          source: PriceOriginSource.FIXED,
-          value: 1.01,
-        },
-        kick: {
-          minDebt: 0.07,
-          priceFactor: 0.99,
-        },
+        source: PriceOriginSource.FIXED,
+        value: 1.01,
+      },
+      kick: {
+        minDebt: 0.07,
+        priceFactor: 0.99,
+      },
       take: {
-          minCollateral: 0.07,
-          priceFactor: 0.98,
-        },
+        minCollateral: 0.07,
+        priceFactor: 0.98,
+      },
       collectBond: true,
       collectLpReward: {
         redeemFirst: TokenToCollect.QUOTE,
@@ -140,10 +140,10 @@ const config: KeeperConfig = {
         minAmountCollateral: 0.05,
         rewardActionCollateral: {
           action: RewardActionLabel.EXCHANGE,
-          address: "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E",
-          targetToken: "usdc",
+          address: '0x06d47F3fb376649c3A9Dafe069B3D6E35572219E',
+          targetToken: 'usdc',
           slippage: 1,
-          useOneInch: true
+          useOneInch: true,
         },
       },
     },

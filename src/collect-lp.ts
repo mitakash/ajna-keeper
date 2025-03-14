@@ -13,7 +13,12 @@ import {
   ERC20Pool,
 } from '@ajna-finance/sdk/dist/types/contracts/ERC20Pool';
 import { BigNumber, constants } from 'ethers';
-import { KeeperConfig, PoolConfig, RewardAction, TokenToCollect } from './config-types';
+import {
+  KeeperConfig,
+  PoolConfig,
+  RewardAction,
+  TokenToCollect,
+} from './config-types';
 import { logger } from './logging';
 import { RewardActionTracker } from './reward-action-tracker';
 import {
@@ -95,12 +100,17 @@ export class LpCollector {
     bucketIndex: number,
     rewardLp: BigNumber
   ): Promise<BigNumber> {
-    const { redeemFirst, minAmountQuote, minAmountCollateral, rewardActionQuote, rewardActionCollateral } =
-      this.poolConfig.collectLpReward;
+    const {
+      redeemFirst,
+      minAmountQuote,
+      minAmountCollateral,
+      rewardActionQuote,
+      rewardActionCollateral,
+    } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
-    const bucket = await this.pool.getBucketByIndex(bucketIndex);
+    const bucket = this.pool.getBucketByIndex(bucketIndex);
     // retrieve exchange rate and total amount of deposit and collateral in bucket
-    const { exchangeRate, deposit, collateral } = await bucket.getStatus();
+    let { exchangeRate, deposit, collateral } = await bucket.getStatus();
     const { lpBalance, depositRedeemable, collateralRedeemable } =
       await bucket.getPosition(signerAddress);
     if (lpBalance.lt(rewardLp)) rewardLp = lpBalance;
@@ -110,64 +120,81 @@ export class LpCollector {
     if (redeemFirst === TokenToCollect.COLLATERAL) {
       const collateralToWithdraw = min(collateralRedeemable, collateral);
       if (collateralToWithdraw.gt(decimaledToWei(minAmountCollateral))) {
-        reedemed = reedemed.add(await this.redeemCollateral(
-          bucket,
-          bucketIndex,
-          collateralToWithdraw,
-          exchangeRate,
-          rewardActionCollateral,
-        ))
+        reedemed = reedemed.add(
+          await this.redeemCollateral(
+            bucket,
+            bucketIndex,
+            collateralToWithdraw,
+            exchangeRate,
+            rewardActionCollateral
+          )
+        );
+        ({ exchangeRate, deposit, collateral } = await bucket.getStatus());
       }
-      const remainingQuote = await bucket.lpToQuoteTokens(rewardLp.sub(reedemed));
+      const remainingQuote = await bucket.lpToQuoteTokens(
+        rewardLp.sub(reedemed)
+      );
       // still need to check this in case minAmountCollateral prevented withdrawal of collateral
       const quoteToWithdraw = min(remainingQuote, deposit);
       if (quoteToWithdraw.gt(decimaledToWei(minAmountQuote))) {
-        reedemed = reedemed.add(await this.redeemQuote(
-          bucket,
-          quoteToWithdraw,
-          exchangeRate,
-          rewardActionQuote,
-        ))
+        reedemed = reedemed.add(
+          await this.redeemQuote(
+            bucket,
+            quoteToWithdraw,
+            exchangeRate,
+            rewardActionQuote
+          )
+        );
       }
 
-    // Otherwise, default to redeeming quote token first
+      // Otherwise, default to redeeming quote token first
     } else {
       const quoteToWithdraw = min(depositRedeemable, deposit);
       if (quoteToWithdraw.gt(decimaledToWei(minAmountQuote))) {
-        reedemed = reedemed.add(await this.redeemQuote(
-          bucket,
-          quoteToWithdraw,
-          exchangeRate,
-          rewardActionQuote,
-        ))
+        reedemed = reedemed.add(
+          await this.redeemQuote(
+            bucket,
+            quoteToWithdraw,
+            exchangeRate,
+            rewardActionQuote
+          )
+        );
+        ({ exchangeRate, deposit, collateral } = await bucket.getStatus());
       }
-      const remainingCollateral = await bucket.lpToCollateral(rewardLp.sub(reedemed));
+      const remainingCollateral = await bucket.lpToCollateral(
+        rewardLp.sub(reedemed)
+      );
       // still need to check this in case minAmountQuote prevented withdrawal of quote token
       const collateralToWithdraw = min(remainingCollateral, collateral);
       if (collateralToWithdraw.gt(decimaledToWei(minAmountCollateral))) {
-        reedemed = reedemed.add(await this.redeemCollateral(
-          bucket,
-          bucketIndex,
-          collateralToWithdraw,
-          exchangeRate,
-          rewardActionCollateral,
-        ))
+        reedemed = reedemed.add(
+          await this.redeemCollateral(
+            bucket,
+            bucketIndex,
+            collateralToWithdraw,
+            exchangeRate,
+            rewardActionCollateral
+          )
+        );
       }
     }
 
     return reedemed;
   }
 
-  private async redeemQuote(bucket: FungibleBucket, quoteToWithdraw: BigNumber, exchangeRate: BigNumber, rewardActionQuote?: RewardAction): Promise<BigNumber> {
+  private async redeemQuote(
+    bucket: FungibleBucket,
+    quoteToWithdraw: BigNumber,
+    exchangeRate: BigNumber,
+    rewardActionQuote?: RewardAction
+  ): Promise<BigNumber> {
     if (this.config.dryRun) {
       logger.info(
         `DryRun - Would collect LP reward as ${quoteToWithdraw.toNumber()} quote. pool: ${this.pool.name}`
       );
     } else {
       try {
-        logger.debug(
-          `Collecting LP reward as quote. pool: ${this.pool.name}`
-        );
+        logger.debug(`Collecting LP reward as quote. pool: ${this.pool.name}`);
         await bucketRemoveQuoteToken(bucket, this.signer, quoteToWithdraw);
         logger.info(
           `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
@@ -181,6 +208,7 @@ export class LpCollector {
           );
         }
 
+        // FIXME: this calculates how much we LP we tried to redeem, not how much we actually redeemed
         return wdiv(quoteToWithdraw, exchangeRate);
       } catch (error) {
         logger.error(
@@ -192,7 +220,13 @@ export class LpCollector {
     return constants.Zero;
   }
 
-  private async redeemCollateral(bucket: FungibleBucket, bucketIndex: number, collateralToWithdraw: BigNumber, exchangeRate: BigNumber, rewardActionCollateral?: RewardAction): Promise<BigNumber> {
+  private async redeemCollateral(
+    bucket: FungibleBucket,
+    bucketIndex: number,
+    collateralToWithdraw: BigNumber,
+    exchangeRate: BigNumber,
+    rewardActionCollateral?: RewardAction
+  ): Promise<BigNumber> {
     if (this.config.dryRun) {
       logger.info(
         `DryRun - Would collect LP reward as ${collateralToWithdraw.toNumber()} collateral. pool: ${this.pool.name}`
@@ -220,6 +254,7 @@ export class LpCollector {
         }
 
         const price = indexToPrice(bucketIndex);
+        // FIXME: this calculates how much we LP we tried to redeem, not how much we actually redeemed
         return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
       } catch (error) {
         logger.error(

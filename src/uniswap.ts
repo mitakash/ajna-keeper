@@ -18,7 +18,14 @@ import {
   Trade,
   Pool as UniswapV3Pool,
 } from '@uniswap/v3-sdk';
-import { BigNumber, Contract, ethers, providers, Signer, constants } from 'ethers';
+import {
+  BigNumber,
+  Contract,
+  ethers,
+  providers,
+  Signer,
+  constants,
+} from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
 import { NonceTracker } from './nonce';

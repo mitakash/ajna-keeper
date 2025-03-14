@@ -191,12 +191,12 @@ tokenAddresses: {
 ```
 
 `pools.collectLpReward.rewardAction`:
-LP in buckets can be reedemed for quote token and/or collateral, depending on what the bucket holds at time of redemption. `redeemFirst` controls the redemption strategy, favoring either quote token (most situations) or collateral (useful in shorting pools).  To defer redeeming the second token, it's `minAmount` can be set to a sufficiently high value that manually swapping tokens on an exchange becomes practical.
+LP in buckets can be reedemed for quote token and/or collateral, depending on what the bucket holds at time of redemption. `redeemFirst` controls the redemption strategy, favoring either quote token (most situations) or collateral (useful in shorting pools). To defer redeeming the second token, it's `minAmount` can be set to a sufficiently high value that manually swapping tokens on an exchange becomes practical.
 
-Separate reward actions may be assigned to quote token and collateral, allowing tokens to be swapped out as desired.  For pools where you want to swap rewards with 1inch, set `useOneInch: true` in the `rewardAction`.
-
+Separate reward actions may be assigned to quote token and collateral, allowing tokens to be swapped out as desired. For pools where you want to swap rewards with 1inch, set `useOneInch: true` in the `rewardAction`.
 
 - Example: Volatile-to-volatile pool, swap both tokens for stables
+
 ```
 pools: [
   {
@@ -227,6 +227,7 @@ pools: [
 ```
 
 - Example: Stablecoin pool, swap collateral for quote token
+
 ```
 pools: [
   {
@@ -250,6 +251,7 @@ pools: [
 ```
 
 - Example: Shorting pool, no automated swapping
+
 ```
 pools: [
   {
