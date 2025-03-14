@@ -100,10 +100,11 @@ interface DexConfig {
 }
 
 export enum TokenToCollect {
-  QUOTE = 'quote',
-  COLLATERAL = 'collateral',
+  QUOTE_ONLY = 'quote_only',
+  COLLATERAL_ONLY = 'collateral_only',
+  QUOTE_THEN_COLLATERAL = 'quote_then_collateral',
+  COLLATERAL_THEN_QUOTE = 'collateral_then_quote',
 }
-
 
 export enum RewardActionLabel {
   TRANSFER = 'transfer',
@@ -131,8 +132,8 @@ export type RewardAction = TransferReward | ExchangeReward;
 interface CollectLpRewardSettings {
   /** Wether to redeem LP as Quote or Collateral. */
   redeemAs: TokenToCollect;
-  /** Minimum amount of token to collect. */
-  minAmount: number;
+  /** Minimum amount of LP required to collect token. */
+  minLpAmount: number;
   /** What to do with Collected LP Rewards. If unset will leave rewards in wallet. */
   rewardAction?: RewardAction;
 }

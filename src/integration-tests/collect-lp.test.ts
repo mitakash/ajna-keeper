@@ -82,8 +82,8 @@ describe('LpCollector subscription', () => {
       signer,
       {
         collectLpReward: {
-          redeemAs: TokenToCollect.QUOTE,
-          minAmount: 0,
+          redeemAs: TokenToCollect.QUOTE_ONLY,
+          minLpAmount: 0,
         },
       },
       {},
@@ -129,8 +129,8 @@ describe('LpCollector subscription', () => {
       noActionSigner,
       {
         collectLpReward: {
-          redeemAs: TokenToCollect.QUOTE,
-          minAmount: 0,
+          redeemAs: TokenToCollect.QUOTE_ONLY,
+          minLpAmount: 0,
         },
       },
       {},
@@ -178,8 +178,8 @@ describe('LpCollector subscription', () => {
       kickerSigner,
       {
         collectLpReward: {
-          redeemAs: TokenToCollect.QUOTE,
-          minAmount: 0,
+          redeemAs: TokenToCollect.QUOTE_ONLY,
+          minLpAmount: 0,
         },
       },
       {},
@@ -237,8 +237,8 @@ describe('LpCollector collections', () => {
       signer,
       {
         collectLpReward: {
-          redeemAs: TokenToCollect.QUOTE,
-          minAmount: 0,
+          redeemAs: TokenToCollect.QUOTE_ONLY,
+          minLpAmount: 0,
         },
       },
       {},

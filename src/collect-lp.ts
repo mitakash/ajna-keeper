@@ -22,6 +22,11 @@ import {
 import { decimaledToWei, weiToDecimaled } from './utils';
 import { RewardActionTracker } from './reward-action-tracker';
 
+enum RedeemStatus {
+  TOKEN_EMPTY,
+  TOKEN_NOT_EMPTY,
+}
+
 /**
  * Collects lp rewarded from BucketTakes without collecting the user's deposits or loans.
  */
@@ -76,110 +81,151 @@ export class LpCollector {
       ([bucketIndex, rewardLp]) => rewardLp.gt(BigNumber.from('0'))
     );
     for (let [bucketIndex, rewardLp] of lpMapEntries) {
-      const lpConsumed = await this.collectLpRewardFromBucket(
-        bucketIndex,
-        rewardLp
-      );
-      this.subtractReward(bucketIndex, lpConsumed);
+      await this.collectLpRewardFromBucket(bucketIndex);
     }
   }
 
   /**
    * Collects the lpReward from bucket. Returns amount of lp used.
    * @param bucketIndex
-   * @param rewardLp
-   * @resolves the amount of lp used while redeeming rewards.
    */
-  private async collectLpRewardFromBucket(
-    bucketIndex: number,
-    rewardLp: BigNumber
-  ): Promise<BigNumber> {
-    const { redeemAs, minAmount, rewardAction } =
-      this.poolConfig.collectLpReward;
+  private async collectLpRewardFromBucket(bucketIndex: number) {
+    const { redeemAs } = this.poolConfig.collectLpReward;
+    if (redeemAs === TokenToCollect.QUOTE_ONLY) {
+      await this.redeemQuote(bucketIndex);
+    } else if (redeemAs === TokenToCollect.COLLATERAL_ONLY) {
+      await this.redeemCollateral(bucketIndex);
+    } else if (redeemAs === TokenToCollect.QUOTE_THEN_COLLATERAL) {
+      const status = await this.redeemQuote(bucketIndex);
+      if (status === RedeemStatus.TOKEN_EMPTY) {
+        await this.redeemCollateral(bucketIndex);
+      }
+    } else if (redeemAs === TokenToCollect.COLLATERAL_THEN_QUOTE) {
+      const status = await this.redeemCollateral(bucketIndex);
+      if (status === RedeemStatus.TOKEN_EMPTY) {
+        await this.redeemQuote(bucketIndex);
+      }
+    }
+  }
+
+  private async redeemQuote(bucketIndex: number) {
+    var rewardLp = this.lpMap.get(bucketIndex)!;
+    const { minLpAmount, rewardAction } = this.poolConfig.collectLpReward;
+    const signerAddress = await this.signer.getAddress();
+    const bucket = await this.pool.getBucketByIndex(bucketIndex);
+    const { exchangeRate, deposit } = await bucket.getStatus();
+    const { lpBalance, depositWithdrawable } =
+      await bucket.getPosition(signerAddress);
+    const minQuoteToWithdraw = await bucket.lpToQuoteTokens(
+      decimaledToWei(minLpAmount)
+    );
+    if (deposit.lt(minQuoteToWithdraw)) return RedeemStatus.TOKEN_EMPTY;
+    if (lpBalance.lt(rewardLp)) rewardLp = lpBalance;
+    if (rewardLp.lt(decimaledToWei(minLpAmount)))
+      return RedeemStatus.TOKEN_NOT_EMPTY;
+
+    const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
+    const quoteToWithdraw = min(depositWithdrawable, rewardQuote);
+    if (quoteToWithdraw.lt(minQuoteToWithdraw))
+      return RedeemStatus.TOKEN_NOT_EMPTY;
+    if (this.config.dryRun) {
+      logger.info(
+        `DryRun - would collect LP reward as quote. pool: ${this.pool.name}`
+      );
+    } else {
+      try {
+        logger.debug(`Collecting LP reward as quote. pool: ${this.pool.name}`);
+        await bucketRemoveQuoteToken(bucket, this.signer, quoteToWithdraw);
+        logger.info(
+          `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
+        );
+
+        if (rewardAction) {
+          this.exchangeTracker.addToken(
+            rewardAction,
+            this.pool.quoteAddress,
+            quoteToWithdraw
+          );
+        }
+
+        const lpConsumed = quoteToLp(quoteToWithdraw, exchangeRate);
+        this.subtractReward(bucketIndex, lpConsumed);
+        return deposit.gt(quoteToWithdraw)
+          ? RedeemStatus.TOKEN_NOT_EMPTY
+          : RedeemStatus.TOKEN_EMPTY;
+      } catch (error) {
+        logger.error(
+          `Failed to collect LP reward as quote. pool: ${this.pool.name}`,
+          error
+        );
+        return RedeemStatus.TOKEN_NOT_EMPTY;
+      }
+    }
+  }
+
+  private async redeemCollateral(bucketIndex: number) {
+    var rewardLp = this.lpMap.get(bucketIndex)!;
+    const { minLpAmount, rewardAction } = this.poolConfig.collectLpReward;
     const signerAddress = await this.signer.getAddress();
     const bucket = await this.pool.getBucketByIndex(bucketIndex);
     const { exchangeRate, collateral } = await bucket.getStatus();
-    const { lpBalance, depositWithdrawable } =
+    const { lpBalance, collateralRedeemable } =
       await bucket.getPosition(signerAddress);
+    const price = indexToPrice(bucketIndex);
+    const minCollateralToWithdraw = await bucket.lpToCollateral(
+      decimaledToWei(minLpAmount)
+    );
+    if (collateral.lt(minCollateralToWithdraw)) return RedeemStatus.TOKEN_EMPTY;
     if (lpBalance.lt(rewardLp)) rewardLp = lpBalance;
+    if (rewardLp.lt(decimaledToWei(minLpAmount)))
+      return RedeemStatus.TOKEN_NOT_EMPTY;
 
-    if (redeemAs == TokenToCollect.QUOTE) {
-      const rewardQuote = await bucket.lpToQuoteTokens(rewardLp);
-      const quoteToWithdraw = min(depositWithdrawable, rewardQuote);
-      if (quoteToWithdraw.gt(decimaledToWei(minAmount))) {
-        if (this.config.dryRun) {
-          logger.info(
-            `DryRun - would collect LP reward as quote. pool: ${this.pool.name}`
-          );
-        } else {
-          try {
-            logger.debug(
-              `Collecting LP reward as quote. pool: ${this.pool.name}`
-            );
-            await bucketRemoveQuoteToken(bucket, this.signer, quoteToWithdraw);
-            logger.info(
-              `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
-            );
-
-            if (rewardAction) {
-              this.exchangeTracker.addToken(
-                rewardAction,
-                this.pool.quoteAddress,
-                quoteToWithdraw
-              );
-            }
-
-            return wdiv(quoteToWithdraw, exchangeRate);
-          } catch (error) {
-            logger.error(
-              `Failed to collect LP reward as quote. pool: ${this.pool.name}`,
-              error
-            );
-          }
-        }
-      }
+    const rewardCollateral = await bucket.lpToCollateral(rewardLp);
+    const collateralToWithdraw = min(rewardCollateral, collateralRedeemable);
+    if (collateralToWithdraw.lt(minCollateralToWithdraw))
+      return RedeemStatus.TOKEN_NOT_EMPTY;
+    if (this.config.dryRun) {
+      logger.info(
+        `DryRun - Would collect LP reward as collateral. pool: ${this.pool.name}`
+      );
     } else {
-      const rewardCollateral = await bucket.lpToCollateral(rewardLp);
-      const collateralToWithdraw = min(rewardCollateral, collateral);
-      if (collateralToWithdraw.gt(decimaledToWei(minAmount))) {
-        if (this.config.dryRun) {
-          logger.info(
-            `DryRun - Would collect LP reward as collateral. pool: ${this.pool.name}`
+      try {
+        logger.debug(
+          `Collecting LP reward as collateral. pool ${this.pool.name}`
+        );
+        await bucketRemoveCollateralToken(
+          bucket,
+          this.signer,
+          collateralToWithdraw
+        );
+        logger.info(
+          `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
+        );
+
+        if (rewardAction) {
+          this.exchangeTracker.addToken(
+            rewardAction,
+            this.pool.collateralAddress,
+            collateralToWithdraw
           );
-        } else {
-          try {
-            logger.debug(
-              `Collecting LP reward as collateral. pool ${this.pool.name}`
-            );
-            await bucketRemoveCollateralToken(
-              bucket,
-              this.signer,
-              collateralToWithdraw
-            );
-            logger.info(
-              `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
-            );
-
-            if (rewardAction) {
-              this.exchangeTracker.addToken(
-                rewardAction,
-                this.pool.collateralAddress,
-                collateralToWithdraw
-              );
-            }
-
-            const price = indexToPrice(bucketIndex);
-            return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
-          } catch (error) {
-            logger.error(
-              `Failed to collect LP reward as collateral. pool: ${this.pool.name}`,
-              error
-            );
-          }
         }
+
+        const lpConsumed = collateralToLp(
+          collateralToWithdraw,
+          exchangeRate,
+          price
+        );
+        this.subtractReward(bucketIndex, lpConsumed);
+        return collateral.gt(collateralToWithdraw)
+          ? RedeemStatus.TOKEN_NOT_EMPTY
+          : RedeemStatus.TOKEN_EMPTY;
+      } catch (error) {
+        logger.error(
+          `Failed to collect LP reward as collateral. pool: ${this.pool.name}`,
+          error
+        );
       }
     }
-    return BigNumber.from('0');
   }
 
   private async subscribeToLpRewards() {
@@ -254,4 +300,16 @@ export class LpCollector {
     ];
     return index;
   };
+}
+
+function quoteToLp(deposit: BigNumber, exchangeRate: BigNumber): BigNumber {
+  return wdiv(deposit, exchangeRate);
+}
+
+function collateralToLp(
+  collateral: BigNumber,
+  exchangeRate: BigNumber,
+  price: BigNumber
+): BigNumber {
+  return wdiv(wdiv(collateral, price), exchangeRate);
 }
