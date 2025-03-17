@@ -5,7 +5,7 @@ import {
   KeeperConfig,
   RewardAction,
   RewardActionLabel,
-  TransferReward
+  TransferReward,
 } from './config-types';
 import { DexRouter } from './dex-router';
 import { getDecimalsErc20, transferErc20 } from './erc20';
@@ -117,15 +117,7 @@ export class RewardActionTracker {
           break;
 
         case RewardActionLabel.EXCHANGE:
-          const pool = this.config.pools.find(
-            (p) =>
-              p.collectLpReward?.rewardAction?.action ===
-                RewardActionLabel.EXCHANGE &&
-              p.collectLpReward?.rewardAction?.address.toLowerCase() ===
-                token.toLowerCase()
-          );
-          const tokenConfig = pool?.collectLpReward
-            ?.rewardAction as TokenConfig;
+          const tokenConfig = rewardAction as TokenConfig;
 
           const slippage =
             tokenConfig?.slippage ??

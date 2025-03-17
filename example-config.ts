@@ -57,9 +57,10 @@ const config: KeeperConfig = {
       },
       collectBond: true,
       collectLpReward: {
-        redeemAs: TokenToCollect.QUOTE,
-        minAmount: 0.001,
-        rewardAction: {
+        redeemFirst: TokenToCollect.QUOTE,
+        minAmountQuote: 0.001,
+        minAmountCollateral: 1000,
+        rewardActionQuote: {
           action: RewardActionLabel.EXCHANGE,
           address: '0xaddressOfWstETH',
           targetToken: 'weth',
@@ -86,9 +87,10 @@ const config: KeeperConfig = {
       },
       collectBond: true,
       collectLpReward: {
-        redeemAs: TokenToCollect.COLLATERAL,
-        minAmount: 0.001,
-        rewardAction: {
+        redeemFirst: TokenToCollect.COLLATERAL,
+        minAmountQuote: 1000,
+        minAmountCollateral: 0.001,
+        rewardActionCollateral: {
           action: RewardActionLabel.TRANSFER,
           to: '0x0000000000000000000000000000000000000000',
         },
@@ -111,8 +113,38 @@ const config: KeeperConfig = {
       },
       collectBond: true,
       collectLpReward: {
-        redeemAs: TokenToCollect.QUOTE,
-        minAmount: 0.001,
+        redeemFirst: TokenToCollect.QUOTE,
+        minAmountQuote: 0.001,
+        minAmountCollateral: 100,
+      },
+    },
+    {
+      name: 'savUSD / USDC',
+      address: '0x936e0fdec18d4dc5055b3e091fa063bc75d6215c',
+      price: {
+        source: PriceOriginSource.FIXED,
+        value: 1.01,
+      },
+      kick: {
+        minDebt: 0.07,
+        priceFactor: 0.99,
+      },
+      take: {
+        minCollateral: 0.07,
+        priceFactor: 0.98,
+      },
+      collectBond: true,
+      collectLpReward: {
+        redeemFirst: TokenToCollect.QUOTE,
+        minAmountQuote: 0.001,
+        minAmountCollateral: 0.05,
+        rewardActionCollateral: {
+          action: RewardActionLabel.EXCHANGE,
+          address: '0x06d47F3fb376649c3A9Dafe069B3D6E35572219E',
+          targetToken: 'usdc',
+          slippage: 1,
+          useOneInch: true,
+        },
       },
     },
   ],

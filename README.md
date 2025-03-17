@@ -191,49 +191,81 @@ tokenAddresses: {
 ```
 
 `pools.collectLpReward.rewardAction`:
-For pools where you want to swap rewards with 1inch, set `useOneInch: true` in the `rewardAction`.
+LP in buckets can be reedemed for quote token and/or collateral, depending on what the bucket holds at time of redemption. `redeemFirst` controls the redemption strategy, favoring either quote token (most situations) or collateral (useful in shorting pools). To defer redeeming the second token, it's `minAmount` can be set to a sufficiently high value that manually swapping tokens on an exchange becomes practical.
 
-- Format:
+Separate reward actions may be assigned to quote token and collateral, allowing tokens to be swapped out as desired. For pools where you want to swap rewards with 1inch, set `useOneInch: true` in the `rewardAction`.
 
-```
-{
-  name: "Your Pool Name",
-  address: "0xpoolAddress",
-  // Other pool settings...
-  collectLpReward: {
-    redeemAs: "QUOTE", // or "COLLATERAL"
-    minAmount: 0.001,
-    rewardAction: {
-      action: "EXCHANGE",
-      address: "0xtokenAddress", // Token to swap
-      targetToken: "weth",      // Target token (e.g., "weth", "usdc")
-      slippage: 1,             // Slippage percentage (0-100)
-      useOneInch: true         // Set to true for 1inch
-    }
-  }
-}
-```
-
-- Example:
+- Example: Volatile-to-volatile pool, swap both tokens for stables
 
 ```
 pools: [
   {
     name: "wstETH / WETH",
     address: "0x63a366fc5976ff72999c89f69366f388b7d233e8",
+    ...
     collectLpReward: {
-      redeemAs: "QUOTE",
-      minAmount: 0.001,
-      rewardAction: {
+      redeemFirst: TokenToCollect.QUOTE, // favor redeeming LP for WETH before redeeming for wstETH
+      minAmountQuote: 0.001,             // don't redeem LP for dust amount of WETH
+      minAmountCollateral: 0.005,        // ensure we're redeeming enough to cover swapping fees
+      rewardActionQuote: {
         action: "EXCHANGE",
-        address: "0xaddressOfWstETH",
-        targetToken: "weth",
-        slippage: 1,
-        useOneInch: true
+        address: "0x4200000000000000000000000000000000000006", // Token to swap (WETH)
+        targetToken: "DAI",                                    // Desired token
+        slippage: 1,                                           // Slippage percentage (0-100)
+        useOneInch: true                                       // Set to true for 1inch
       }
-    }
+      rewardActionCollateral: {
+        action: "EXCHANGE",
+        address: "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452", // Token to swap (wstETH)
+        targetToken: "DAI",                                    // Desired token
+        slippage: 1,                                           // Slippage percentage (0-100)
+        useOneInch: true                                       // Set to true for 1inch
+      },
+    },
   }
 ],
+```
+
+- Example: Stablecoin pool, swap collateral for quote token
+
+```
+pools: [
+  {
+      name: 'savUSD / USDC',
+      address: '0x936e0fdec18d4dc5055b3e091fa063bc75d6215c',
+      ...
+      collectLpReward: {
+        redeemFirst: TokenToCollect.QUOTE,
+        minAmountQuote: 0.01,       // don't redeem LP for less than a penny
+        minAmountCollateral: 0.05,  // don't redeem LP for less than what it may cost to swap collateral for USDC
+        rewardActionCollateral: {
+          action: RewardActionLabel.EXCHANGE,
+          address: "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E", // Token to swap (savUSD)
+          targetToken: "usdc",                                   // Target token (USDC)
+          slippage: 1,                                           // Slippage percentage (0-100)
+          useOneInch: true                                       // Set to true for 1inch
+        },
+      },
+  }
+],
+```
+
+- Example: Shorting pool, no automated swapping
+
+```
+pools: [
+  {
+    name: "DAI / wSOL",
+    address: "0x63a366fc5976ff72999c89f69366f388b7d233e8",
+    ...
+    collectLpReward: {
+      redeemFirst: TokenToCollect.COLLATERAL, // favor redeeming LP for DAI
+      minAmountQuote: 200,                    // don't exchange LP for an amount of wSOL not worth manually swapping
+      minAmountCollateral: 0.15,              // don't redeem LP for less than transaction fees
+    },
+  }
+],
+
 ```
 
 ##### Notes
@@ -293,7 +325,7 @@ For pools where you want to swap rewards with Uniswap V3, set `useOneInch: false
   address: "0xpoolAddress",
   // Other pool settings...
   collectLpReward: {
-    redeemAs: "QUOTE", // or "COLLATERAL"
+    redeemFirst: "QUOTE", // or "COLLATERAL"
     minAmount: 0.001,
     rewardAction: {
       action: "EXCHANGE",
@@ -315,7 +347,7 @@ pools: [
     name: "WETH / USDC",
     address: "0x0b17159f2486f669a1f930926638008e2ccb4287",
     collectLpReward: {
-      redeemAs: "COLLATERAL",
+      redeemFirst: "COLLATERAL",
       minAmount: 0.001,
       rewardAction: {
         action: "EXCHANGE",
