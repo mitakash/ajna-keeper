@@ -174,8 +174,7 @@ async function approveBalanceForLoanToKick({
     pool.poolAddress
   );
   if (allowance.lt(liquidationBond)) {
-    const amountToApprove =
-      estimatedRemainingBond < balanceWad
+    const amountToApprove = estimatedRemainingBond.lt(balanceWad)
         ? estimatedRemainingBond
         : liquidationBond;
     const margin = decimaledToWei(
@@ -260,7 +259,7 @@ async function clearAllowances({
     pool.quoteAddress,
     pool.poolAddress
   );
-  if (allowance > constants.Zero) {
+  if (allowance.gt(constants.Zero)) {
     try {
       logger.debug(`Clearing allowance. pool: ${pool.name}`);
       await poolQuoteApprove(pool, signer, constants.Zero);
