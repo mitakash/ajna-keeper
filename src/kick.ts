@@ -162,7 +162,10 @@ async function approveBalanceForLoanToKick({
     getDecimalsErc20(signer, pool.quoteAddress),
   ]);
   const balanceWad = tokenChangeDecimals(balanceNative, quoteDecimals);
-  if (balanceWad < liquidationBond) {
+  if (balanceWad.lt(liquidationBond)) {
+    logger.debug(
+      `Insufficient balance to approve bond. pool: ${pool.name}, borrower: ${loanToKick.borrower}, balance: ${weiToDecimaled}, bond: ${liquidationBond}`
+    );
     return false;
   }
   const allowance = await getAllowanceOfErc20(
