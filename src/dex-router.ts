@@ -64,6 +64,7 @@ export class DexRouter {
       amount: amount.toString(),
       connectorTokens,
     };
+    logger.debug('Sending these params to 1inch quote:', params);
 
     try {
       const response = await axios.get(url, {
