@@ -17,21 +17,11 @@ export class DexRouter {
       oneInchRouters?: { [chainId: number]: string };
     } = {}
   ) {
-    if (!signer) throw new Error('Signer is required');
+    if (!signer) logger.error('Signer is required');
     const provider = signer.provider;
-    if (!provider) throw new Error('No provider available');
+    if (!provider) logger.error('No provider available');
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
-    if (!process.env.ONEINCH_API) {
-      throw new Error(
-        'ONEINCH_API is not configured in the environment variables'
-      );
-    }
-    if (!process.env.ONEINCH_API_KEY) {
-      throw new Error(
-        'ONEINCH_API_KEY is not configured in the environment variables'
-      );
-    }
   }
 
   private async swapWithOneInch(
@@ -41,11 +31,21 @@ export class DexRouter {
     tokenOut: string,
     slippage: number
   ) {
+    if (!process.env.ONEINCH_API) {
+      logger.error(
+        'ONEINCH_API is not configured in the environment variables'
+      );
+    }
+    if (!process.env.ONEINCH_API_KEY) {
+      logger.error(
+        'ONEINCH_API_KEY is not configured in the environment variables'
+      );
+    }
     const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const fromAddress = await this.signer.getAddress();
 
     if (slippage < 0 || slippage > 100) {
-      throw new Error('Slippage must be between 0 and 100');
+      logger.error('Slippage must be between 0 and 100');
     }
 
     const params = {
@@ -66,7 +66,7 @@ export class DexRouter {
       });
 
       if (!response.data.tx) {
-        throw new Error('No valid transaction received from 1inch');
+        logger.error('No valid transaction received from 1inch');
       }
 
       const tx = response.data.tx;
@@ -107,7 +107,7 @@ export class DexRouter {
     uniswapOverrides?: { wethAddress?: string; uniswapV3Router?: string }
   ) {
     if (!chainId || !amount || !tokenIn || !tokenOut || !to) {
-      throw new Error('Invalid parameters provided to swap');
+      logger.error('Invalid parameters provided to swap');
     }
     if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
       logger.info(`Token ${tokenIn} is already ${tokenOut}, no swap necessary`);
@@ -123,7 +123,7 @@ export class DexRouter {
     const adjustedAmount = tokenChangeDecimals(amount, 18, decimals);
 
     if (balance.lt(adjustedAmount)) {
-      throw new Error(
+      logger.error(
         `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${adjustedAmount.toString()}`
       );
     }
@@ -132,7 +132,7 @@ export class DexRouter {
     if (effectiveUseOneInch) {
       const oneInchRouter = this.oneInchRouters[chainId];
       if (!oneInchRouter) {
-        throw new Error(`No 1inch router defined for chainId ${chainId}`);
+        logger.error(`No 1inch router defined for chainId ${chainId}`);
       }
 
       const currentAllowance = await getAllowanceOfErc20(
