@@ -1,7 +1,7 @@
 import './subgraph-mock';
-import { getLoansToKick, kick } from '../kick';
+import { approveBalanceForLoanToKick, getLoansToKick, kick } from '../kick';
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
-import { MAINNET_CONFIG } from './test-config';
+import { MAINNET_CONFIG, USER1_MNEMONIC } from './test-config';
 import { configureAjna } from '../config-types';
 import {
   getProvider,
@@ -13,7 +13,9 @@ import {
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import { makeGetLoansFromSdk, overrideGetLoans } from './subgraph-mock';
 import { expect } from 'chai';
-import { arrayFromAsync } from '../utils';
+import { arrayFromAsync, decimaledToWei } from '../utils';
+import { constants, Wallet } from 'ethers';
+import { getAllowanceOfErc20, transferErc20 } from '../erc20';
 
 describe('getLoansToKick', () => {
   beforeEach(async () => {
@@ -146,5 +148,143 @@ describe('kick', () => {
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress
     );
     expect(loan.isKicked).to.be.true;
+  });
+});
+
+describe('approveBalanceForLoanToKick', () => {
+  beforeEach(async () => {
+    await resetHardhat();
+  });
+
+  it('Fails when there is insufficient balance', async () => {
+    configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
+    const ajna = new AjnaSDK(getProvider());
+    const pool: FungiblePool = await ajna.fungiblePoolFactory.getPoolByAddress(
+      MAINNET_CONFIG.SOL_WETH_POOL.poolConfig.address
+    );
+    const quoteWhaleSigner = await impersonateSigner(
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress
+    );
+    const signer = Wallet.fromMnemonic(USER1_MNEMONIC).connect(getProvider());
+    await setBalance(signer.address, decimaledToWei(100).toHexString());
+    await setBalance(
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress,
+      decimaledToWei(100).toHexString()
+    );
+    await transferErc20(
+      quoteWhaleSigner,
+      pool.quoteAddress,
+      signer.address,
+      decimaledToWei(1)
+    );
+
+    const loanToKick = {
+      borrower: '0x0000000000000000000000000000000000000000',
+      liquidationBond: decimaledToWei(10),
+      estimatedRemainingBond: decimaledToWei(50),
+      limitPrice: 1,
+    };
+    const approved = await approveBalanceForLoanToKick({
+      pool,
+      signer,
+      loanToKick,
+    });
+    const allowance = await getAllowanceOfErc20(
+      signer,
+      pool.quoteAddress,
+      pool.poolAddress
+    );
+    expect(approved).to.be.false;
+    expect(allowance.eq(constants.Zero)).to.be.true;
+  });
+
+  it('Approves bond when there is sufficient balance for one bond', async () => {
+    configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
+    const ajna = new AjnaSDK(getProvider());
+    const pool: FungiblePool = await ajna.fungiblePoolFactory.getPoolByAddress(
+      MAINNET_CONFIG.SOL_WETH_POOL.poolConfig.address
+    );
+    const quoteWhaleSigner = await impersonateSigner(
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress
+    );
+    const signer = Wallet.fromMnemonic(USER1_MNEMONIC).connect(getProvider());
+    await setBalance(signer.address, decimaledToWei(100).toHexString());
+    await setBalance(
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress,
+      decimaledToWei(100).toHexString()
+    );
+    await transferErc20(
+      quoteWhaleSigner,
+      pool.quoteAddress,
+      signer.address,
+      decimaledToWei(20)
+    );
+
+    const loanToKick = {
+      borrower: '0x0000000000000000000000000000000000000000',
+      liquidationBond: decimaledToWei(10),
+      estimatedRemainingBond: decimaledToWei(50),
+      limitPrice: 1,
+    };
+    const approved = await approveBalanceForLoanToKick({
+      pool,
+      signer,
+      loanToKick,
+    });
+    const allowance = await getAllowanceOfErc20(
+      signer,
+      pool.quoteAddress,
+      pool.poolAddress
+    );
+    expect(approved, 'approval returns true').to.be.true;
+    expect(
+      allowance.gte(decimaledToWei(10)) && allowance.lte(decimaledToWei(11)),
+      'allowance is roughly 10 WETH'
+    ).to.be.true;
+  });
+
+  it('Approves bond when there is sufficient balance for all bonds', async () => {
+    configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
+    const ajna = new AjnaSDK(getProvider());
+    const pool: FungiblePool = await ajna.fungiblePoolFactory.getPoolByAddress(
+      MAINNET_CONFIG.SOL_WETH_POOL.poolConfig.address
+    );
+    const quoteWhaleSigner = await impersonateSigner(
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress
+    );
+    const signer = Wallet.fromMnemonic(USER1_MNEMONIC).connect(getProvider());
+    await setBalance(signer.address, decimaledToWei(100).toHexString());
+    await setBalance(
+      MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress,
+      decimaledToWei(100).toHexString()
+    );
+    await transferErc20(
+      quoteWhaleSigner,
+      pool.quoteAddress,
+      signer.address,
+      decimaledToWei(60)
+    );
+
+    const loanToKick = {
+      borrower: '0x0000000000000000000000000000000000000000',
+      liquidationBond: decimaledToWei(10),
+      estimatedRemainingBond: decimaledToWei(50),
+      limitPrice: 1,
+    };
+    const approved = await approveBalanceForLoanToKick({
+      pool,
+      signer,
+      loanToKick,
+    });
+    const allowance = await getAllowanceOfErc20(
+      signer,
+      pool.quoteAddress,
+      pool.poolAddress
+    );
+    expect(approved, 'approval returns true').to.be.true;
+    expect(
+      allowance.gte(decimaledToWei(50)) && allowance.lt(decimaledToWei(51)),
+      'Allowance is roughly 50 Weth'
+    ).to.be.true;
   });
 });

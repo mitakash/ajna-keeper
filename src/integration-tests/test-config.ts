@@ -49,6 +49,7 @@ export const MAINNET_CONFIG = {
   },
   SOL_WETH_POOL: {
     quoteAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
+    quoteDecimals: 18,
     collateralAddress: '0xd31a59c85ae9d8edefec411d448f90841571b89c',
     quoteWhaleAddress: '0xF04a5cC80B1E94C69B48f5ee68a08CD2F09A7c3E',
     quoteWhaleAddress2: '0x554adc35ccD8090566BfcA842537fd39b82489C1',

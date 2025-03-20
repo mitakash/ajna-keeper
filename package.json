@@ -30,7 +30,6 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
-    "@nomiclabs/hardhat-ethers": "^2.2.3",
     "@types/chai": "^5.0.1",
     "@types/chai-as-promised": "^8.0.1",
     "@types/mocha": "^10.0.10",

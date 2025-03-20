@@ -151,7 +151,7 @@ interface ApproveBalanceParams {
  * Approves enough quoteToken to cover the bond of this kick and remaining kicks.
  * @returns True if there is enough balance to cover the next kick. False otherwise.
  */
-async function approveBalanceForLoanToKick({
+export async function approveBalanceForLoanToKick({
   pool,
   signer,
   loanToKick,
@@ -164,7 +164,7 @@ async function approveBalanceForLoanToKick({
   const balanceWad = tokenChangeDecimals(balanceNative, quoteDecimals);
   if (balanceWad.lt(liquidationBond)) {
     logger.debug(
-      `Insufficient balance to approve bond. pool: ${pool.name}, borrower: ${loanToKick.borrower}, balance: ${weiToDecimaled}, bond: ${liquidationBond}`
+      `Insufficient balance to approve bond. pool: ${pool.name}, borrower: ${loanToKick.borrower}, balance: ${weiToDecimaled(balanceWad)}, bond: ${weiToDecimaled(liquidationBond)}`
     );
     return false;
   }
@@ -175,8 +175,8 @@ async function approveBalanceForLoanToKick({
   );
   if (allowance.lt(liquidationBond)) {
     const amountToApprove = estimatedRemainingBond.lt(balanceWad)
-        ? estimatedRemainingBond
-        : liquidationBond;
+      ? estimatedRemainingBond
+      : liquidationBond;
     const margin = decimaledToWei(
       weiToDecimaled(amountToApprove) * LIQUIDATION_BOND_MARGIN
     );
