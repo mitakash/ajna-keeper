@@ -22,6 +22,15 @@ export class DexRouter {
     if (!provider) logger.error('No provider available');
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
+  }
+
+  private async swapWithOneInch(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    slippage: number
+  ) {
     if (!process.env.ONEINCH_API) {
       logger.error(
         'ONEINCH_API is not configured in the environment variables'
@@ -32,15 +41,6 @@ export class DexRouter {
         'ONEINCH_API_KEY is not configured in the environment variables'
       );
     }
-  }
-
-  private async swapWithOneInch(
-    chainId: number,
-    amount: BigNumber,
-    tokenIn: string,
-    tokenOut: string,
-    slippage: number
-  ) {
     const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const fromAddress = await this.signer.getAddress();
 
