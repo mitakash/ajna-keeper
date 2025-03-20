@@ -75,7 +75,7 @@ export class DexRouter {
         },
       });
 
-      logger.debug(`Quote from 1inch: ${response.data.toString()}`);
+      logger.debug(`Quote from 1inch: ${JSON.stringify(response.data)}`);
       return {
         toTokenAmount: response.data.toTokenAmount,
         protocols: response.data.protocols,
