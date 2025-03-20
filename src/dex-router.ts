@@ -145,7 +145,12 @@ export class DexRouter {
           logger.debug(
             `Approving 1inch router ${oneInchRouter} for token: ${tokenIn}`
           );
-          await approveErc20(this.signer, tokenIn, oneInchRouter, adjustedAmount);
+          await approveErc20(
+            this.signer,
+            tokenIn,
+            oneInchRouter,
+            adjustedAmount
+          );
           logger.info(`Approval successful for token ${tokenIn}`);
         } catch (error) {
           logger.error(`Failed to approve token ${tokenIn} for 1inch`, error);
@@ -153,7 +158,13 @@ export class DexRouter {
         }
       }
 
-      await this.swapWithOneInch(chainId, adjustedAmount, tokenIn, tokenOut, slippage);
+      await this.swapWithOneInch(
+        chainId,
+        adjustedAmount,
+        tokenIn,
+        tokenOut,
+        slippage
+      );
     } else {
       try {
         await swapToWeth(

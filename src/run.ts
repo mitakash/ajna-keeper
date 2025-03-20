@@ -138,7 +138,9 @@ async function collectLpRewardsLoop({
 }: KeepPoolParams) {
   const poolsWithCollectLpSettings = config.pools.filter(hasCollectLpSettings);
   const lpCollectors: Map<string, LpCollector> = new Map();
-  const dexRouter = new DexRouter(signer, { oneInchRouters: config?.oneInchRouters ?? {} });
+  const dexRouter = new DexRouter(signer, {
+    oneInchRouters: config?.oneInchRouters ?? {},
+  });
   const exchangeTracker = new RewardActionTracker(signer, config, dexRouter);
 
   for (const poolConfig of poolsWithCollectLpSettings) {
