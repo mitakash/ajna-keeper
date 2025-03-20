@@ -23,6 +23,68 @@ export class DexRouter {
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
   }
+  /**
+   * Fetches a quote from the 1inch API for a given token swap.
+   * @param chainId The chain ID for the swap.
+   * @param amount The amount to swap.
+   * @param tokenIn The address of the input token.
+   * @param tokenOut The address of the output token.
+   * @returns An object containing the quoted amount and protocols used.
+   */
+  private async getQuoteFromOneInch(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string
+  ): Promise<{ toTokenAmount: string; protocols: any[] }> {
+    if (!process.env.ONEINCH_API) {
+      logger.error(
+        'ONEINCH_API is not configured in the environment variables'
+      );
+      throw new Error('ONEINCH_API is not configured');
+    }
+    if (!process.env.ONEINCH_API_KEY) {
+      logger.error(
+        'ONEINCH_API_KEY is not configured in the environment variables'
+      );
+      throw new Error('ONEINCH_API_KEY is not configured');
+    }
+
+    const url = `${process.env.ONEINCH_API}/${chainId}/quote`;
+    const connectorTokens = [
+      '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
+      '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
+      '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7',
+      '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+    ].join(',');
+
+    const params = {
+      fromTokenAddress: tokenIn,
+      toTokenAddress: tokenOut,
+      amount: amount.toString(),
+      connectorTokens,
+    };
+
+    try {
+      const response = await axios.get(url, {
+        params,
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+        },
+      });
+
+      logger.debug('Quote from 1inch:', response.data);
+      return {
+        toTokenAmount: response.data.toTokenAmount,
+        protocols: response.data.protocols,
+      };
+    } catch (error: Error | any) {
+      const errorMsg = error.response?.data?.description || error.message;
+      logger.error(`Failed to get quote from 1inch: ${errorMsg}`, error);
+      throw error;
+    }
+  }
 
   private async swapWithOneInch(
     chainId: number,
@@ -48,6 +110,16 @@ export class DexRouter {
       logger.error('Slippage must be between 0 and 100');
     }
 
+    const quote = await this.getQuoteFromOneInch(
+      chainId,
+      amount,
+      tokenIn,
+      tokenOut
+    );
+    logger.info(
+      `1inch quote: ${amount.toString()} ${tokenIn} -> ${quote.toTokenAmount} ${tokenOut}`
+    );
+
     const params = {
       fromTokenAddress: tokenIn,
       toTokenAddress: tokenOut,
@@ -55,6 +127,8 @@ export class DexRouter {
       fromAddress,
       slippage,
     };
+
+    logger.debug('Sending these params to 1inch:', params);
 
     try {
       const response = await axios.get(url, {
@@ -70,7 +144,6 @@ export class DexRouter {
       }
 
       const tx = response.data.tx;
-      logger.debug('Params sent to 1inch:', params);
       logger.debug('Transaction from 1inch:', tx);
 
       const provider = this.signer.provider as providers.Provider;
