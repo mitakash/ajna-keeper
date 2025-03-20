@@ -64,7 +64,7 @@ export class DexRouter {
       amount: amount.toString(),
       connectorTokens,
     };
-    logger.debug('Sending these params to 1inch quote:', params);
+    logger.debug(`Sending these params to 1inch quote: ${JSON.stringify(params)}`);
 
     try {
       const response = await axios.get(url, {
@@ -75,14 +75,14 @@ export class DexRouter {
         },
       });
 
-      logger.debug('Quote from 1inch:', response.data);
+      logger.debug(`Quote from 1inch: ${response.data.toString()}`);
       return {
         toTokenAmount: response.data.toTokenAmount,
         protocols: response.data.protocols,
       };
     } catch (error: Error | any) {
       const errorMsg = error.response?.data?.description || error.message;
-      logger.error(`Failed to get quote from 1inch: ${errorMsg}`, error);
+      logger.error(`Failed to get quote from 1inch: ${errorMsg} ${error}`);
       throw error;
     }
   }
@@ -129,7 +129,7 @@ export class DexRouter {
       slippage,
     };
 
-    logger.debug('Sending these params to 1inch:', params);
+    logger.debug(`Sending these params to 1inch: ${JSON.stringify(params)}`);
 
     try {
       const response = await axios.get(url, {
@@ -145,7 +145,7 @@ export class DexRouter {
       }
 
       const tx = response.data.tx;
-      logger.debug('Transaction from 1inch:', tx);
+      logger.debug(`Transaction from 1inch: ${JSON.stringify(tx)}`);
 
       const provider = this.signer.provider as providers.Provider;
       const gasEstimate = await provider.estimateGas({
@@ -164,7 +164,7 @@ export class DexRouter {
       return receipt;
     } catch (error: Error | any) {
       const errorMsg = error.response?.data?.description || error.message;
-      logger.error(`Failed to swap with 1inch: ${errorMsg}`, error);
+      logger.error(`Failed to swap with 1inch: ${errorMsg} ${error}`);
       throw error;
     }
   }
@@ -227,7 +227,7 @@ export class DexRouter {
           );
           logger.info(`Approval successful for token ${tokenIn}`);
         } catch (error) {
-          logger.error(`Failed to approve token ${tokenIn} for 1inch`, error);
+          logger.error(`Failed to approve token ${tokenIn} for 1inch ${error}`);
           throw error;
         }
       }
@@ -253,8 +253,7 @@ export class DexRouter {
         );
       } catch (error) {
         logger.error(
-          `Uniswap V3 swap via swapToWeth failed for token: ${tokenIn}`,
-          error
+          `Uniswap V3 swap via swapToWeth failed for token: ${tokenIn} ${error}`
         );
         throw error;
       }
