@@ -334,6 +334,23 @@ describe('DexRouter', () => {
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(amount);
 
+        axiosGetStub.onCall(0).resolves({
+          data: {
+            toTokenAmount: '900000000000000000',
+            protocols: [],
+          },
+        });
+        axiosGetStub.onCall(1).resolves({
+          data: {
+            tx: {
+              to: '0x1inchRouter',
+              data: '0xdata',
+              value: '0',
+              gas: '100000',
+            },
+          },
+        });
+
         await dexRouter.swap(
           chainId,
           amount,
@@ -345,11 +362,30 @@ describe('DexRouter', () => {
           feeAmount
         );
 
-        expect(axiosGetStub.called).to.be.true;
+        expect(axiosGetStub.calledTwice).to.be.true;
+
         expect(
-          axiosGetStub.calledOnceWith(
-            `${process.env.ONEINCH_API}/${chainId}/swap`,
-            {
+          axiosGetStub
+            .getCall(0)
+            .calledWith(`${process.env.ONEINCH_API}/${chainId}/quote`, {
+              params: {
+                fromTokenAddress: tokenIn,
+                toTokenAddress: tokenOut,
+                amount: '100000000',
+                connectorTokens:
+                  '0x24de8771bc5ddb3362db529fc3358f2df3a0e346,0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e,0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7,0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+              },
+              headers: {
+                Accept: 'application/json',
+                Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+              },
+            })
+        ).to.be.true;
+
+        expect(
+          axiosGetStub
+            .getCall(1)
+            .calledWith(`${process.env.ONEINCH_API}/${chainId}/swap`, {
               params: {
                 fromTokenAddress: tokenIn,
                 toTokenAddress: tokenOut,
@@ -361,8 +397,7 @@ describe('DexRouter', () => {
                 Accept: 'application/json',
                 Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
               },
-            }
-          )
+            })
         ).to.be.true;
       });
     });
@@ -391,6 +426,23 @@ describe('DexRouter', () => {
     });
 
     it('should execute swap with 1inch successfully', async () => {
+      axiosGetStub.onCall(0).resolves({
+        data: {
+          toTokenAmount: '900000000000000000',
+          protocols: [],
+        },
+      });
+      axiosGetStub.onCall(1).resolves({
+        data: {
+          tx: {
+            to: '0x1inchRouter',
+            data: '0xdata',
+            value: '0',
+            gas: '100000',
+          },
+        },
+      });
+
       await dexRouter['swapWithOneInch'](
         chainId,
         BigNumber.from('100000000'),
@@ -398,10 +450,31 @@ describe('DexRouter', () => {
         tokenOut,
         slippage
       );
+
+      expect(axiosGetStub.calledTwice).to.be.true;
+
       expect(
-        axiosGetStub.calledOnceWith(
-          `${process.env.ONEINCH_API}/${chainId}/swap`,
-          {
+        axiosGetStub
+          .getCall(0)
+          .calledWith(`${process.env.ONEINCH_API}/${chainId}/quote`, {
+            params: {
+              fromTokenAddress: tokenIn,
+              toTokenAddress: tokenOut,
+              amount: '100000000',
+              connectorTokens:
+                '0x24de8771bc5ddb3362db529fc3358f2df3a0e346,0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e,0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7,0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+            },
+            headers: {
+              Accept: 'application/json',
+              Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+            },
+          })
+      ).to.be.true;
+
+      expect(
+        axiosGetStub
+          .getCall(1)
+          .calledWith(`${process.env.ONEINCH_API}/${chainId}/swap`, {
             params: {
               fromTokenAddress: tokenIn,
               toTokenAddress: tokenOut,
@@ -413,8 +486,7 @@ describe('DexRouter', () => {
               Accept: 'application/json',
               Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
             },
-          }
-        )
+          })
       ).to.be.true;
     });
 
