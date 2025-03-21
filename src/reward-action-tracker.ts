@@ -73,7 +73,7 @@ export class RewardActionTracker {
     useOneInch: boolean,
     slippage: number,
     feeAmount?: number
-  ): Promise<void> {
+  ): Promise<{ success: boolean; error?: string }> {
     const address = await this.signer.getAddress();
 
     const targetAddress =
@@ -82,12 +82,16 @@ export class RewardActionTracker {
         : this.config.uniswapOverrides?.wethAddress;
 
     if (!targetAddress) {
-      throw new Error(
+      logger.error(
         `No target address found for token ${targetToken} on chain ${chainId}`
       );
+      return {
+        success: false,
+        error: `No target address for ${targetToken} on chain ${chainId}`,
+      };
     }
 
-    await this.dexRouter.swap(
+    const result = await this.dexRouter.swap(
       chainId,
       amount,
       tokenAddress,
@@ -98,11 +102,12 @@ export class RewardActionTracker {
       feeAmount,
       this.config.uniswapOverrides
     );
+    return result;
   }
 
   public async handleAllTokens(): Promise<void> {
     const nonZeroEntries = Array.from(this.feeTokenAmountMap.entries()).filter(
-      ([key, amountWad]) => amountWad.gt(constants.Zero)
+      ([_, amountWad]) => amountWad.gt(constants.Zero)
     );
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
@@ -118,7 +123,6 @@ export class RewardActionTracker {
 
         case RewardActionLabel.EXCHANGE:
           const tokenConfig = rewardAction as TokenConfig;
-
           const slippage =
             tokenConfig?.slippage ??
             (rewardAction as ExchangeReward).slippage ??
@@ -134,27 +138,25 @@ export class RewardActionTracker {
           const feeAmount =
             (rewardAction as ExchangeReward).fee ?? tokenConfig?.feeAmount;
 
-          try {
-            await this.swapToken(
-              await this.signer.getChainId(),
-              token,
-              amountWad,
-              targetToken,
-              useOneInch,
-              slippage,
-              feeAmount
-            );
+          const swapResult = await this.swapToken(
+            await this.signer.getChainId(),
+            token,
+            amountWad,
+            targetToken,
+            useOneInch,
+            slippage,
+            feeAmount
+          );
+          if (swapResult.success) {
             this.removeToken(rewardAction, token, amountWad);
             logger.info(
               `Successfully swapped ${weiToDecimaled(amountWad)} of ${token} to ${targetToken}`
             );
             await delay(this.config.delayBetweenActions);
-          } catch (error) {
+          } else {
             logger.error(
-              `Failed to swap ${weiToDecimaled(amountWad)} of ${token}`,
-              error
+              `Failed to swap ${weiToDecimaled(amountWad)} of ${token}: ${swapResult.error}`
             );
-            throw error;
           }
           break;
 

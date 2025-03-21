@@ -5,7 +5,6 @@ import ERC20_ABI from './abis/erc20.abi.json';
 import { approveErc20, getAllowanceOfErc20 } from './erc20';
 import { logger } from './logging';
 import { swapToWeth } from './uniswap';
-import { tokenChangeDecimals } from './utils';
 
 export class DexRouter {
   private signer: Signer;
@@ -23,33 +22,13 @@ export class DexRouter {
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
   }
-  /**
-   * Fetches a quote from the 1inch API for a given token swap.
-   * @param chainId The chain ID for the swap.
-   * @param amount The amount to swap.
-   * @param tokenIn The address of the input token.
-   * @param tokenOut The address of the output token.
-   * @returns An object containing the quoted amount and protocols used.
-   */
+
   private async getQuoteFromOneInch(
     chainId: number,
     amount: BigNumber,
     tokenIn: string,
     tokenOut: string
-  ): Promise<{ dstAmount: string }> {
-    if (!process.env.ONEINCH_API) {
-      logger.error(
-        'ONEINCH_API is not configured in the environment variables'
-      );
-      throw new Error('ONEINCH_API is not configured');
-    }
-    if (!process.env.ONEINCH_API_KEY) {
-      logger.error(
-        'ONEINCH_API_KEY is not configured in the environment variables'
-      );
-      throw new Error('ONEINCH_API_KEY is not configured');
-    }
-
+  ): Promise<{ success: boolean; dstAmount?: string; error?: string }> {
     const url = `${process.env.ONEINCH_API}/${chainId}/quote`;
     const connectorTokens = [
       '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
@@ -65,7 +44,7 @@ export class DexRouter {
       connectorTokens,
     };
     logger.debug(
-      `Sending these params to 1inch quote: ${JSON.stringify(params)}`
+      `Sending these parameters to 1inch quote: ${JSON.stringify(params)}`
     );
 
     try {
@@ -77,14 +56,11 @@ export class DexRouter {
         },
       });
 
-      logger.debug(`Quote from 1inch: ${JSON.stringify(response.data)}`);
-      return {
-        dstAmount: response.data.dstAmount,
-      };
+      return { success: true, dstAmount: response.data.dstAmount };
     } catch (error: Error | any) {
       const errorMsg = error.response?.data?.description || error.message;
-      logger.error(`Failed to get quote from 1inch: ${errorMsg} ${error}`);
-      throw error;
+      logger.error(`Failed to get quote from 1inch: ${errorMsg}`);
+      return { success: false, error: errorMsg };
     }
   }
 
@@ -94,32 +70,39 @@ export class DexRouter {
     tokenIn: string,
     tokenOut: string,
     slippage: number
-  ) {
+  ): Promise<{ success: boolean; receipt?: any; error?: string }> {
     if (!process.env.ONEINCH_API) {
       logger.error(
         'ONEINCH_API is not configured in the environment variables'
       );
+      return { success: false, error: 'ONEINCH_API is not configured' };
     }
     if (!process.env.ONEINCH_API_KEY) {
       logger.error(
         'ONEINCH_API_KEY is not configured in the environment variables'
       );
+      return { success: false, error: 'ONEINCH_API_KEY is not configured' };
     }
+
     const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const fromAddress = await this.signer.getAddress();
 
     if (slippage < 0 || slippage > 100) {
       logger.error('Slippage must be between 0 and 100');
+      return { success: false, error: 'Slippage must be between 0 and 100' };
     }
 
-    const quote = await this.getQuoteFromOneInch(
+    const quoteResult = await this.getQuoteFromOneInch(
       chainId,
       amount,
       tokenIn,
       tokenOut
     );
+    if (!quoteResult.success) {
+      return { success: false, error: quoteResult.error };
+    }
     logger.info(
-      `1inch quote: ${amount.toString()} ${tokenIn} -> ${quote.dstAmount} ${tokenOut}`
+      `1inch quote: ${amount.toString()} ${tokenIn} -> ${quoteResult.dstAmount} ${tokenOut}`
     );
 
     const params = {
@@ -151,6 +134,10 @@ export class DexRouter {
           !response.data.tx.data
         ) {
           logger.error('No valid transaction received from 1inch');
+          return {
+            success: false,
+            error: 'No valid transaction received from 1inch',
+          };
         }
 
         const tx = response.data.tx;
@@ -162,33 +149,38 @@ export class DexRouter {
           gasEstimate = await provider.estimateGas({
             to: tx.to,
             data: tx.data,
-            value: tx.value,
+            value: tx.value || '0',
             from: fromAddress,
           });
         } catch (gasError) {
           logger.error(`Failed to estimate gas: ${gasError}`);
-          throw gasError;
+          return {
+            success: false,
+            error: `Gas estimation failed: ${gasError}`,
+          };
         }
-        tx.gas = gasEstimate.add(gasEstimate.div(10)).toString();
+        tx.gasLimit = gasEstimate.add(gasEstimate.div(10)).toString();
 
         const txResponse = await this.signer.sendTransaction(tx);
         const receipt = await txResponse.wait();
         logger.info(
           `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${txResponse.hash}`
         );
-        return receipt;
+        return { success: true, receipt };
       } catch (error: Error | any) {
         const errorMsg = error.response?.data?.description || error.message;
-        if (error.response.status === 429 && attempt < retries) {
+        const status = error.response?.status || 500;
+        if (status === 429 && attempt < retries) {
           const waitTime = delayMs * Math.pow(2, attempt - 1);
-          logger.warn(`Retrying (${attempt}/${retries}) after ${waitTime}ms`);
+          logger.warn(`Attempt (${attempt}/${retries}) after ${waitTime}ms`);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
           continue;
         }
-        logger.error(`Failed to swap with 1inch: ${errorMsg} ${error}`);
-        throw error;
+        logger.error(`Failed to swap with 1inch: ${errorMsg}`);
+        return { success: false, error: errorMsg };
       }
     }
+    return { success: false, error: 'Max retries reached for 1inch swap' };
   }
 
   public async swap(
@@ -201,30 +193,27 @@ export class DexRouter {
     slippage: number = 1,
     feeAmount: number = 3000,
     uniswapOverrides?: { wethAddress?: string; uniswapV3Router?: string }
-  ) {
+  ): Promise<{ success: boolean; error?: string }> {
     if (!chainId || !amount || !tokenIn || !tokenOut || !to) {
       logger.error('Invalid parameters provided to swap');
+      return { success: false, error: 'Invalid parameters provided to swap' };
     }
     if (tokenIn.toLowerCase() === tokenOut.toLowerCase()) {
       logger.info(`Token ${tokenIn} is already ${tokenOut}, no swap necessary`);
-      return;
+      return { success: true };
     }
 
     const provider = this.signer.provider as providers.Provider;
     const fromAddress = await this.signer.getAddress();
 
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
-    const decimals = await erc20.decimals();
-    logger.debug(`Token ${tokenIn} decimals: ${decimals}`);
     const balance = await erc20.balanceOf(fromAddress);
-    logger.debug(
-      `Balance: ${balance.toString()}, Amount: ${amount.toString()}`
-    );
 
     if (balance.lt(amount)) {
       logger.error(
         `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${amount.toString()}`
       );
+      return { success: false, error: `Insufficient balance for ${tokenIn}` };
     }
 
     const effectiveUseOneInch = chainId === 43114 ? true : useOneInch;
@@ -232,6 +221,10 @@ export class DexRouter {
       const oneInchRouter = this.oneInchRouters[chainId];
       if (!oneInchRouter) {
         logger.error(`No 1inch router defined for chainId ${chainId}`);
+        return {
+          success: false,
+          error: `No 1inch router defined for chainId ${chainId}`,
+        };
       }
 
       const currentAllowance = await getAllowanceOfErc20(
@@ -250,12 +243,21 @@ export class DexRouter {
           await approveErc20(this.signer, tokenIn, oneInchRouter, amount);
           logger.info(`Approval successful for token ${tokenIn}`);
         } catch (error) {
-          logger.error(`Failed to approve token ${tokenIn} for 1inch ${error}`);
-          throw error;
+          logger.error(
+            `Failed to approve token ${tokenIn} for 1inch: ${error}`
+          );
+          return { success: false, error: `Approval failed: ${error}` };
         }
       }
 
-      await this.swapWithOneInch(chainId, amount, tokenIn, tokenOut, slippage);
+      const result = await this.swapWithOneInch(
+        chainId,
+        amount,
+        tokenIn,
+        tokenOut,
+        slippage
+      );
+      return result;
     } else {
       try {
         await swapToWeth(
@@ -268,11 +270,12 @@ export class DexRouter {
         logger.info(
           `Uniswap V3 swap via swapToWeth successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
         );
+        return { success: true };
       } catch (error) {
         logger.error(
-          `Uniswap V3 swap via swapToWeth failed for token: ${tokenIn} ${error}`
+          `Uniswap V3 swap via swapToWeth failed for token: ${tokenIn}: ${error}`
         );
-        throw error;
+        return { success: false, error: `Uniswap swap failed: ${error}` };
       }
     }
   }
