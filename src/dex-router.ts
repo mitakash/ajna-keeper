@@ -64,7 +64,9 @@ export class DexRouter {
       amount: amount.toString(),
       connectorTokens,
     };
-    logger.debug(`Sending these params to 1inch quote: ${JSON.stringify(params)}`);
+    logger.debug(
+      `Sending these params to 1inch quote: ${JSON.stringify(params)}`
+    );
 
     try {
       const response = await axios.get(url, {
@@ -131,41 +133,53 @@ export class DexRouter {
 
     logger.debug(`Sending these params to 1inch: ${JSON.stringify(params)}`);
 
-    try {
-      const response = await axios.get(url, {
-        params,
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
-        },
-      });
+    const retries = 3;
+    const delayMs = 2000;
 
-      if (!response.data.tx) {
-        logger.error('No valid transaction received from 1inch');
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        const response = await axios.get(url, {
+          params,
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+          },
+        });
+
+        if (!response.data.tx) {
+          logger.error('No valid transaction received from 1inch');
+        }
+
+        const tx = response.data.tx;
+        logger.debug(`Transaction from 1inch: ${JSON.stringify(tx)}`);
+
+        const provider = this.signer.provider as providers.Provider;
+        const gasEstimate = await provider.estimateGas({
+          to: tx.to,
+          data: tx.data,
+          value: tx.value,
+          from: fromAddress,
+        });
+        tx.gas = gasEstimate.add(gasEstimate.div(10)).toString();
+
+        const txResponse = await this.signer.sendTransaction(tx);
+        const receipt = await txResponse.wait();
+        logger.info(
+          `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${txResponse.hash}`
+        );
+        return receipt;
+      } catch (error: Error | any) {
+        const errorMsg = error.response?.data?.description || error.message;
+        if (attempt < retries) {
+          logger.warn(
+            `Rate limit hit (429), retrying (${attempt}/${retries}) after ${delayMs}ms`
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          continue;
+        }
+        logger.error(`Failed to swap with 1inch: ${errorMsg} ${error}`);
+        throw error;
       }
-
-      const tx = response.data.tx;
-      logger.debug(`Transaction from 1inch: ${JSON.stringify(tx)}`);
-
-      const provider = this.signer.provider as providers.Provider;
-      const gasEstimate = await provider.estimateGas({
-        to: tx.to,
-        data: tx.data,
-        value: tx.value,
-        from: fromAddress,
-      });
-      tx.gas = gasEstimate.add(gasEstimate.div(10)).toString();
-
-      const txResponse = await this.signer.sendTransaction(tx);
-      const receipt = await txResponse.wait();
-      logger.info(
-        `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${txResponse.hash}`
-      );
-      return receipt;
-    } catch (error: Error | any) {
-      const errorMsg = error.response?.data?.description || error.message;
-      logger.error(`Failed to swap with 1inch: ${errorMsg} ${error}`);
-      throw error;
     }
   }
 
