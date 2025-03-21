@@ -159,7 +159,6 @@ export class DexRouter {
             error: `Gas estimation failed: ${gasError}`,
           };
         }
-        tx.gasLimit = gasEstimate.add(gasEstimate.div(10)).toString();
 
         const txResponse = await this.signer.sendTransaction(tx);
         const receipt = await txResponse.wait();
