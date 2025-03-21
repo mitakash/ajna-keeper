@@ -2,9 +2,10 @@ import { ERC20Pool__factory, FungiblePool, Loan } from '@ajna-finance/sdk';
 import subgraphModule, {
   GetLiquidationResponse,
   GetLoanResponse,
+  GetMeaningfulBucketResponse,
 } from '../subgraph';
 import { getProvider } from './test-utils';
-import { weiToDecimaled } from '../utils';
+import { decimaledToWei, weiToDecimaled } from '../utils';
 import { MAINNET_CONFIG } from './test-config';
 import { logger } from '../logging';
 
@@ -108,5 +109,49 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
         liquidationAuctions,
       },
     };
+  };
+}
+
+export function overrideGetHighestMeaningfulBucket(
+  fn: typeof subgraphModule.getHighestMeaningfulBucket
+): () => void {
+  const originalGetBucket = subgraphModule.getHighestMeaningfulBucket;
+  const undoFn = () => {
+    subgraphModule.getHighestMeaningfulBucket = originalGetBucket;
+  };
+  subgraphModule.getHighestMeaningfulBucket = fn;
+  return undoFn;
+}
+
+export function makeGetHighestMeaningfulBucket(pool: FungiblePool) {
+  return async (
+    subgraphUrl: string,
+    poolAddress: string,
+    minDeposit: string
+  ): Promise<GetMeaningfulBucketResponse> => {
+    const poolContract = ERC20Pool__factory.connect(
+      pool.poolAddress,
+      getProvider()
+    );
+    const events = await poolContract.queryFilter(
+      poolContract.filters.AddQuoteToken(),
+      MAINNET_CONFIG.BLOCK_NUMBER
+    );
+    const indices = new Set<number>();
+    for (const evt of events) {
+      const { index } = evt.args;
+      indices.add(parseInt(index.toString()));
+    }
+    const ascIndices = Array.from(indices).sort();
+    for (const index of ascIndices) {
+      const bucket = pool.getBucketByIndex(index);
+      const { deposit } = await bucket.getStatus();
+      if (deposit.gte(decimaledToWei(parseFloat(minDeposit)))) {
+        return {
+          buckets: [{ bucketIndex: index }],
+        };
+      }
+    }
+    return { buckets: [] };
   };
 }

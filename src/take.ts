@@ -18,12 +18,11 @@ export async function handleArbTakes({
   poolConfig,
   config,
 }: HandleArbParams) {
-  let liquidationsToArbTake = await getLiquidationsToArbTake({
+  for await (const liquidation of getLiquidationsToArbTake({
     pool,
     poolConfig,
     config,
-  });
-  for (const liquidation of liquidationsToArbTake) {
+  })) {
     await arbTakeLiquidation({
       pool,
       poolConfig,
@@ -45,13 +44,12 @@ interface GetLiquidationsToArbTakeParams
   config: Pick<KeeperConfig, 'subgraphUrl'>;
 }
 
-export async function getLiquidationsToArbTake({
+export async function* getLiquidationsToArbTake({
   pool,
   poolConfig,
   config,
-}: GetLiquidationsToArbTakeParams): Promise<Array<LiquidationToArbTake>> {
+}: GetLiquidationsToArbTakeParams): AsyncGenerator<LiquidationToArbTake> {
   const { subgraphUrl } = config;
-  const result: LiquidationToArbTake[] = [];
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
   } = await subgraph.getLiquidations(
@@ -59,23 +57,31 @@ export async function getLiquidationsToArbTake({
     pool.poolAddress,
     poolConfig.take.minCollateral
   );
+  const minDeposit = poolConfig.take.minCollateral / hpb;
   for (const auction of liquidationAuctions) {
     const { borrower } = auction;
     const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
     const price = weiToDecimaled(liquidationStatus.price);
-    // TODO: Add price factor.
-    if (price < hpb * poolConfig.take.priceFactor) {
+    // TODO: May want to include a hardcoded minDeposit value when minCollateral is zero.
+    const { buckets } = await subgraph.getHighestMeaningfulBucket(
+      config.subgraphUrl,
+      pool.poolAddress,
+      minDeposit.toString()
+    );
+    if (buckets.length == 0) continue;
+    const hmbIndex = buckets[0].bucketIndex;
+    const hmbPrice = weiToDecimaled(pool.getBucketByIndex(hmbIndex).price);
+    if (price < hmbPrice * poolConfig.take.priceFactor) {
       logger.debug(
-        `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hpb}.`
+        `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hmbPrice}.`
       );
-      result.push({ borrower, hpbIndex });
+      yield { borrower, hpbIndex: hmbIndex };
     } else {
       logger.debug(
-        `Not taking liquidation since price is too high. price: ${price} hpb: ${hpb}`
+        `Not taking liquidation since price is too high. price: ${price} hpb: ${hmbPrice}`
       );
     }
   }
-  return result;
 }
 
 interface ArbTakeLiquidationParams

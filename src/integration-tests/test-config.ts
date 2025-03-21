@@ -67,7 +67,7 @@ export const MAINNET_CONFIG = {
         priceFactor: 0.9,
       },
       take: {
-        minCollateral: 0,
+        minCollateral: 1e-8,
         withdrawRewardLiquidity: true,
         priceFactor: 0.99,
       },

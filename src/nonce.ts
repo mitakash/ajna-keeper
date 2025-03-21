@@ -21,7 +21,7 @@ export class NonceTracker {
     await tracker.resetNonce(signer, address);
   }
 
-  static async clearNonces() {
+  static clearNonces() {
     const tracker = new NonceTracker();
     tracker.nonces = new Map();
   }

@@ -14,8 +14,10 @@ import {
   impersonateSigner,
 } from './test-utils';
 import {
+  makeGetHighestMeaningfulBucket,
   makeGetLiquidationsFromSdk,
   makeGetLoansFromSdk,
+  overrideGetHighestMeaningfulBucket,
   overrideGetLiquidations,
   overrideGetLoans,
 } from './subgraph-mock';
@@ -26,6 +28,7 @@ import { collectBondFromPool } from '../collect-bond';
 import { handleKicks } from '../kick';
 import { handleArbTakes } from '../take';
 import { NonceTracker } from '../nonce';
+import { SECONDS_PER_YEAR, SECONDS_PER_DAY } from '../constants';
 
 const getAmountWithdrawn = async (pool: FungiblePool, signer: Signer) => {
   const signerAddress = await signer.getAddress();
@@ -50,6 +53,7 @@ const setup = async () => {
   );
   overrideGetLoans(makeGetLoansFromSdk(pool));
   overrideGetLiquidations(makeGetLiquidationsFromSdk(pool));
+  overrideGetHighestMeaningfulBucket(makeGetHighestMeaningfulBucket(pool));
   await depositQuoteToken({
     pool,
     owner: MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress,
@@ -62,7 +66,7 @@ const setup = async () => {
     amountToBorrow: 0.9,
     collateralToPledge: 14,
   });
-  await increaseTime(3.154e7 * 2);
+  await increaseTime(SECONDS_PER_YEAR * 2);
   return pool;
 };
 
@@ -119,7 +123,7 @@ describe('collectBondFromPool', () => {
         delayBetweenActions: 0,
       },
     });
-    await increaseTime(86400 * 2);
+    await increaseTime(SECONDS_PER_DAY * 2);
     await handleArbTakes({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
@@ -130,7 +134,7 @@ describe('collectBondFromPool', () => {
         delayBetweenActions: 0,
       },
     });
-    await increaseTime(86400 * 2);
+    await increaseTime(SECONDS_PER_DAY * 2);
     const liquidation = await pool.getLiquidation(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress
     );
