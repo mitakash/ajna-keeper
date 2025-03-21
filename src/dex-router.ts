@@ -36,7 +36,7 @@ export class DexRouter {
     amount: BigNumber,
     tokenIn: string,
     tokenOut: string
-  ): Promise<{ toTokenAmount: string; protocols: any[] }> {
+  ): Promise<{ dstAmount: string }> {
     if (!process.env.ONEINCH_API) {
       logger.error(
         'ONEINCH_API is not configured in the environment variables'
@@ -79,8 +79,7 @@ export class DexRouter {
 
       logger.debug(`Quote from 1inch: ${JSON.stringify(response.data)}`);
       return {
-        toTokenAmount: response.data.toTokenAmount,
-        protocols: response.data.protocols,
+        dstAmount: response.data.dstAmount,
       };
     } catch (error: Error | any) {
       const errorMsg = error.response?.data?.description || error.message;
@@ -120,7 +119,7 @@ export class DexRouter {
       tokenOut
     );
     logger.info(
-      `1inch quote: ${amount.toString()} ${tokenIn} -> ${quote.toTokenAmount} ${tokenOut}`
+      `1inch quote: ${amount.toString()} ${tokenIn} -> ${quote.dstAmount} ${tokenOut}`
     );
 
     const params = {
@@ -146,7 +145,11 @@ export class DexRouter {
           },
         });
 
-        if (!response.data.tx) {
+        if (
+          !response.data.tx ||
+          !response.data.tx.to ||
+          !response.data.tx.data
+        ) {
           logger.error('No valid transaction received from 1inch');
         }
 
@@ -154,12 +157,18 @@ export class DexRouter {
         logger.debug(`Transaction from 1inch: ${JSON.stringify(tx)}`);
 
         const provider = this.signer.provider as providers.Provider;
-        const gasEstimate = await provider.estimateGas({
-          to: tx.to,
-          data: tx.data,
-          value: tx.value,
-          from: fromAddress,
-        });
+        let gasEstimate;
+        try {
+          gasEstimate = await provider.estimateGas({
+            to: tx.to,
+            data: tx.data,
+            value: tx.value,
+            from: fromAddress,
+          });
+        } catch (gasError) {
+          logger.error(`Failed to estimate gas: ${gasError}`);
+          throw gasError;
+        }
         tx.gas = gasEstimate.add(gasEstimate.div(10)).toString();
 
         const txResponse = await this.signer.sendTransaction(tx);
@@ -170,11 +179,10 @@ export class DexRouter {
         return receipt;
       } catch (error: Error | any) {
         const errorMsg = error.response?.data?.description || error.message;
-        if (attempt < retries) {
-          logger.warn(
-            `Rate limit hit (429), retrying (${attempt}/${retries}) after ${delayMs}ms`
-          );
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        if (error.response.status === 429 && attempt < retries) {
+          const waitTime = delayMs * Math.pow(2, attempt - 1);
+          logger.warn(`Retrying (${attempt}/${retries}) after ${waitTime}ms`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
           continue;
         }
         logger.error(`Failed to swap with 1inch: ${errorMsg} ${error}`);
@@ -207,12 +215,15 @@ export class DexRouter {
 
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
     const decimals = await erc20.decimals();
+    logger.debug(`Token ${tokenIn} decimals: ${decimals}`);
     const balance = await erc20.balanceOf(fromAddress);
-    const adjustedAmount = tokenChangeDecimals(amount, 18, decimals);
+    logger.debug(
+      `Balance: ${balance.toString()}, Amount: ${amount.toString()}`
+    );
 
-    if (balance.lt(adjustedAmount)) {
+    if (balance.lt(amount)) {
       logger.error(
-        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${adjustedAmount.toString()}`
+        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${amount.toString()}`
       );
     }
 
@@ -228,17 +239,15 @@ export class DexRouter {
         tokenIn,
         oneInchRouter
       );
-      if (currentAllowance.lt(adjustedAmount)) {
+      logger.debug(
+        `Current allowance: ${currentAllowance.toString()}, Amount: ${amount.toString()}`
+      );
+      if (currentAllowance.lt(amount)) {
         try {
           logger.debug(
             `Approving 1inch router ${oneInchRouter} for token: ${tokenIn}`
           );
-          await approveErc20(
-            this.signer,
-            tokenIn,
-            oneInchRouter,
-            adjustedAmount
-          );
+          await approveErc20(this.signer, tokenIn, oneInchRouter, amount);
           logger.info(`Approval successful for token ${tokenIn}`);
         } catch (error) {
           logger.error(`Failed to approve token ${tokenIn} for 1inch ${error}`);
@@ -246,13 +255,7 @@ export class DexRouter {
         }
       }
 
-      await this.swapWithOneInch(
-        chainId,
-        adjustedAmount,
-        tokenIn,
-        tokenOut,
-        slippage
-      );
+      await this.swapWithOneInch(chainId, amount, tokenIn, tokenOut, slippage);
     } else {
       try {
         await swapToWeth(
