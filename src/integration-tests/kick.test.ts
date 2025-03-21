@@ -16,6 +16,7 @@ import { expect } from 'chai';
 import { arrayFromAsync, decimaledToWei } from '../utils';
 import { constants, Wallet } from 'ethers';
 import { getAllowanceOfErc20, transferErc20 } from '../erc20';
+import { SECONDS_PER_YEAR } from '../constants';
 
 describe('getLoansToKick', () => {
   beforeEach(async () => {
@@ -74,7 +75,7 @@ describe('getLoansToKick', () => {
       amountToBorrow: 0.9,
       collateralToPledge: 14,
     });
-    await increaseTime(3.154e7 * 2);
+    await increaseTime(SECONDS_PER_YEAR * 2);
 
     const loansToKick = await arrayFromAsync(
       getLoansToKick({
@@ -117,7 +118,7 @@ describe('kick', () => {
       amountToBorrow: 0.9,
       collateralToPledge: 14,
     });
-    await increaseTime(3.154e7 * 2);
+    await increaseTime(SECONDS_PER_YEAR * 2);
     const loansToKick = await arrayFromAsync(
       getLoansToKick({
         pool,

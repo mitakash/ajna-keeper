@@ -15,8 +15,10 @@ import { delay, waitForConditionToBeTrue } from '../utils';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import './subgraph-mock';
 import {
+  makeGetHighestMeaningfulBucket,
   makeGetLiquidationsFromSdk,
   makeGetLoansFromSdk,
+  overrideGetHighestMeaningfulBucket,
   overrideGetLiquidations,
   overrideGetLoans,
 } from './subgraph-mock';
@@ -27,6 +29,7 @@ import {
   increaseTime,
   resetHardhat,
 } from './test-utils';
+import { SECONDS_PER_YEAR, SECONDS_PER_DAY } from '../constants';
 
 const setup = async () => {
   configureAjna(MAINNET_CONFIG.AJNA_CONFIG);
@@ -36,6 +39,7 @@ const setup = async () => {
   );
   overrideGetLoans(makeGetLoansFromSdk(pool));
   overrideGetLiquidations(makeGetLiquidationsFromSdk(pool));
+  overrideGetHighestMeaningfulBucket(makeGetHighestMeaningfulBucket(pool));
   await depositQuoteToken({
     pool,
     owner: MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress,
@@ -48,7 +52,7 @@ const setup = async () => {
     amountToBorrow: 0.9,
     collateralToPledge: 14,
   });
-  await increaseTime(3.154e7 * 2);
+  await increaseTime(SECONDS_PER_YEAR * 2);
   const signer = await impersonateSigner(
     MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
   );
@@ -63,7 +67,7 @@ const setup = async () => {
       delayBetweenActions: 0,
     },
   });
-  await increaseTime(86400 * 1.5);
+  await increaseTime(SECONDS_PER_DAY * 1.5);
   return pool;
 };
 
