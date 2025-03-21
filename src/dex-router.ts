@@ -140,8 +140,20 @@ export class DexRouter {
           };
         }
 
-        const tx = response.data.tx;
-        logger.debug(`Transaction from 1inch: ${JSON.stringify(tx)}`);
+        const txFrom1inch = response.data.tx;
+        logger.debug(`Transaction from 1inch: ${JSON.stringify(txFrom1inch)}`);
+
+        const tx = {
+          to: txFrom1inch.to,
+          data: txFrom1inch.data,
+          value: txFrom1inch.value || '0',
+          gasLimit: txFrom1inch.gas
+            ? BigNumber.from(txFrom1inch.gas)
+            : undefined,
+          gasPrice: txFrom1inch.gasPrice
+            ? BigNumber.from(txFrom1inch.gasPrice)
+            : undefined,
+        };
 
         const provider = this.signer.provider as providers.Provider;
         let gasEstimate;
@@ -152,6 +164,7 @@ export class DexRouter {
             value: tx.value || '0',
             from: fromAddress,
           });
+          tx.gasLimit = gasEstimate.add(gasEstimate.div(10));
         } catch (gasError) {
           logger.error(`Failed to estimate gas: ${gasError}`);
           return {
