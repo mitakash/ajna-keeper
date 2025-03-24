@@ -3,7 +3,7 @@ name: Build Docker image and deploy to Kubernetes cluster
 on:
   push:
     branches:
-      - master
+      - TECH-4523-ajna-keeper-service
   
 permissions:
   id-token: write
@@ -18,6 +18,7 @@ jobs:
       AWS_REGION: us-east-2
       ECR_REPOSITORY: ajna-keeper-staging
       CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
+      NETWORK: ${{ secrets.NETWORK }}
 
     steps:
       - name: Checkout
@@ -67,29 +68,40 @@ jobs:
           echo "Replacing {{CLUSTER_NAME}} with ${CLUSTER_NAME} in config files"
           sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-keeper.yaml
           sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-subgraph.yaml
+          
+          echo "Replacing {{NETWORK}} with ${NETWORK} in config files"
+          sed -i "s/{{NETWORK}}/${NETWORK}/g" deploy/staging/ajna-keeper.yaml
+          sed -i "s/{{NETWORK}}/${NETWORK}/g" deploy/staging/ajna-subgraph.yaml
+          cat deploy/staging/ajna-keeper.yaml
+          cat deploy/staging/ajna-subgraph.yaml
+
+      - name: Update kubeconfig for EKS cluster
+        run: |
+          echo "Updating kubeconfig for EKS cluster ${CLUSTER_NAME}"
+          aws eks update-kubeconfig --name ${CLUSTER_NAME} --region ${AWS_REGION}
 
       - name: Deploy subgraph to Kubernetes
         run: |
           echo "Deploying subgraph infrastructure to Kubernetes"
-          kubectl apply -f deploy/staging/ajna-subgraph.yaml
+          kubectl apply -f deploy/staging/ajna-subgraph.yaml -n ajna
           
           # Wait for the graph-node to be ready
           echo "Waiting for graph-node to be ready..."
-          kubectl rollout status deployment/graph-node -n keepers --timeout=300s
+          kubectl rollout status deployment/${NETWORK}-graph-node -n ajna --timeout=300s
           
           # Deploy the subgraph definition
           echo "Deploying subgraph definition"
 
-      - name: Deploy ajna-keeper to Kubernetes with Helm
-        uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
-        with:
-          values: image.repository=${{ steps.build-image.outputs.image }},image.tag=${{ steps.build-image.outputs.tag }}
-          cluster-name: ${{ env.CLUSTER_NAME }}
-          config-files: deploy/staging/ajna-keeper.yaml
-          chart-path: techops-services/common
-          namespace: keepers
-          timeout: 5m0s
-          name: ajna-keeper
-          chart-repository: https://techops-services.github.io/helm-charts
-          version: 0.0.37
-          atomic: true
+      # - name: Deploy ajna-keeper to Kubernetes with Helm
+      #   uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
+      #   with:
+      #     values: image.repository=${{ steps.build-image.outputs.image }},image.tag=${{ steps.build-image.outputs.tag }}
+      #     cluster-name: ${{ env.CLUSTER_NAME }}
+      #     config-files: deploy/staging/ajna-keeper.yaml
+      #     chart-path: techops-services/common
+      #     namespace: ajna
+      #     timeout: 5m0s
+      #     name: ${{ env.NETWORK }}-ajna-keeper
+      #     chart-repository: https://techops-services.github.io/helm-charts
+      #     version: 0.0.37
+      #     atomic: true
