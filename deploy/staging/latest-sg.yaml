@@ -3,10 +3,10 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{NETWORK_NAME}}-graph-node-config
+  name: avalanche-graph-node-config
 data:
-  ipfs: "http://{{NETWORK_NAME}}-ipfs:5001"
-  postgres_host: "{{NETWORK_NAME}}-postgres"
+  ipfs: "http://avalanche-ipfs:5001"
+  postgres_host: "avalanche-postgres"
   postgres_port: "5432"
   postgres_user: "graph-node"
   postgres_db: "graph-node"
@@ -19,38 +19,38 @@ data:
 apiVersion: external-secrets.io/v1beta1
 kind: ExternalSecret
 metadata:
-  name: {{NETWORK_NAME}}-graph-node-secrets
+  name: avalanche-graph-node-secrets
 spec:
   refreshInterval: "5m"
   secretStoreRef:
-    name: {{CLUSTER_NAME}}
+    name: maker-staging
     kind: ClusterSecretStore
   target:
-    name: {{NETWORK_NAME}}-graph-node-secrets
+    name: avalanche-graph-node-secrets
     creationPolicy: Owner
   data:
     - secretKey: postgres_password
       remoteRef:
-        key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/{{NETWORK_NAME}}/postgres-password
+        key: /eks/maker-staging/ajna-subgraph/avalanche/postgres-password
     - secretKey: eth_network
       remoteRef:
-        key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/{{NETWORK_NAME}}/eth-network
+        key: /eks/maker-staging/ajna-subgraph/avalanche/eth-network
 ---
 # PostgreSQL StatefulSet
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{NETWORK_NAME}}-postgres
+  name: avalanche-postgres
 spec:
-  serviceName: {{NETWORK_NAME}}-postgres
+  serviceName: avalanche-postgres
   replicas: 1
   selector:
     matchLabels:
-      app: {{NETWORK_NAME}}-postgres
+      app: avalanche-postgres
   template:
     metadata:
       labels:
-        app: {{NETWORK_NAME}}-postgres
+        app: avalanche-postgres
     spec:
       containers:
       - name: postgres
@@ -62,17 +62,17 @@ spec:
         - name: POSTGRES_USER
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: postgres_user
         - name: POSTGRES_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-secrets
+              name: avalanche-graph-node-secrets
               key: postgres_password
         - name: POSTGRES_DB
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: postgres_db
         - name: POSTGRES_INITDB_ARGS
           value: "-E UTF8 --locale=C"
@@ -101,10 +101,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{NETWORK_NAME}}-postgres
+  name: avalanche-postgres
 spec:
   selector:
-    app: {{NETWORK_NAME}}-postgres
+    app: avalanche-postgres
   ports:
   - port: 5432
     targetPort: 5432
@@ -113,16 +113,16 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{NETWORK_NAME}}-ipfs
+  name: avalanche-ipfs
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{NETWORK_NAME}}-ipfs
+      app: avalanche-ipfs
   template:
     metadata:
       labels:
-        app: {{NETWORK_NAME}}-ipfs
+        app: avalanche-ipfs
     spec:
       containers:
       - name: ipfs
@@ -143,13 +143,13 @@ spec:
       volumes:
       - name: ipfs-data
         persistentVolumeClaim:
-          claimName: {{NETWORK_NAME}}-ipfs-data
+          claimName: avalanche-ipfs-data
 ---
 # IPFS PVC
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: {{NETWORK_NAME}}-ipfs-data
+  name: avalanche-ipfs-data
 spec:
   accessModes:
     - ReadWriteOnce
@@ -161,10 +161,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{NETWORK_NAME}}-ipfs
+  name: avalanche-ipfs
 spec:
   selector:
-    app: {{NETWORK_NAME}}-ipfs
+    app: avalanche-ipfs
   ports:
   - port: 5001
     targetPort: 5001
@@ -174,16 +174,16 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{NETWORK_NAME}}-graph-node
+  name: avalanche-graph-node
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: {{NETWORK_NAME}}-graph-node
+      app: avalanche-graph-node
   template:
     metadata:
       labels:
-        app: {{NETWORK_NAME}}-graph-node
+        app: avalanche-graph-node
     spec:
       containers:
       - name: graph-node
@@ -203,37 +203,37 @@ spec:
         - name: ethereum
           valueFrom:
             secretKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-secrets
+              name: avalanche-graph-node-secrets
               key: eth_network
         - name: ipfs
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: ipfs
         - name: postgres_host
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: postgres_host
         - name: postgres_port
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: postgres_port
         - name: postgres_user
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: postgres_user
         - name: postgres_pass
           valueFrom:
             secretKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-secrets
+              name: avalanche-graph-node-secrets
               key: postgres_password
         - name: postgres_db
           valueFrom:
             configMapKeyRef:
-              name: {{NETWORK_NAME}}-graph-node-config
+              name: avalanche-graph-node-config
               key: postgres_db
         - name: GRAPH_LOG
           value: info
@@ -249,10 +249,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{NETWORK_NAME}}-graph-node
+  name: avalanche-graph-node
 spec:
   selector:
-    app: {{NETWORK_NAME}}-graph-node
+    app: avalanche-graph-node
   ports:
   - port: 8000
     name: graphql-http

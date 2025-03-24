@@ -18,7 +18,7 @@ jobs:
       AWS_REGION: us-east-2
       ECR_REPOSITORY: ajna-keeper-staging
       CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
-      NETWORK: ${{ secrets.NETWORK }}
+      NETWORK_NAME: ${{ secrets.NETWORK_NAME }}
 
     steps:
       - name: Checkout
@@ -69,11 +69,9 @@ jobs:
           sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-keeper.yaml
           sed -i "s/{{CLUSTER_NAME}}/${CLUSTER_NAME}/g" deploy/staging/ajna-subgraph.yaml
           
-          echo "Replacing {{NETWORK}} with ${NETWORK} in config files"
-          sed -i "s/{{NETWORK}}/${NETWORK}/g" deploy/staging/ajna-keeper.yaml
-          sed -i "s/{{NETWORK}}/${NETWORK}/g" deploy/staging/ajna-subgraph.yaml
-          cat deploy/staging/ajna-keeper.yaml
-          cat deploy/staging/ajna-subgraph.yaml
+          echo "Replacing {{NETWORK_NAME}} with ${NETWORK_NAME} in config files"
+          sed -i "s/{{NETWORK_NAME}}/${NETWORK_NAME}/g" deploy/staging/ajna-keeper.yaml
+          sed -i "s/{{NETWORK_NAME}}/${NETWORK_NAME}/g" deploy/staging/ajna-subgraph.yaml
 
       - name: Update kubeconfig for EKS cluster
         run: |
@@ -101,7 +99,7 @@ jobs:
       #     chart-path: techops-services/common
       #     namespace: ajna
       #     timeout: 5m0s
-      #     name: ${{ env.NETWORK }}-ajna-keeper
+      #     name: ${{ env.NETWORK_NAME }}-ajna-keeper
       #     chart-repository: https://techops-services.github.io/helm-charts
       #     version: 0.0.37
       #     atomic: true
