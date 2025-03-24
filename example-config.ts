@@ -28,6 +28,12 @@ const config: KeeperConfig = {
     usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     weth: '0x4200000000000000000000000000000000000006',
   },
+  connectorTokens: [
+    '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
+    '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
+    '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7',
+    '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+  ],
   ajna: {
     erc20PoolFactory: '0x214f62B5836D83f3D6c4f71F174209097B1A779C',
     erc721PoolFactory: '0xeefEC5d1Cc4bde97279d01D88eFf9e0fEe981769',

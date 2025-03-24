@@ -32,12 +32,12 @@ describe('RewardActionTracker', () => {
     sinon.restore();
   });
 
-  it('Swaps to eth and clears entry after.', async () => {
+  it('Swaps to eth and clears entry after', async () => {
     const signer = Wallet.createRandom();
     sinon.stub(signer, 'getChainId').resolves(1);
 
     dexRouter = {
-      swap: sinon.stub().resolves(),
+      swap: sinon.stub().resolves({ success: true }),
     } as unknown as { swap: SinonStub };
     const wethAddress = MAINNET_CONFIG.WETH_ADDRESS;
     const uniswapV3Router = MAINNET_CONFIG.UNISWAP_V3_ROUTER;

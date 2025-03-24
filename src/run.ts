@@ -140,6 +140,7 @@ async function collectLpRewardsLoop({
   const lpCollectors: Map<string, LpCollector> = new Map();
   const dexRouter = new DexRouter(signer, {
     oneInchRouters: config?.oneInchRouters ?? {},
+    connectorTokens: config?.connectorTokens ?? [],
   });
   const exchangeTracker = new RewardActionTracker(signer, config, dexRouter);
 

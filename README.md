@@ -190,6 +190,19 @@ tokenAddresses: {
 },
 ```
 
+`connectorTokens` (Optional):
+An array of token addresses used as intermediate connectors in 1inch swap routes. These tokens can facilitate multi-hop trades to optimize the swap path between the input and output tokens.
+
+- Format: `Array<string>`
+- Example:
+
+```
+connectorTokens: [
+  "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", // USDC on Ethereum
+  "0x6B175474E89094C44Da98b954EedeAC495271d0F"  // DAI on Ethereum
+],
+```
+
 `pools.collectLpReward.rewardAction`:
 LP in buckets can be reedemed for quote token and/or collateral, depending on what the bucket holds at time of redemption. `redeemFirst` controls the redemption strategy, favoring either quote token (most situations) or collateral (useful in shorting pools). To defer redeeming the second token, it's `minAmount` can be set to a sufficiently high value that manually swapping tokens on an exchange becomes practical.
 

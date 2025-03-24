@@ -193,6 +193,8 @@ export interface KeeperConfig {
   oneInchRouters?: { [chainId: number]: string };
   /** List of token addresses */
   tokenAddresses?: { [tokenSymbol: string]: string };
+  /** Optional list of token addresses used as intermediate connectors in 1inch swap routes */
+  connectorTokens?: Array<string>;
 }
 
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {

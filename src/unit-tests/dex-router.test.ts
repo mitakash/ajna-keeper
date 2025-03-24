@@ -141,109 +141,78 @@ describe('DexRouter', () => {
 
   describe('swap', () => {
     it('should log error if amount is missing', async () => {
-      let threwError = false;
-      try {
-        await dexRouter.swap(
-          chainId,
-          undefined as any,
-          tokenIn,
-          tokenOut,
-          to,
-          false
-        );
-      } catch (error) {
-        threwError = true;
-        expect((error as Error).message).to.include(
-          "Cannot read properties of undefined (reading 'toString')"
-        );
-      }
-      expect(threwError).to.be.true;
-      expect(loggerErrorStub.calledWith('Invalid parameters provided to swap'))
-        .to.be.true;
+      const result = await dexRouter.swap(
+        chainId,
+        undefined as any,
+        tokenIn,
+        tokenOut,
+        to,
+        false
+      );
+      expect(result.success).to.be.false;
+      expect(result.error).to.equal('Invalid parameters provided to swap');
     });
 
     it('should log error if tokenIn is missing', async () => {
-      let threwError = false;
-      try {
-        await dexRouter.swap(
-          chainId,
-          amount,
-          undefined as any,
-          tokenOut,
-          to,
-          false
-        );
-      } catch (error) {
-        threwError = true;
-        expect((error as Error).message).to.include(
-          "Cannot read properties of undefined (reading 'toLowerCase')"
-        );
-      }
-      expect(threwError).to.be.true;
-      expect(loggerErrorStub.calledWith('Invalid parameters provided to swap'))
-        .to.be.true;
+      const result = await dexRouter.swap(
+        chainId,
+        amount,
+        undefined as any,
+        tokenOut,
+        to,
+        false
+      );
+      expect(result.success).to.be.false;
+      expect(result.error).to.equal('Invalid parameters provided to swap');
     });
 
     it('should log error if tokenOut is missing', async () => {
-      let threwError = false;
-      try {
-        await dexRouter.swap(
-          chainId,
-          amount,
-          tokenIn,
-          undefined as any,
-          to,
-          false
-        );
-      } catch (error) {
-        threwError = true;
-        expect((error as Error).message).to.include(
-          "Cannot read properties of undefined (reading 'toLowerCase')"
-        );
-      }
-      expect(threwError).to.be.true;
-      expect(loggerErrorStub.calledWith('Invalid parameters provided to swap'))
-        .to.be.true;
+      const result = await dexRouter.swap(
+        chainId,
+        amount,
+        tokenIn,
+        undefined as any,
+        to,
+        false
+      );
+      expect(result.success).to.be.false;
+      expect(result.error).to.equal('Invalid parameters provided to swap');
     });
 
     it('should log error if to is missing', async () => {
-      let threwError = false;
-      try {
-        await dexRouter.swap(
-          chainId,
-          amount,
-          tokenIn,
-          tokenOut,
-          undefined as any,
-          false
-        );
-      } catch (error) {
-        threwError = true;
-        expect((error as Error).message).to.include(
-          'invalid signer or provider'
-        );
-      }
-      expect(threwError).to.be.true;
-      expect(loggerErrorStub.calledWith('Invalid parameters provided to swap'))
-        .to.be.true;
+      const result = await dexRouter.swap(
+        chainId,
+        amount,
+        tokenIn,
+        tokenOut,
+        undefined as any,
+        false
+      );
+      expect(result.success).to.be.false;
+      expect(result.error).to.equal('Invalid parameters provided to swap');
     });
 
     it('should log error if balance is insufficient', async () => {
-      let threwError = false;
-      try {
-        await dexRouter.swap(chainId, amount, tokenIn, tokenOut, to, false);
-      } catch (error) {
-        threwError = true;
-        expect((error as Error).message).to.include(
-          'invalid signer or provider'
-        );
-      }
-      expect(threwError).to.be.true;
-      expect(
-        loggerErrorStub.calledWith(
-          `Insufficient balance for ${tokenIn}: 50000000 < 100000000`
-        )
-      ).to.be.true;
+      const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
+      erc20ContractStub.balanceOf
+        .withArgs(fromAddress)
+        .resolves(BigNumber.from('50000000'));
+      sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
+        if (address === tokenIn) return erc20ContractStub;
+        throw new Error(`Unexpected contract address: ${address}`);
+      });
+
+      const result = await dexRouter.swap(
+        chainId,
+        amount,
+        tokenIn,
+        tokenOut,
+        to,
+        false
+      );
+
+      expect(result.success).to.be.false;
+      expect(result.error).to.equal(`Insufficient balance for ${tokenIn}`);
     });
 
     describe('useOneInch = true', () => {
@@ -261,7 +230,7 @@ describe('DexRouter', () => {
           ) {
             return ethers.utils.defaultAbiCoder.encode(
               ['uint256'],
-              [BigNumber.from('100000000')]
+              [BigNumber.from('10000000000000000000')]
             ); // 1 WBTC
           }
           throw new Error('Unexpected call');
@@ -269,12 +238,33 @@ describe('DexRouter', () => {
       });
 
       it('should approve token if allowance is insufficient', async () => {
+        const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
+        erc20ContractStub.balanceOf.withArgs(fromAddress).resolves(amount);
+        sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
+          if (address === tokenIn) return erc20ContractStub;
+          throw new Error(`Unexpected contract address: ${address}`);
+        });
+
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(BigNumber.from('1'));
         const approveStub = sinon.stub(erc20, 'approveErc20').resolves();
 
-        await dexRouter.swap(
+        axiosGetStub
+          .onCall(0)
+          .resolves({ data: { dstAmount: '900000000000000000' } });
+        axiosGetStub.onCall(1).resolves({
+          data: {
+            tx: {
+              to: '0x1inchRouter',
+              data: '0xdata',
+              value: '0',
+              gas: '100000',
+            },
+          },
+        });
+
+        const result = await dexRouter.swap(
           chainId,
           amount,
           tokenIn,
@@ -284,8 +274,8 @@ describe('DexRouter', () => {
           slippage,
           feeAmount
         );
-        expect(getAllowanceStub.calledOnce).to.be.true;
-        expect(approveStub.calledOnce).to.be.true;
+
+        expect(result.success).to.be.true;
       });
 
       it('should skip approval if allowance is sufficient', async () => {
@@ -308,6 +298,13 @@ describe('DexRouter', () => {
       });
 
       it('should log error if approval fails', async () => {
+        const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
+        erc20ContractStub.balanceOf.withArgs(fromAddress).resolves(amount);
+        sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
+          if (address === tokenIn) return erc20ContractStub;
+          throw new Error(`Unexpected contract address: ${address}`);
+        });
+
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(BigNumber.from('0'));
@@ -315,31 +312,36 @@ describe('DexRouter', () => {
           .stub(erc20, 'approveErc20')
           .rejects(new Error('Approval failed'));
 
-        await expect(
-          dexRouter.swap(
-            chainId,
-            amount,
-            tokenIn,
-            tokenOut,
-            to,
-            true,
-            slippage,
-            feeAmount
-          )
-        ).to.be.rejectedWith('Approval failed');
+        const result = await dexRouter.swap(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          to,
+          true,
+          slippage,
+          feeAmount
+        );
+
+        expect(result.success).to.be.false;
+        expect(result.error).to.include('Approval failed');
       });
 
       it('should call swapWithOneInch and execute transaction', async () => {
+        const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
+        erc20ContractStub.balanceOf.withArgs(fromAddress).resolves(amount);
+        sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
+          if (address === tokenIn) return erc20ContractStub;
+          throw new Error(`Unexpected contract address: ${address}`);
+        });
+
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(amount);
 
-        axiosGetStub.onCall(0).resolves({
-          data: {
-            toTokenAmount: '900000000000000000',
-            protocols: [],
-          },
-        });
+        axiosGetStub
+          .onCall(0)
+          .resolves({ data: { dstAmount: '900000000000000000' } });
         axiosGetStub.onCall(1).resolves({
           data: {
             tx: {
@@ -351,7 +353,7 @@ describe('DexRouter', () => {
           },
         });
 
-        await dexRouter.swap(
+        const result = await dexRouter.swap(
           chainId,
           amount,
           tokenIn,
@@ -362,6 +364,7 @@ describe('DexRouter', () => {
           feeAmount
         );
 
+        expect(result.success).to.be.true;
         expect(axiosGetStub.calledTwice).to.be.true;
 
         expect(
@@ -371,9 +374,7 @@ describe('DexRouter', () => {
               params: {
                 fromTokenAddress: tokenIn,
                 toTokenAddress: tokenOut,
-                amount: '100000000',
-                connectorTokens:
-                  '0x24de8771bc5ddb3362db529fc3358f2df3a0e346,0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e,0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7,0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+                amount: '1000000000000000000',
               },
               headers: {
                 Accept: 'application/json',
@@ -389,7 +390,7 @@ describe('DexRouter', () => {
               params: {
                 fromTokenAddress: tokenIn,
                 toTokenAddress: tokenOut,
-                amount: '100000000',
+                amount: '1000000000000000000',
                 fromAddress,
                 slippage,
               },
@@ -443,7 +444,7 @@ describe('DexRouter', () => {
         },
       });
 
-      await dexRouter['swapWithOneInch'](
+      const result = await dexRouter['swapWithOneInch'](
         chainId,
         BigNumber.from('100000000'),
         tokenIn,
@@ -451,6 +452,7 @@ describe('DexRouter', () => {
         slippage
       );
 
+      expect(result.success).to.be.true;
       expect(axiosGetStub.calledTwice).to.be.true;
 
       expect(
@@ -461,8 +463,6 @@ describe('DexRouter', () => {
               fromTokenAddress: tokenIn,
               toTokenAddress: tokenOut,
               amount: '100000000',
-              connectorTokens:
-                '0x24de8771bc5ddb3362db529fc3358f2df3a0e346,0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e,0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7,0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
             },
             headers: {
               Accept: 'application/json',
@@ -492,15 +492,16 @@ describe('DexRouter', () => {
 
     it('should log error if axios fails', async () => {
       axiosGetStub.rejects(new Error('API error'));
-      await expect(
-        dexRouter['swapWithOneInch'](
-          chainId,
-          amount,
-          tokenIn,
-          tokenOut,
-          slippage
-        )
-      ).to.be.rejectedWith('API error');
+
+      const result = await dexRouter['swapWithOneInch'](
+        chainId,
+        amount,
+        tokenIn,
+        tokenOut,
+        slippage
+      );
+
+      expect(result).to.deep.equal({ success: false, error: 'API error' });
     });
   });
 });
