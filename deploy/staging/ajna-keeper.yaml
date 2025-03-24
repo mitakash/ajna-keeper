@@ -45,35 +45,29 @@ readinessProbe:
 
 # Environment variables
 env:
-  DRY_RUN:
-    type: "kv"
-    value: "false"
   KEEPER_KEYSTORE:
     type: "kv"
     value: "/app/keystores/keeper-keystore.json"
   CONF_GENERIC:
     type: "parameterStore"
     name: "conf-generic"
-    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/conf-generic
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/configuration
   KEYSTORE_FILE:
     type: "parameterStore"
     name: "keystore-file"
-    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/keystore-file
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/keystore-file
   KEYSTORE_PASSWORD:
     type: "parameterStore"
     name: "keystore-password"
-    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/keystore-password
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/keystore-password
   ONEINCH_API:
     type: "parameterStore"
     name: "oneinch-api"
-    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/oneinch-api
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/oneinch-api
   ONEINCH_API_KEY:
     type: "parameterStore"
     name: "oneinch-apikey"
-    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/oneinch-apikey
-  LOG_LEVEL:
-    type: "kv"
-    value: "info"
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/oneinch-apikey
 
 externalSecrets:
   clusterSecretStoreName: {{CLUSTER_NAME}}
