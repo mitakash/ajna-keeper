@@ -3,7 +3,7 @@ name: Build Docker image and deploy to Kubernetes cluster
 on:
   push:
     branches:
-      - TECH-4523-ajna-keeper-service
+      - master
   
 permissions:
   id-token: write
@@ -83,26 +83,39 @@ jobs:
           echo "Deploying subgraph infrastructure to Kubernetes"
           kubectl apply -f deploy/staging/ajna-subgraph.yaml -n ajna
           
-          # Wait for the graph-node to be ready
-          echo "Waiting for graph-node to be ready..."
+          # Wait for all required pods to be ready
+          echo "Waiting for graph-node deployment to be ready..."
           kubectl rollout status deployment/${NETWORK_NAME}-graph-node -n ajna --timeout=300s
+          
+          echo "Waiting for IPFS deployment to be ready..."
+          kubectl rollout status deployment/${NETWORK_NAME}-ipfs -n ajna --timeout=300s
+          
+          echo "Waiting for Postgres StatefulSet to be ready..."
+          kubectl rollout status statefulset/${NETWORK_NAME}-postgres -n ajna --timeout=300s
+          
+          # Verify pods are running before attempting port-forward
+          echo "Verifying pods are running..."
+          kubectl get pods -n ajna -l app=${NETWORK_NAME}-graph-node
+          kubectl get pods -n ajna -l app=${NETWORK_NAME}-ipfs
           
           # Deploy the subgraph definition
           echo "Deploying subgraph definition"
           
           # Start port-forward for graph-node in background and capture PID
           echo "Starting port-forward for graph-node..."
-          kubectl port-forward -n ajna svc/${NETWORK_NAME}-graph-node 8000:8000 8020:8020 &
+          GRAPH_NODE_POD=$(kubectl get pods -n ajna -l app=${NETWORK_NAME}-graph-node -o jsonpath='{.items[0].metadata.name}')
+          kubectl port-forward -n ajna pod/$GRAPH_NODE_POD 8000:8000 8020:8020 &
           GRAPH_NODE_PID=$!
           
           # Start port-forward for IPFS in background and capture PID
           echo "Starting port-forward for IPFS..."
-          kubectl port-forward -n ajna svc/${NETWORK_NAME}-ipfs 5001:5001 &
+          IPFS_POD=$(kubectl get pods -n ajna -l app=${NETWORK_NAME}-ipfs -o jsonpath='{.items[0].metadata.name}')
+          kubectl port-forward -n ajna pod/$IPFS_POD 5001:5001 &
           IPFS_PID=$!
           
           # Wait for port-forwards to be ready
           echo "Waiting for port-forwards to be ready..."
-          sleep 5
+          sleep 10
           
           # Clone the subgraph repository
           echo "Cloning Ajna-subgraph repository..."
@@ -140,16 +153,16 @@ jobs:
           kill $GRAPH_NODE_PID || true
           kill $IPFS_PID || true
 
-      # - name: Deploy ajna-keeper to Kubernetes with Helm
-      #   uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
-      #   with:
-      #     values: image.repository=${{ steps.build-image.outputs.image }},image.tag=${{ steps.build-image.outputs.tag }}
-      #     cluster-name: ${{ env.CLUSTER_NAME }}
-      #     config-files: deploy/staging/ajna-keeper.yaml
-      #     chart-path: techops-services/common
-      #     namespace: ajna
-      #     timeout: 5m0s
-      #     name: ${{ env.NETWORK_NAME }}-ajna-keeper
-      #     chart-repository: https://techops-services.github.io/helm-charts
-      #     version: 0.0.37
-      #     atomic: true
+      - name: Deploy ajna-keeper to Kubernetes with Helm
+        uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
+        with:
+          values: image.repository=${{ steps.build-image.outputs.image }},image.tag=${{ steps.build-image.outputs.tag }}
+          cluster-name: ${{ env.CLUSTER_NAME }}
+          config-files: deploy/staging/ajna-keeper.yaml
+          chart-path: techops-services/common
+          namespace: ajna
+          timeout: 5m0s
+          name: ${{ env.NETWORK_NAME }}-ajna-keeper
+          chart-repository: https://techops-services.github.io/helm-charts
+          version: 0.0.37
+          atomic: true
