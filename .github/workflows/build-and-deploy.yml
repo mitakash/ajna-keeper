@@ -85,10 +85,60 @@ jobs:
           
           # Wait for the graph-node to be ready
           echo "Waiting for graph-node to be ready..."
-          kubectl rollout status deployment/${NETWORK}-graph-node -n ajna --timeout=300s
+          kubectl rollout status deployment/${NETWORK_NAME}-graph-node -n ajna --timeout=300s
           
           # Deploy the subgraph definition
           echo "Deploying subgraph definition"
+          
+          # Start port-forward for graph-node in background and capture PID
+          echo "Starting port-forward for graph-node..."
+          kubectl port-forward -n ajna svc/${NETWORK_NAME}-graph-node 8000:8000 8020:8020 &
+          GRAPH_NODE_PID=$!
+          
+          # Start port-forward for IPFS in background and capture PID
+          echo "Starting port-forward for IPFS..."
+          kubectl port-forward -n ajna svc/${NETWORK_NAME}-ipfs 5001:5001 &
+          IPFS_PID=$!
+          
+          # Wait for port-forwards to be ready
+          echo "Waiting for port-forwards to be ready..."
+          sleep 5
+          
+          # Clone the subgraph repository
+          echo "Cloning Ajna-subgraph repository..."
+          git clone https://github.com/BuiltByMom/Ajna-subgraph.git
+          cd Ajna-subgraph
+          
+          # Install Graph CLI globally and dependencies
+          echo "Installing Graph CLI and dependencies..."
+          yarn global add @graphprotocol/graph-cli
+          yarn install
+          
+          # Set ETH_NETWORK environment variable from Kubernetes secret
+          export ETH_NETWORK=$(kubectl get secret -n ajna ${NETWORK_NAME}-graph-node-secrets -o jsonpath='{.data.eth_network}' | base64 --decode)
+          
+          # Generate code and build subgraph
+          echo "Generating code and building subgraph for network ${NETWORK_NAME}..."
+          yarn codegen
+          yarn build --network ${NETWORK_NAME}
+          
+          # Check if graph-node is accessible
+          echo "Checking if graph-node is accessible..."
+          if curl -s http://localhost:8000/graphql > /dev/null; then
+            echo "Graph node is accessible, deploying subgraph..."
+            # Create and deploy subgraph
+            yarn create-local || echo "Subgraph may already exist, continuing..."
+            yarn deploy-local
+            echo "Subgraph deployment completed successfully"
+          else
+            echo "Failed to connect to graph-node, check port-forward and try again"
+            exit 1
+          fi
+          
+          # Kill port-forward processes
+          echo "Cleaning up port-forward processes..."
+          kill $GRAPH_NODE_PID || true
+          kill $IPFS_PID || true
 
       # - name: Deploy ajna-keeper to Kubernetes with Helm
       #   uses: bitovi/github-actions-deploy-eks-helm@v1.2.9
