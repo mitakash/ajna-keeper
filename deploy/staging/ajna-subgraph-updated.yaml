@@ -1,0 +1,284 @@
+---
+# ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: graph-node-config
+  namespace: keepers
+data:
+  ethereum: "avalanche:https://avax-mainnet.g.alchemy.com/v2/6-VuDO-hkjg7z7jkzpBF3mODc86WiNUI"
+  ipfs: "http://ipfs.keepers.svc.cluster.local:5001"
+  postgres_host: "postgres.keepers.svc.cluster.local"
+  postgres_port: "5432"
+  postgres_user: "graph-node"
+  postgres_pass: "test"
+  postgres_db: "graph-node"
+  graphql_port: "8000"
+  admin_port: "8020"
+  index_port: "8030"
+  metrics_port: "8040"
+# ---
+# # External Secrets
+# apiVersion: external-secrets.io/v1beta1
+# kind: ExternalSecret
+# metadata:
+#   name: graph-node-secrets
+#   namespace: keepers
+# spec:
+#   refreshInterval: "15m"
+#   secretStoreRef:
+#     name: aws-secretsmanager
+#     kind: ClusterSecretStore
+#   target:
+#     name: graph-node-secrets
+#     creationPolicy: Owner
+#   data:
+#     - secretKey: postgres_password
+#       remoteRef:
+#         key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/postgres-password
+#     - secretKey: eth_network
+#       remoteRef:
+#         key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/eth-network
+---
+# PostgreSQL StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: keepers
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:14
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_pass
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_db
+        - name: POSTGRES_INITDB_ARGS
+          value: "-E UTF8 --locale=C"
+        - name: PGDATA
+          value: /var/lib/postgresql/data
+        volumeMounts:
+        - name: postgres-data
+          mountPath: /var/lib/postgresql
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+  volumeClaimTemplates:
+  - metadata:
+      name: postgres-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      resources:
+        requests:
+          storage: 20Gi
+---
+# PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: keepers
+spec:
+  selector:
+    app: postgres
+  ports:
+  - port: 5432
+    targetPort: 5432
+  clusterIP: None
+---
+# IPFS Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipfs
+  namespace: keepers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ipfs
+  template:
+    metadata:
+      labels:
+        app: ipfs
+    spec:
+      containers:
+      - name: ipfs
+        image: ipfs/kubo:latest
+        ports:
+        - containerPort: 5001
+          name: api
+        volumeMounts:
+        - name: ipfs-data
+          mountPath: /data/ipfs
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      volumes:
+      - name: ipfs-data
+        persistentVolumeClaim:
+          claimName: ipfs-data
+---
+# IPFS PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ipfs-data
+  namespace: keepers
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+# IPFS Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipfs
+  namespace: keepers
+spec:
+  selector:
+    app: ipfs
+  ports:
+  - port: 5001
+    targetPort: 5001
+    name: api
+---
+# Graph Node Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: graph-node
+  namespace: keepers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: graph-node
+  template:
+    metadata:
+      labels:
+        app: graph-node
+    spec:
+      containers:
+      - name: graph-node
+        image: graphprotocol/graph-node
+        ports:
+        - containerPort: 8000
+          name: graphql-http
+        - containerPort: 8001
+          name: graphql-ws
+        - containerPort: 8020
+          name: json-rpc
+        - containerPort: 8030
+          name: indexer
+        - containerPort: 8040
+          name: metrics
+        env:
+        - name: ethereum
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: ethereum
+        - name: ipfs
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: ipfs
+        - name: postgres_host
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_host
+        - name: postgres_port
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_port
+        - name: postgres_user
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_user
+        - name: postgres_pass
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_pass
+        - name: postgres_db
+          valueFrom:
+            configMapKeyRef:
+              name: graph-node-config
+              key: postgres_db
+        - name: GRAPH_LOG
+          value: info
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+---
+# Graph Node Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: graph-node
+  namespace: keepers
+spec:
+  selector:
+    app: graph-node
+  ports:
+  - port: 8000
+    name: graphql-http
+    targetPort: 8000
+  - port: 8001
+    name: graphql-ws
+    targetPort: 8001
+  - port: 8020
+    name: json-rpc
+    targetPort: 8020
+  - port: 8030
+    name: indexer
+    targetPort: 8030
+  - port: 8040
+    name: metrics
+    targetPort: 8040
+  type: ClusterIP
