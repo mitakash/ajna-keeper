@@ -9,11 +9,13 @@ import { swapToWeth } from './uniswap';
 export class DexRouter {
   private signer: Signer;
   private oneInchRouters: { [chainId: number]: string };
+  private connectorTokens: string;
 
   constructor(
     signer: Signer,
     options: {
       oneInchRouters?: { [chainId: number]: string };
+      connectorTokens?: Array<string>;
     } = {}
   ) {
     if (!signer) logger.error('Signer is required');
@@ -21,6 +23,7 @@ export class DexRouter {
     if (!provider) logger.error('No provider available');
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
+    this.connectorTokens = options.connectorTokens ? options.connectorTokens.join(',') : '';
   }
 
   private async getQuoteFromOneInch(
@@ -30,21 +33,24 @@ export class DexRouter {
     tokenOut: string
   ): Promise<{ success: boolean; dstAmount?: string; error?: string }> {
     const url = `${process.env.ONEINCH_API}/${chainId}/quote`;
-    const connectorTokens = [
-      '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
-      '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
-      '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7',
-      '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
-    ].join(',');
 
-    const params = {
+    const params: {
+      fromTokenAddress: string;
+      toTokenAddress: string;
+      amount: string;
+      connectorTokens?: string;
+    } = {
       fromTokenAddress: tokenIn,
       toTokenAddress: tokenOut,
       amount: amount.toString(),
-      connectorTokens,
     };
+
+    if (this.connectorTokens.length > 0) {
+      params['connectorTokens'] = this.connectorTokens;
+    }
+
     logger.debug(
-      `Sending these parameters to 1inch quote: ${JSON.stringify(params)}`
+      `Sending these parameters to 1inch get quote: ${JSON.stringify(params)}`
     );
 
     try {
@@ -105,7 +111,14 @@ export class DexRouter {
       `1inch quote: ${amount.toString()} ${tokenIn} -> ${quoteResult.dstAmount} ${tokenOut}`
     );
 
-    const params = {
+    const params: {
+      fromTokenAddress: string;
+      toTokenAddress: string;
+      amount: string;
+      fromAddress: string;
+      slippage: number;
+      connectorTokens?: string;
+    } = {
       fromTokenAddress: tokenIn,
       toTokenAddress: tokenOut,
       amount: amount.toString(),
@@ -113,7 +126,13 @@ export class DexRouter {
       slippage,
     };
 
-    logger.debug(`Sending these params to 1inch: ${JSON.stringify(params)}`);
+    if (this.connectorTokens.length > 0) {
+      params['connectorTokens'] = this.connectorTokens;
+    }
+
+    logger.debug(
+      `Sending these parameters to 1inch: ${JSON.stringify(params)}`
+    );
 
     const retries = 3;
     const delayMs = 2000;
