@@ -6,12 +6,10 @@ metadata:
   name: graph-node-config
   namespace: keepers
 data:
-  ethereum: "mainnet:${ETH_NETWORK}"
   ipfs: "http://ipfs.keepers.svc.cluster.local:5001"
   postgres_host: "postgres.keepers.svc.cluster.local"
   postgres_port: "5432"
   postgres_user: "graph-node"
-  postgres_pass: "${POSTGRES_PASSWORD}"
   postgres_db: "graph-node"
   graphql_port: "8000"
   admin_port: "8020"
@@ -35,10 +33,10 @@ spec:
   data:
     - secretKey: postgres_password
       remoteRef:
-        key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/postgres-password
+        key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/{{NETWORK}}/postgres-password
     - secretKey: eth_network
       remoteRef:
-        key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/eth-network
+        key: /eks/{{CLUSTER_NAME}}/ajna-subgraph/{{NETWORK}}/eth-network
 ---
 # PostgreSQL StatefulSet
 apiVersion: apps/v1
@@ -209,37 +207,37 @@ spec:
         - containerPort: 8040
           name: metrics
         env:
-        - name: ETHEREUM_RPC
+        - name: ethereum
           valueFrom:
-            configMapKeyRef:
-              name: graph-node-config
-              key: ethereum
-        - name: IPFS_URL
+            secretKeyRef:
+              name: graph-node-secrets
+              key: eth_network
+        - name: ipfs
           valueFrom:
             configMapKeyRef:
               name: graph-node-config
               key: ipfs
-        - name: POSTGRES_HOST
+        - name: postgres_host
           valueFrom:
             configMapKeyRef:
               name: graph-node-config
               key: postgres_host
-        - name: POSTGRES_PORT
+        - name: postgres_port
           valueFrom:
             configMapKeyRef:
               name: graph-node-config
               key: postgres_port
-        - name: POSTGRES_USER
+        - name: postgres_user
           valueFrom:
             configMapKeyRef:
               name: graph-node-config
               key: postgres_user
-        - name: POSTGRES_PASSWORD
+        - name: postgres_pass
           valueFrom:
             secretKeyRef:
               name: graph-node-secrets
               key: postgres_password
-        - name: POSTGRES_DB
+        - name: postgres_db
           valueFrom:
             configMapKeyRef:
               name: graph-node-config
