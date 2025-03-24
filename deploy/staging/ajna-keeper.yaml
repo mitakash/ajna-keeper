@@ -51,7 +51,7 @@ env:
   CONF_GENERIC:
     type: "parameterStore"
     name: "conf-generic"
-    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK}}/configuration
+    parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/{{NETWORK_NAME}}/configuration
   KEYSTORE_FILE:
     type: "parameterStore"
     name: "keystore-file"
