@@ -13,9 +13,9 @@ contract AjnaKeeperTaker is IERC20Taker {
 
     /// @notice Use this to pass configuration data from the keeper to the callback function.
     struct SwapData {
-        address pool; // TODO: we don't really need this
-        LiquiditySource source;
-        // TODO: add ambiguous "calldata" field to use with OneInch?
+        LiquiditySource source; // determines which type of AMM, which the callback function interacts with
+        address router;         // address of the AMM router to interact with
+        bytes[] data;           // for certain sources (1inch), this is populated by an external API
     }
 
     /// @dev Hash used for all ERC20 pools, used for pool validation
@@ -37,11 +37,19 @@ contract AjnaKeeperTaker is IERC20Taker {
     /// @param pool ERC20 pool with an active auction.
     /// @param borrowerAddress Identifies the liquidation to take.
     /// @param maxAmount Limit collateral to take from the auction, in `WAD` precision.
-    function takeWithAtomicSwap(IERC20Pool pool, address borrowerAddress, uint256 maxAmount, LiquiditySource source) external onlyOwner {
+    function takeWithAtomicSwap(
+        IERC20Pool pool, 
+        address borrowerAddress, 
+        uint256 maxAmount, 
+        LiquiditySource source,
+        address swapRouter,
+        bytes[] calldata swapData
+    ) external onlyOwner {
         bytes memory data = abi.encode(
             SwapData({
-                pool: address(pool),
-                source: source
+                source: source,
+                router: swapRouter,
+                data: swapData
             })
         );
         pool.take(borrowerAddress, maxAmount, address(this), data);
@@ -55,13 +63,15 @@ contract AjnaKeeperTaker is IERC20Taker {
         SwapData memory swapData = abi.decode(data, (SwapData));
 
         // Ensure msg.sender is a valid Ajna pool and matches the pool in the data
-        require(_validatePool(IERC20Pool(swapData.pool)), "AjnaKeeperTaker: Sender is not from the Ajna deployment configured in this contract");
-        require(msg.sender == swapData.pool, "AjnaKeeperTaker: Sender is not pool in message");
+        require(_validatePool(IERC20Pool(msg.sender)), "AjnaKeeperTaker: Sender is not from the Ajna deployment configured in this contract");
 
         if (swapData.source == LiquiditySource.OneInch)
         {
             // TODO: convert amounts from WAD precision to whatever the liquidity source expects (likely token precision)
-            // TODO: perform the swap
+            // TODO: abi.decode the swapData payload
+            // TODO: adjust `amount` and `minReturn` fields as needed
+            // TODO: abi.encode the calldata
+            // TODO: perform the swap by invoking swapData.router.call(calldata)
         }
     }
 
