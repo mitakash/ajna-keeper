@@ -200,6 +200,7 @@ export interface KeeperConfig {
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
   try {
     if (filePath.endsWith('.ts')) {
+      // FIXME: this prevents users from reading config files from other folders
       const imported = await import('../' + filePath);
       const config = imported.default;
       // await validateUniswapAddresses(config);
