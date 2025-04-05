@@ -29,6 +29,10 @@ export class DexRouter {
     this.connectorTokens = options.connectorTokens ? options.connectorTokens.join(',') : '';
   }
 
+  public getRouter(chainId: number): string | undefined {
+    return this.oneInchRouters[chainId];
+  }
+
   public async getQuoteFromOneInch(
     chainId: number,
     amount: BigNumber,
@@ -64,6 +68,7 @@ export class DexRouter {
           Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
         },
       });
+      console.log('1inch quote response:', response.data);
 
       return { success: true, dstAmount: response.data.dstAmount };
     } catch (error: Error | any) {
@@ -80,6 +85,7 @@ export class DexRouter {
     tokenOut: string,
     slippage: number,
     fromAddress: string,
+    disableEstimate: boolean = false,
   ) : Promise<{ success: boolean; data?: any; error?: string }> {
     const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const params: {
@@ -89,6 +95,7 @@ export class DexRouter {
       fromAddress: string;
       slippage: number;
       connectorTokens?: string;
+      disableEstimate?: boolean;
     } = {
       fromTokenAddress: tokenIn,
       toTokenAddress: tokenOut,
@@ -99,6 +106,9 @@ export class DexRouter {
 
     if (this.connectorTokens.length > 0) {
       params['connectorTokens'] = this.connectorTokens;
+    }
+    if (disableEstimate) {
+      params['disableEstimate'] = true;
     }
 
     logger.debug(

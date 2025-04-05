@@ -61,6 +61,7 @@ export async function approveErc20(
       amount,
       { nonce }
     );
+    console.log('submitted tx', tx.hash)
     return await tx.wait();
   } catch (error) {
     NonceTracker.resetNonce(signer, signerAddress);

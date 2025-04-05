@@ -2,6 +2,7 @@
 pragma solidity 0.8.28;
 
 import { IERC20Pool, IERC20Taker, PoolDeployer } from "./AjnaInterfaces.sol";
+import { IGenericRouter } from "./OneInchInterfaces.sol";
 
 /// @notice Allows a keeper to take auctions using external liquidity sources.
 contract AjnaKeeperTaker is IERC20Taker {
@@ -38,9 +39,9 @@ contract AjnaKeeperTaker is IERC20Taker {
     /// @param borrowerAddress Identifies the liquidation to take.
     /// @param maxAmount Limit collateral to take from the auction, in `WAD` precision.
     function takeWithAtomicSwap(
-        IERC20Pool pool, 
-        address borrowerAddress, 
-        uint256 maxAmount, 
+        IERC20Pool pool,
+        address borrowerAddress,
+        uint256 maxAmount,
         LiquiditySource source,
         address swapRouter,
         bytes[] calldata swapData
@@ -73,6 +74,18 @@ contract AjnaKeeperTaker is IERC20Taker {
             // TODO: abi.encode the calldata
             // TODO: perform the swap by invoking swapData.router.call(calldata)
         }
+    }
+
+    /// @dev Called by query-1inch.ts to test mutating calldata to send to 1inch GenericRouter.swap
+    function testOneInchSwapWithCalldataMutation(
+        IERC20Pool pool,
+        address swapRouter,
+        bytes[] calldata swapData,
+        uint256 actualCollateralAmount
+    ) external view { // TODO: replace view with onlyOwner when ready
+        // TODO: I don't believe I can decode a function call here.
+        // Perhaps need to replace swapData with the three parameters to GenericRouter.swap,
+        // decoding the calldata offchain before invoking this method.
     }
 
     function _validatePool(IERC20Pool pool) private view returns(bool) {
