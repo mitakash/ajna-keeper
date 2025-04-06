@@ -85,7 +85,7 @@ export class DexRouter {
     tokenOut: string,
     slippage: number,
     fromAddress: string,
-    disableEstimate: boolean = false,
+    usePatching: boolean = false,
   ) : Promise<{ success: boolean; data?: any; error?: string }> {
     const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const params: {
@@ -95,6 +95,7 @@ export class DexRouter {
       fromAddress: string;
       slippage: number;
       connectorTokens?: string;
+      usePatching?: boolean;
       disableEstimate?: boolean;
     } = {
       fromTokenAddress: tokenIn,
@@ -107,8 +108,9 @@ export class DexRouter {
     if (this.connectorTokens.length > 0) {
       params['connectorTokens'] = this.connectorTokens;
     }
-    if (disableEstimate) {
-      params['disableEstimate'] = true;
+    if (usePatching) {
+      params['usePatching'] = true;     // allow mutations to the swap data
+      params['disableEstimate'] = true; // skip API balance check (collateral will come mid-transaction)
     }
 
     logger.debug(

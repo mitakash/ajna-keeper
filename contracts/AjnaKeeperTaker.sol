@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import { IERC20Pool, IERC20Taker, PoolDeployer } from "./AjnaInterfaces.sol";
-import { IGenericRouter } from "./OneInchInterfaces.sol";
+import { IAggregationExecutor,IGenericRouter, SwapDescription } from "./OneInchInterfaces.sol";
 
 /// @notice Allows a keeper to take auctions using external liquidity sources.
 contract AjnaKeeperTaker is IERC20Taker {
@@ -77,15 +77,34 @@ contract AjnaKeeperTaker is IERC20Taker {
     }
 
     /// @dev Called by query-1inch.ts to test mutating calldata to send to 1inch GenericRouter.swap
+    /// @param pool ERC20 pool which identifies the tokens to swap
+    /// @param swapRouter 1inch router to which transaction will be sent
+    /// @param aggregationExecutor 1inch executor which will receive collateral
+    /// @param swapDescription 1inch swap description
+    /// @param swapData opaque calldata from 1inch API
+    /// @param actualCollateralAmount simulates collateral received from take
     function testOneInchSwapWithCalldataMutation(
         IERC20Pool pool,
-        address swapRouter,
-        bytes[] calldata swapData,
+        IGenericRouter swapRouter,
+        address aggregationExecutor,
+        SwapDescription memory swapDescription,
+        bytes calldata swapData,
         uint256 actualCollateralAmount
-    ) external view { // TODO: replace view with onlyOwner when ready
-        // TODO: I don't believe I can decode a function call here.
-        // Perhaps need to replace swapData with the three parameters to GenericRouter.swap,
-        // decoding the calldata offchain before invoking this method.
+    ) external onlyOwner {
+        swapDescription.dstReceiver = payable(owner);
+
+        // scale the return amount to the actual amount
+        if (swapDescription.amount != actualCollateralAmount) {
+            swapDescription.minReturnAmount = actualCollateralAmount * swapDescription.minReturnAmount / swapDescription.amount;
+            swapDescription.amount = actualCollateralAmount;
+        }
+
+        // execute the swap
+        swapRouter.swap(
+            IAggregationExecutor(aggregationExecutor),
+            swapDescription,
+            swapData
+        );
     }
 
     function _validatePool(IERC20Pool pool) private view returns(bool) {
