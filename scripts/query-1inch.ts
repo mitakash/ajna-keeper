@@ -26,7 +26,7 @@ const argv = yargs(process.argv.slice(2))
       type: 'string',
       demandOption: true,
       describe: 'Action to perform',
-      choices: ['approve', 'quote', 'getSwapData'],
+      choices: ['approve', 'deploy', 'quote', 'getSwapData'],
       // TODO: add choice to actually invoke the test function on the keeper contract using swap data
     },
     amount: {
@@ -78,6 +78,16 @@ async function main() {
         return { success: false, error: `Approval failed: ${error}` };
       }
     }
+  }
+
+  else if (argv.action === 'deploy') {
+    // FIXME: need compilation artifacts
+    const keeperTaker = ethers.ContractFactory());
+    const keeperTakerContract = await keeperTaker.deploy(config.ajna.erc20PoolFactory);
+    await keeperTakerContract.deployed();
+    console.log("AjnaKeeperTaker deployed to:", keeperTakerContract.address);
+
+    // TODO: look into hardhat-verify plugin for verification
   }
 
   else if (argv.action === 'quote') {
