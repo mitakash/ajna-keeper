@@ -2,13 +2,17 @@
 
 import yargs from 'yargs/yargs';
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
-import { ethers } from 'ethers';
+import { ContractFactory, ethers } from 'ethers';
+import { promises as fs } from 'fs';
 
 import { configureAjna, readConfigFile } from "../src/config-types";
 import { approveErc20, getAllowanceOfErc20 } from '../src/erc20';
 import { DexRouter } from '../src/dex-router';
 import { getProviderAndSigner } from '../src/utils';
-import { decodeSwapCalldata } from '../src/1inch';
+import { decodeSwapCalldata, SwapCalldata } from '../src/1inch';
+import { exit } from 'process';
+
+const PATH_TO_COMPILER_OUTPUT = 'artifacts/contracts/AjnaKeeperTaker.sol/AjnaKeeperTaker.json';
 
 const argv = yargs(process.argv.slice(2))
   .options({
@@ -19,25 +23,28 @@ const argv = yargs(process.argv.slice(2))
     },
     poolName: {
       type: 'string',
-      demandOption: true,
       describe: 'Name of the pool identifying tokens to query',
     },
     action: {
       type: 'string',
       demandOption: true,
       describe: 'Action to perform',
-      choices: ['approve', 'deploy', 'quote', 'getSwapData'],
-      // TODO: add choice to actually invoke the test function on the keeper contract using swap data
+      choices: ['approve', 'deploy', 'quote', 'swap'],
     },
     amount: {
       type: 'number',
-      demandOption: true,
       describe: 'Amount to swap or set allowance',
     }
   })
   .parseSync();
 
 async function main() {
+  // validate script arguments
+  if (argv.action in ['approve', 'quote', 'swap']) {
+    if (!argv.poolName) throw new Error('Pool name is required for this action');
+    if (!argv.amount) throw new Error('Amount is required for this action');
+  }
+  // read config file and unlock keystore
   const config = await readConfigFile(argv.config);
   const { provider, signer } = await getProviderAndSigner(
     config.keeperKeystore,
@@ -45,6 +52,19 @@ async function main() {
   );
   const chainId = await signer.getChainId()
 
+  if (argv.action === 'deploy') {
+    const compilerOutput = await fs.readFile(PATH_TO_COMPILER_OUTPUT, 'utf8');
+    const keeperTakerFactory: ContractFactory = ContractFactory.fromSolidity(compilerOutput, signer);
+    const keeperTaker = await keeperTakerFactory.deploy(config.ajna.erc20PoolFactory);
+    await keeperTaker.deployed();
+    console.log("AjnaKeeperTaker deployed to:", keeperTaker.address);
+    console.log('Update config.keeperTaker with this address');
+
+    // TODO: look into hardhat-verify plugin for verification
+    exit(0);
+  }
+
+  // load pool from SDK
   const poolConfig = config.pools.find(pool => pool.name === argv.poolName);
   if (!poolConfig) throw new Error(`Pool with name ${argv.poolName} not found in config`);
   configureAjna(config.ajna);
@@ -56,11 +76,10 @@ async function main() {
     oneInchRouters: config?.oneInchRouters ?? {},
     connectorTokens: config?.connectorTokens ?? [],
   });
+  const amount = ethers.utils.parseEther(argv.amount!!.toString());
 
-  const amount = ethers.utils.parseEther(argv.amount.toString());
-
-  if (argv.action === 'approve') {
-    // 1inch API will error out if approvals not run before calling API
+  if (argv.action === 'approve' && pool && dexRouter) {
+    // 1inch API will error out if approval not run before calling API
     const oneInchRouter: string = dexRouter.getRouter(chainId)!!
     const currentAllowance = await getAllowanceOfErc20(
       signer,
@@ -80,17 +99,7 @@ async function main() {
     }
   }
 
-  else if (argv.action === 'deploy') {
-    // FIXME: need compilation artifacts
-    const keeperTaker = ethers.ContractFactory());
-    const keeperTakerContract = await keeperTaker.deploy(config.ajna.erc20PoolFactory);
-    await keeperTakerContract.deployed();
-    console.log("AjnaKeeperTaker deployed to:", keeperTakerContract.address);
-
-    // TODO: look into hardhat-verify plugin for verification
-  }
-
-  else if (argv.action === 'quote') {
+  else if (argv.action === 'quote' && pool && dexRouter) {
     const quote = await dexRouter.getQuoteFromOneInch(
       chainId,
       amount,
@@ -99,7 +108,7 @@ async function main() {
     );
     console.log('Quote:', quote);
 
-  } else if (argv.action === 'getSwapData') {
+  } else if (argv.action === 'swap' && pool && dexRouter) {
     const swapData = await dexRouter.getSwapDataFromOneInch(
       chainId,
       amount,
@@ -109,7 +118,29 @@ async function main() {
       signer.address,
       true,
     );
-    console.log('Decoded swap data: ', decodeSwapCalldata(swapData.data));
+    const swapCalldata: SwapCalldata = decodeSwapCalldata(swapData.data);
+    console.log('Decoded swap data: ', swapCalldata);
+
+    if (config.keeperTaker) {
+      console.log('Attempting to transact with keeperTaker at', config.keeperTaker);
+      const compilerOutput = await fs.readFile(PATH_TO_COMPILER_OUTPUT, 'utf8');
+      const keeperTaker = new ethers.Contract(
+        config.keeperTaker,
+        JSON.parse(compilerOutput).abi,
+        signer
+      );
+      const tx = await keeperTaker.testOneInchSwapWithCalldataMutation(
+        pool.poolAddress,
+        dexRouter.getRouter(chainId)!!,
+        swapCalldata.aggregationExecutor,
+        swapCalldata.swapDescription,
+        swapCalldata.encodedCalls,
+        amount.mul(9).div(10), // 10% reduction in collateral
+      );
+      console.log('Transaction hash:', tx.hash);
+      await tx.wait();
+      console.log('Transaction confirmed');
+    }
 
   } else {
     throw new Error(`Unknown action: ${argv.action}`);

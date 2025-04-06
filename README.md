@@ -116,6 +116,16 @@ Starts a liquidation when a loan's threshold price exceeds the lowest utilized p
 
 When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
 
+### Take
+
+When auction price drops a configurable percentage below a DEX price, swaps collateral for quote token using a DEX or DEX aggregator, repaying debt and earning profit for the taker.
+
+This feature requires deploying a smart contract owned by the EOA operating the keeper.  To deploy this contract:
+```
+yarn compile
+scripts/query-1inch.ts --config [your-configuration].ts --action deploy
+```
+
 ### Collect Liquidation Bond
 
 Collects liquidation bonds (which were used to kick loans) once they are fully claimable. Note: This does not settle auctions.

@@ -171,6 +171,8 @@ export interface KeeperConfig {
   subgraphUrl: string;
   /** Path to encrypted keystore json file. See README for instructions on how to create this file.*/
   keeperKeystore: string;
+  /** Contract used for atomically taking liquidations with external liquidity */
+  keeperTaker?: string;
   /** If true, doesn't send any requests. */
   dryRun?: boolean;
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */

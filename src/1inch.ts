@@ -5,7 +5,7 @@ import { BigNumber } from 'ethers';
 // duplicate definition - InvalidMsgValue()
 import genericRouterABI from './abis/1inch-genericrouter.abi.json';
 
-interface SwapDescription {
+export interface SwapDescription {
   sourceToken: string;
   destinationToken: string
   sourceReceiver: string;
@@ -15,7 +15,7 @@ interface SwapDescription {
   flags: BigNumber;
 }
 
-interface SwapCalldata {
+export interface SwapCalldata {
   aggregationExecutor: string;
   swapDescription: SwapDescription;
   encodedCalls: string;

@@ -8,7 +8,8 @@
     "format": "prettier --write .",
     "unit-tests": "npx mocha --require ts-node/register 'src/unit-tests/**/*.test.ts'",
     "integration-tests": "npx hardhat test",
-    "create-keystore": "./node_modules/ts-node/dist/bin.js scripts/create-keystore.ts"
+    "create-keystore": "./node_modules/ts-node/dist/bin.js scripts/create-keystore.ts",
+    "compile": "npx hardhat compile"
   },
   "author": "",
   "license": "MIT",
@@ -16,6 +17,7 @@
     "@ajna-finance/sdk": "^0.4.7",
     "@ethersproject/abstract-provider": "^5.7.0",
     "@inquirer/prompts": "^7.2.3",
+    "@openzeppelin/contracts": "4.8.0",
     "@uniswap/sdk-core": "^7.5.0",
     "@uniswap/v3-core": "^1.0.1",
     "@uniswap/v3-sdk": "^3.24.0",
