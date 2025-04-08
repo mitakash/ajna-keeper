@@ -6,7 +6,7 @@ import { ContractFactory, ethers } from 'ethers';
 import { promises as fs } from 'fs';
 
 import { configureAjna, readConfigFile } from "../src/config-types";
-import { approveErc20, getAllowanceOfErc20 } from '../src/erc20';
+import { approveErc20, getAllowanceOfErc20, transferErc20 } from '../src/erc20';
 import { DexRouter } from '../src/dex-router';
 import { getProviderAndSigner } from '../src/utils';
 import { decodeSwapCalldata, SwapCalldata } from '../src/1inch';
@@ -29,7 +29,7 @@ const argv = yargs(process.argv.slice(2))
       type: 'string',
       demandOption: true,
       describe: 'Action to perform',
-      choices: ['approve', 'deploy', 'quote', 'swap'],
+      choices: ['approve', 'deploy', 'quote', 'send', 'swap'],
     },
     amount: {
       type: 'number',
@@ -40,7 +40,7 @@ const argv = yargs(process.argv.slice(2))
 
 async function main() {
   // validate script arguments
-  if (argv.action in ['approve', 'quote', 'swap']) {
+  if (argv.action in ['approve', 'quote', 'send', 'swap']) {
     if (!argv.poolName) throw new Error('Pool name is required for this action');
     if (!argv.amount) throw new Error('Amount is required for this action');
   }
@@ -94,12 +94,10 @@ async function main() {
         console.log(`Approval successful for token ${pool.collateralAddress}`);
       } catch (error) {
         console.error(`Failed to approve token ${pool.collateralAddress} for 1inch: ${error}`);
-        return { success: false, error: `Approval failed: ${error}` };
       }
     }
-  }
 
-  else if (argv.action === 'quote' && pool && dexRouter) {
+  } else if (argv.action === 'quote' && pool && dexRouter) {
     const quote = await dexRouter.getQuoteFromOneInch(
       chainId,
       amount,
@@ -107,6 +105,14 @@ async function main() {
       pool.quoteAddress,
     );
     console.log('Quote:', quote);
+
+  } else if (argv.action === 'send' && pool && config.keeperTaker) {
+    try {
+      console.log('Sending', amount.toString(), 'to keeperTaker at', config.keeperTaker);
+      await transferErc20(signer, pool.collateralAddress, config.keeperTaker, amount);
+    } catch (error) {
+      console.error(`Failed to send token ${pool.collateralAddress}: ${error}`);
+    }
 
   } else if (argv.action === 'swap' && pool && dexRouter) {
     const swapData = await dexRouter.getSwapDataFromOneInch(

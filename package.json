@@ -9,7 +9,8 @@
     "unit-tests": "npx mocha --require ts-node/register 'src/unit-tests/**/*.test.ts'",
     "integration-tests": "npx hardhat test",
     "create-keystore": "./node_modules/ts-node/dist/bin.js scripts/create-keystore.ts",
-    "compile": "npx hardhat compile"
+    "compile": "npx hardhat compile",
+    "fork-base": "FORK_ENABLED=true FORK_NETWORK=base hardhat node"
   },
   "author": "",
   "license": "MIT",
