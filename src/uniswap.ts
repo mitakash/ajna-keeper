@@ -92,11 +92,11 @@ export async function getTokenFromAddress(
 export async function swapToWeth(
   signer: Signer,
   tokenAddress: string,
-  amountWad: BigNumber,
+  amount: BigNumber,
   feeAmount: FeeAmount,
   uniswapOverrides?: UniswapV3Overrides
 ) {
-  if (!signer || !tokenAddress || !amountWad) {
+  if (!signer || !tokenAddress || !amount) {
     throw new Error('Invalid parameters provided to swapToWeth');
   }
   const provider = signer.provider;
@@ -120,8 +120,6 @@ export async function swapToWeth(
   const uniswapV3Router =
     uniswapOverrides?.uniswapV3Router ?? SWAP_ROUTER_02_ADDRESSES(chainId);
   const v3CoreFactorAddress = V3_CORE_FACTORY_ADDRESSES[chainId];
-
-  const amount = tokenChangeDecimals(amountWad, 18, tokenToSwap.decimals);
 
   if (
     tokenToSwap.symbol === weth.symbol ||

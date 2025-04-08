@@ -2,9 +2,10 @@ import axios from 'axios';
 import 'dotenv/config';
 import { BigNumber, Contract, Signer, providers } from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
-import { approveErc20, getAllowanceOfErc20 } from './erc20';
+import { approveErc20, getAllowanceOfErc20, getDecimalsErc20 } from './erc20';
 import { logger } from './logging';
 import { swapToWeth } from './uniswap';
+import { tokenChangeDecimals } from './utils';
 
 export class DexRouter {
   private signer: Signer;
@@ -23,7 +24,9 @@ export class DexRouter {
     if (!provider) logger.error('No provider available');
     this.signer = signer;
     this.oneInchRouters = options.oneInchRouters || {};
-    this.connectorTokens = options.connectorTokens ? options.connectorTokens.join(',') : '';
+    this.connectorTokens = options.connectorTokens
+      ? options.connectorTokens.join(',')
+      : '';
   }
 
   private async getQuoteFromOneInch(
@@ -237,12 +240,19 @@ export class DexRouter {
     const provider = this.signer.provider as providers.Provider;
     const fromAddress = await this.signer.getAddress();
 
+    // Convert amount from WAD (18 decimals) to token's native decimals
+    const decimals = await getDecimalsErc20(this.signer, tokenIn);
+    const adjustedAmount = tokenChangeDecimals(amount, 18, decimals);
+    logger.debug(
+      `Converted ${amount.toString()} (WAD) to ${adjustedAmount.toString()} (${decimals} decimals) for token ${tokenIn}`
+    );
+
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
     const balance = await erc20.balanceOf(fromAddress);
 
-    if (balance.lt(amount)) {
+    if (balance.lt(adjustedAmount)) {
       logger.error(
-        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${amount.toString()}`
+        `Insufficient balance for ${tokenIn}: ${balance.toString()} < ${adjustedAmount.toString()}`
       );
       return { success: false, error: `Insufficient balance for ${tokenIn}` };
     }
@@ -264,14 +274,19 @@ export class DexRouter {
         oneInchRouter
       );
       logger.debug(
-        `Current allowance: ${currentAllowance.toString()}, Amount: ${amount.toString()}`
+        `Current allowance: ${currentAllowance.toString()}, Amount: ${adjustedAmount.toString()}`
       );
-      if (currentAllowance.lt(amount)) {
+      if (currentAllowance.lt(adjustedAmount)) {
         try {
           logger.debug(
             `Approving 1inch router ${oneInchRouter} for token: ${tokenIn}`
           );
-          await approveErc20(this.signer, tokenIn, oneInchRouter, amount);
+          await approveErc20(
+            this.signer,
+            tokenIn,
+            oneInchRouter,
+            adjustedAmount
+          );
           logger.info(`Approval successful for token ${tokenIn}`);
         } catch (error) {
           logger.error(
@@ -283,7 +298,7 @@ export class DexRouter {
 
       const result = await this.swapWithOneInch(
         chainId,
-        amount,
+        adjustedAmount,
         tokenIn,
         tokenOut,
         slippage
@@ -294,18 +309,16 @@ export class DexRouter {
         await swapToWeth(
           this.signer,
           tokenIn,
-          amount,
+          adjustedAmount,
           feeAmount,
           uniswapOverrides
         );
         logger.info(
-          `Uniswap V3 swap via swapToWeth successful: ${amount.toString()} ${tokenIn} -> ${tokenOut}`
+          `Uniswap V3 swap successful: ${adjustedAmount.toString()} ${tokenIn} -> ${tokenOut}`
         );
         return { success: true };
       } catch (error) {
-        logger.error(
-          `Uniswap V3 swap via swapToWeth failed for token: ${tokenIn}: ${error}`
-        );
+        logger.error(`Uniswap V3 swap failed for token: ${tokenIn}: ${error}`);
         return { success: false, error: `Uniswap swap failed: ${error}` };
       }
     }

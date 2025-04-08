@@ -1,12 +1,12 @@
+import axios from 'axios';
 import chai, { expect } from 'chai';
 import chaiAsPromised from 'chai-as-promised';
+import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
 import sinon from 'sinon';
-import { BigNumber, Contract, Signer, ethers, providers } from 'ethers';
-import axios from 'axios';
 import { DexRouter } from '../dex-router';
-import { logger } from '../logging';
 import * as erc20 from '../erc20';
 import { MAINNET_CONFIG } from '../integration-tests/test-config';
+import { logger } from '../logging';
 
 chai.use(chaiAsPromised);
 
@@ -39,8 +39,8 @@ describe('DexRouter', () => {
 
   const chainId = 43114;
   const amount = BigNumber.from('1000000000000000000');
-  const tokenIn = MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress; // WBTC
-  const tokenOut = MAINNET_CONFIG.WETH_ADDRESS; // WETH
+  const tokenIn = MAINNET_CONFIG.WBTC_USDC_POOL.collateralAddress;
+  const tokenOut = MAINNET_CONFIG.WETH_ADDRESS;
   const to = MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress;
   const fromAddress = '0x964d9D1A532B5a5DaeacBAc71d46320DE313AE9C';
   const slippage = 1;
@@ -202,6 +202,8 @@ describe('DexRouter', () => {
         throw new Error(`Unexpected contract address: ${address}`);
       });
 
+      const getDecimalsStub = sinon.stub(erc20, 'getDecimalsErc20').resolves(8);
+
       const result = await dexRouter.swap(
         chainId,
         amount,
@@ -213,6 +215,7 @@ describe('DexRouter', () => {
 
       expect(result.success).to.be.false;
       expect(result.error).to.equal(`Insufficient balance for ${tokenIn}`);
+      expect(getDecimalsStub.calledOnce).to.be.true;
     });
 
     describe('useOneInch = true', () => {
@@ -230,8 +233,8 @@ describe('DexRouter', () => {
           ) {
             return ethers.utils.defaultAbiCoder.encode(
               ['uint256'],
-              [BigNumber.from('10000000000000000000')]
-            ); // 1 WBTC
+              [BigNumber.from('100000000')] // 1 WBTC
+            );
           }
           throw new Error('Unexpected call');
         });
@@ -239,12 +242,17 @@ describe('DexRouter', () => {
 
       it('should approve token if allowance is insufficient', async () => {
         const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
-        erc20ContractStub.balanceOf.withArgs(fromAddress).resolves(amount);
+        erc20ContractStub.balanceOf
+          .withArgs(fromAddress)
+          .resolves(BigNumber.from('100000000')); // 1 WBTC
         sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
           if (address === tokenIn) return erc20ContractStub;
           throw new Error(`Unexpected contract address: ${address}`);
         });
 
+        const getDecimalsStub = sinon
+          .stub(erc20, 'getDecimalsErc20')
+          .resolves(8);
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(BigNumber.from('1'));
@@ -276,15 +284,44 @@ describe('DexRouter', () => {
         );
 
         expect(result.success).to.be.true;
+        expect(getDecimalsStub.calledOnce).to.be.true;
+        expect(getAllowanceStub.calledOnce).to.be.true;
+        expect(approveStub.calledOnce).to.be.true;
       });
 
       it('should skip approval if allowance is sufficient', async () => {
+        const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
+        erc20ContractStub.balanceOf
+          .withArgs(fromAddress)
+          .resolves(BigNumber.from('100000000')); // 1 WBTC
+        sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
+          if (address === tokenIn) return erc20ContractStub;
+          throw new Error(`Unexpected contract address: ${address}`);
+        });
+
+        const getDecimalsStub = sinon
+          .stub(erc20, 'getDecimalsErc20')
+          .resolves(8);
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
-          .resolves(amount);
+          .resolves(BigNumber.from('100000000')); // 1 WBTC
         const approveStub = sinon.stub(erc20, 'approveErc20');
 
-        await dexRouter.swap(
+        axiosGetStub
+          .onCall(0)
+          .resolves({ data: { dstAmount: '900000000000000000' } });
+        axiosGetStub.onCall(1).resolves({
+          data: {
+            tx: {
+              to: '0x1inchRouter',
+              data: '0xdata',
+              value: '0',
+              gas: '100000',
+            },
+          },
+        });
+
+        const result = await dexRouter.swap(
           chainId,
           amount,
           tokenIn,
@@ -294,17 +331,25 @@ describe('DexRouter', () => {
           slippage,
           feeAmount
         );
+
+        expect(result.success).to.be.true;
+        expect(getDecimalsStub.calledOnce).to.be.true;
         expect(approveStub.notCalled).to.be.true;
       });
 
       it('should log error if approval fails', async () => {
         const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
-        erc20ContractStub.balanceOf.withArgs(fromAddress).resolves(amount);
+        erc20ContractStub.balanceOf
+          .withArgs(fromAddress)
+          .resolves(BigNumber.from('100000000')); // 1 WBTC
         sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
           if (address === tokenIn) return erc20ContractStub;
           throw new Error(`Unexpected contract address: ${address}`);
         });
 
+        const getDecimalsStub = sinon
+          .stub(erc20, 'getDecimalsErc20')
+          .resolves(8);
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
           .resolves(BigNumber.from('0'));
@@ -325,19 +370,25 @@ describe('DexRouter', () => {
 
         expect(result.success).to.be.false;
         expect(result.error).to.include('Approval failed');
+        expect(getDecimalsStub.calledOnce).to.be.true;
       });
 
       it('should call swapWithOneInch and execute transaction', async () => {
         const erc20ContractStub = new CustomContract(tokenIn, [], mockProvider);
-        erc20ContractStub.balanceOf.withArgs(fromAddress).resolves(amount);
+        erc20ContractStub.balanceOf
+          .withArgs(fromAddress)
+          .resolves(BigNumber.from('100000000')); // 1 WBTC
         sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
           if (address === tokenIn) return erc20ContractStub;
           throw new Error(`Unexpected contract address: ${address}`);
         });
 
+        const getDecimalsStub = sinon
+          .stub(erc20, 'getDecimalsErc20')
+          .resolves(8);
         const getAllowanceStub = sinon
           .stub(erc20, 'getAllowanceOfErc20')
-          .resolves(amount);
+          .resolves(BigNumber.from('100000000')); // 1 WBTC
 
         axiosGetStub
           .onCall(0)
@@ -366,6 +417,7 @@ describe('DexRouter', () => {
 
         expect(result.success).to.be.true;
         expect(axiosGetStub.calledTwice).to.be.true;
+        expect(getDecimalsStub.calledOnce).to.be.true;
 
         expect(
           axiosGetStub
@@ -374,7 +426,7 @@ describe('DexRouter', () => {
               params: {
                 fromTokenAddress: tokenIn,
                 toTokenAddress: tokenOut,
-                amount: '1000000000000000000',
+                amount: '100000000',
               },
               headers: {
                 Accept: 'application/json',
@@ -390,7 +442,7 @@ describe('DexRouter', () => {
               params: {
                 fromTokenAddress: tokenIn,
                 toTokenAddress: tokenOut,
-                amount: '1000000000000000000',
+                amount: '100000000',
                 fromAddress,
                 slippage,
               },
@@ -420,7 +472,7 @@ describe('DexRouter', () => {
           return ethers.utils.defaultAbiCoder.encode(
             ['uint256'],
             [BigNumber.from('100000000')]
-          ); // 1 WBTC
+          );
         }
         throw new Error('Unexpected call');
       });
