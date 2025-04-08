@@ -135,7 +135,7 @@ async function main() {
         swapCalldata.aggregationExecutor,
         swapCalldata.swapDescription,
         swapCalldata.encodedCalls,
-        amount.mul(9).div(10), // 10% reduction in collateral
+        amount
       );
       console.log('Transaction hash:', tx.hash);
       await tx.wait();

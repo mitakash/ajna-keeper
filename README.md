@@ -126,6 +126,11 @@ yarn compile
 scripts/query-1inch.ts --config [your-configuration].ts --action deploy
 ```
 
+To verify this contract:
+```
+npx hardhat verify --network [your-chain] [contract-address] [erc20pooladdress]
+```
+
 ### Collect Liquidation Bond
 
 Collects liquidation bonds (which were used to kick loans) once they are fully claimable. Note: This does not settle auctions.

@@ -32,6 +32,7 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-verify": "^2.0.13",
     "@types/chai": "^5.0.1",
     "@types/chai-as-promised": "^8.0.1",
     "@types/mocha": "^10.0.10",
