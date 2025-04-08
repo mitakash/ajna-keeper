@@ -114,16 +114,24 @@ export class DexRouter {
       `1inch quote: ${amount.toString()} ${tokenIn} -> ${quoteResult.dstAmount} ${tokenOut}`
     );
 
-    const params = {
+    const params: {
+      fromTokenAddress: string;
+      toTokenAddress: string;
+      amount: string;
+      fromAddress: string;
+      slippage: number;
+      connectorTokens?: string;
+    } = {
       fromTokenAddress: tokenIn,
       toTokenAddress: tokenOut,
       amount: amount.toString(),
       fromAddress,
       slippage,
-      ...(this.connectorTokens.length > 0
-        ? { connectorTokens: this.connectorTokens }
-        : {}),
     };
+
+    if (this.connectorTokens.length > 0) {
+      params['connectorTokens'] = this.connectorTokens;
+    }
 
     logger.debug(
       `Sending these parameters to 1inch: ${JSON.stringify(params)}`
