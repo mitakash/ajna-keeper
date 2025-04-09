@@ -141,7 +141,7 @@ async function main() {
         swapCalldata.aggregationExecutor,
         swapCalldata.swapDescription,
         swapCalldata.encodedCalls,
-        amount
+        amount.mul(9).div(10), // 90% of the amount
       );
       console.log('Transaction hash:', tx.hash);
       await tx.wait();

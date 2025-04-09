@@ -94,7 +94,7 @@ contract AjnaKeeperTaker is IERC20Taker {
         // mutate the receiver to be the keeper's EOA to avoid an extra transfer
         swapDescription.dstReceiver = payable(owner);
         // approve the router to spend this contract's collateral
-        SwapDescription.srcToken.approve(address(swapRouter), actualCollateralAmount);
+        swapDescription.srcToken.approve(address(swapRouter), actualCollateralAmount);
 
         // scale the return amount to the actual amount
         if (swapDescription.amount != actualCollateralAmount) {
