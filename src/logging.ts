@@ -1,7 +1,17 @@
 import { createLogger, transports, LogEntry, Logger, format } from 'winston';
 import Transport, { TransportStreamOptions } from 'winston-transport';
+import { metricsService } from './metrics';
 
 const LOGS_FOLDER = 'logs';
+
+// Define alert severity levels for Grafana filtering
+export enum AlertSeverity {
+  NONE = 'none',
+  LOW = 'low',
+  MEDIUM = 'medium',
+  HIGH = 'high',
+  CRITICAL = 'critical'
+}
 
 class CustomConsoleTransport extends Transport {
   constructor(opts: TransportStreamOptions) {
@@ -23,6 +33,7 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
   return createLogger({
     level: logLevel,
     format: format.combine(
+      format.timestamp(),
       format((info) => {
         const levels = ['error', 'info', 'debug'];
         const globalLevelIndex = levels.indexOf(logLevel);
@@ -31,6 +42,9 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
       })(),
       format.json()
     ),
+    defaultMeta: { 
+      service: 'ajna-keeper',
+    },
     transports: [
       new CustomConsoleTransport({ level: logLevel }),
       new transports.File({
@@ -56,8 +70,50 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
 
 export let logger: Logger = createCustomLogger('debug');
 
-export function setLoggerConfig(config: { logLevel?: string }) {
+export function setLoggerConfig(config: { logLevel?: string; enableMetrics?: boolean }) {
   logger = createCustomLogger(config.logLevel || 'debug');
+  
+  // Initialize metrics server if enabled
+  if (config.enableMetrics) {
+    metricsService.initialize();
+  }
+}
+
+// Helper functions for logging alertable events
+export function logAlert(message: string, severity: AlertSeverity, metadata: Record<string, any> = {}) {
+  logger.error(message, { 
+    ...metadata, 
+    alertSeverity: severity,
+    alertable: true
+  });
+  
+  // Send metrics for alertable events
+  if (metadata.component) {
+    metricsService.recordAlert(
+      severity, 
+      metadata.component, 
+      metadata.poolAddress, 
+      metadata.poolName || (metadata.pool?.name)
+    );
+  }
+}
+
+export function logWarning(message: string, severity: AlertSeverity = AlertSeverity.MEDIUM, metadata: Record<string, any> = {}) {
+  logger.warn(message, { 
+    ...metadata, 
+    alertSeverity: severity,
+    alertable: true
+  });
+  
+  // Send metrics for warning events
+  if (metadata.component) {
+    metricsService.recordAlert(
+      severity, 
+      metadata.component, 
+      metadata.poolAddress, 
+      metadata.poolName || (metadata.pool?.name)
+    );
+  }
 }
 
 export function setLogsFolderPermissions() {}

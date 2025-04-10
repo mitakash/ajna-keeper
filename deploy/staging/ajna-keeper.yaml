@@ -1,7 +1,12 @@
 replicaCount: 1
 
 service:
-  enabled: false
+  enabled: true
+  ports:
+    - name: metrics
+      port: 9091
+      targetPort: 9091
+      protocol: TCP
 
 deployment:
   enabled: true
@@ -43,6 +48,12 @@ readinessProbe:
   timeoutSeconds: 5
   failureThreshold: 3
 
+# Container ports
+ports:
+  - name: metrics
+    containerPort: 9091
+    protocol: TCP
+
 # Environment variables
 env:
   KEEPER_KEYSTORE:
@@ -68,6 +79,12 @@ env:
     type: "parameterStore"
     name: "oneinch-apikey"
     parameter_name: /eks/{{CLUSTER_NAME}}/ajna-keeper/oneinch-apikey
+  ENABLE_METRICS:
+    type: "value"
+    value: "true"
+  METRICS_PORT:
+    type: "value"
+    value: "9091"
 
 externalSecrets:
   clusterSecretStoreName: {{CLUSTER_NAME}}
@@ -89,7 +106,10 @@ resources:
 #   fsGroup: 1000
 
 # Pod annotations
-podAnnotations: {}
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9091"
+  prometheus.io/path: "/metrics"
 
 # Labels
 labels: {}
