@@ -1,7 +1,6 @@
 /** @type import('hardhat/config').HardhatUserConfig */
 require('dotenv').config();
 import "@nomicfoundation/hardhat-verify";
-import { ethers } from "ethers";
 
 module.exports = {
   solidity: '0.8.28',
@@ -18,7 +17,7 @@ module.exports = {
     },
     avalanche: {
       chainId: 43114,
-      url: 'https://api.avax.network/ext/bc/C/rpc',
+      url: `https://avax-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
     },
     base: {
       chainId: 8453,

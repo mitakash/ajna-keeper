@@ -60,7 +60,6 @@ async function main() {
     console.log("AjnaKeeperTaker deployed to:", keeperTaker.address);
     console.log('Update config.keeperTaker with this address');
 
-    // TODO: look into hardhat-verify plugin for verification
     exit(0);
   }
 
