@@ -135,7 +135,6 @@ async function main() {
         signer
       );
       const tx = await keeperTaker.testOneInchSwapWithCalldataMutation(
-        pool.poolAddress,
         dexRouter.getRouter(chainId)!!,
         swapCalldata.aggregationExecutor,
         swapCalldata.swapDescription,

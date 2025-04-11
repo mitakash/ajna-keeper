@@ -2,7 +2,7 @@
 pragma solidity 0.8.28;
 
 import { IERC20Pool, IERC20Taker, PoolDeployer } from "./AjnaInterfaces.sol";
-import { IAggregationExecutor,IGenericRouter, SwapDescription } from "./OneInchInterfaces.sol";
+import { IAggregationExecutor, IERC20, IGenericRouter, SwapDescription } from "./OneInchInterfaces.sol";
 
 /// @notice Allows a keeper to take auctions using external liquidity sources.
 contract AjnaKeeperTaker is IERC20Taker {
@@ -16,8 +16,16 @@ contract AjnaKeeperTaker is IERC20Taker {
     struct SwapData {
         LiquiditySource source; // determines which type of AMM, which the callback function interacts with
         address router;         // address of the AMM router to interact with
-        bytes[] data;           // for certain sources (1inch), this is populated by an external API
+        bytes details;          // source-specific data needed to perform the swap,
+                                // which may be populated by an external API
     }
+
+    struct OneInchSwapDetails {
+        address aggregationExecutor;     // 1inch executor which will receive collateral
+        SwapDescription swapDescription; // identifies tokens and amounts to swap
+        bytes opaqueData;                // passed through from 1inch API to router
+    }
+
 
     /// @dev Hash used for all ERC20 pools, used for pool validation
     bytes32 public constant ERC20_NON_SUBSET_HASH = keccak256("ERC20_NON_SUBSET_HASH");
@@ -28,71 +36,95 @@ contract AjnaKeeperTaker is IERC20Taker {
     /// @dev Identifies the Ajna deployment, used to validate pools
     PoolDeployer public immutable poolFactory;
 
+
+    /// @notice Pool invoking callback is not from the Ajna deployment configured in this contract.
+    error InvalidPool();
+
+    /// @notice Caller is not the owner of this contract.
+    error Unauthorized();
+
+    /// @notice Emitted when the requested liquidity source is not available on this deployment of the contract.
+    error UnsupportedLiquiditySource();
+
+
     /// @param ajnaErc20PoolFactory Ajna ERC20 pool factory for the deployment of Ajna the keeper is interacting with.
     constructor(PoolDeployer ajnaErc20PoolFactory) {
         owner = msg.sender;
         poolFactory = ajnaErc20PoolFactory;
     }
 
+    /// @notice Owner may call to recover legitimate ERC20 tokens sent to this contract.
+    function recover(IERC20 token) public onlyOwner {
+        uint256 balance = token.balanceOf(address(this));
+        token.transfer(owner, balance);
+    }
+
     /// @notice Called by keeper to invoke `Pool.take`, passing `IERC20Taker` callback data.
     /// @param pool ERC20 pool with an active auction.
     /// @param borrowerAddress Identifies the liquidation to take.
     /// @param maxAmount Limit collateral to take from the auction, in `WAD` precision.
+    /// @param source Identifies the source of liquidity to use for the swap (e.g. 1inch).
+    /// @param swapRouter Address of the router to use for the swap.
+    /// @param swapDetails Source-specific data needed to perform the swap, which may be populated by an external API.
     function takeWithAtomicSwap(
         IERC20Pool pool,
         address borrowerAddress,
         uint256 maxAmount,
         LiquiditySource source,
         address swapRouter,
-        bytes[] calldata swapData
+        bytes calldata swapDetails
     ) external onlyOwner {
+        // configuration passed through to the callback function instructing this contract how to swap
         bytes memory data = abi.encode(
             SwapData({
                 source: source,
                 router: swapRouter,
-                data: swapData
+                details: swapDetails
             })
         );
+        // invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
 
-        // TODO: send remaining quote token back to owner (to take profit or be used for posting liquidation bonds)
+        recoverERC20(IERC20(pool.quoteTokenAddress())); // send excess quote token (profit) to owner
     }
 
     /// @dev Called by `Pool` to allow a taker to externally swap collateral for quote token.
     /// @param data Determines where external liquidity should be sourced to swap collateral for quote token.
-    function atomicSwapCallback(uint256 collateralAmountWad, uint256 quoteAmountDueWad, bytes calldata data) external override {
+    function atomicSwapCallback(uint256 collateralAmountWad, uint256, bytes calldata data) external override {
         SwapData memory swapData = abi.decode(data, (SwapData));
 
         // Ensure msg.sender is a valid Ajna pool and matches the pool in the data
-        require(_validatePool(IERC20Pool(msg.sender)), "AjnaKeeperTaker: Sender is not from the Ajna deployment configured in this contract");
+        IERC20Pool pool = IERC20Pool(msg.sender);
+        if (!_validatePool(pool)) revert InvalidPool();
 
         if (swapData.source == LiquiditySource.OneInch)
         {
-            // TODO: convert amounts from WAD precision to whatever the liquidity source expects (likely token precision)
-            // TODO: abi.decode the swapData payload
-            // TODO: adjust `amount` and `minReturn` fields as needed
-            // TODO: abi.encode the calldata
-            // TODO: perform the swap by invoking swapData.router.call(calldata)
+            OneInchSwapDetails memory details = abi.decode(swapData.details, (OneInchSwapDetails));
+            _swapWithOneInch(
+                IGenericRouter(swapData.router),
+                details.aggregationExecutor,
+                details.swapDescription,
+                details.opaqueData,
+                collateralAmountWad / pool.collateralScale() // convert WAD to token precision
+            );
+        } else {
+            revert UnsupportedLiquiditySource();
         }
     }
 
-    /// @dev Called by query-1inch.ts to test mutating calldata to send to 1inch GenericRouter.swap
-    /// @param pool ERC20 pool which identifies the tokens to swap
+    /// @dev Called by atomicSwapCallback to swap collateral for quote token using 1inch.
     /// @param swapRouter 1inch router to which transaction will be sent
     /// @param aggregationExecutor 1inch executor which will receive collateral
     /// @param swapDescription 1inch swap description
     /// @param swapData opaque calldata from 1inch API
-    /// @param actualCollateralAmount simulates collateral received from take
-    function testOneInchSwapWithCalldataMutation(
-        IERC20Pool pool,
+    /// @param actualCollateralAmount collateral received from take, in token precision
+    function _swapWithOneInch(
         IGenericRouter swapRouter,
         address aggregationExecutor,
         SwapDescription memory swapDescription,
-        bytes calldata swapData,
+        bytes memory swapData,
         uint256 actualCollateralAmount
-    ) external onlyOwner {
-        // mutate the receiver to be the keeper's EOA to avoid an extra transfer
-        swapDescription.dstReceiver = payable(owner);
+    ) private {
         // approve the router to spend this contract's collateral
         swapDescription.srcToken.approve(address(swapRouter), actualCollateralAmount);
 
@@ -110,12 +142,23 @@ contract AjnaKeeperTaker is IERC20Taker {
         );
     }
 
+    /// @dev Called by query-1inch.ts to test mutating calldata to send to 1inch GenericRouter.swap
+    function testOneInchSwapWithCalldataMutation(
+        IGenericRouter swapRouter,
+        address aggregationExecutor,
+        SwapDescription memory swapDescription,
+        bytes calldata swapData,
+        uint256 actualCollateralAmount
+    ) external onlyOwner {
+        _swapWithOneInch(swapRouter, aggregationExecutor, swapDescription, swapData, actualCollateralAmount);
+    }
+
     function _validatePool(IERC20Pool pool) private view returns(bool) {
         return poolFactory.deployedPools(ERC20_NON_SUBSET_HASH, pool.collateralAddress(), pool.quoteTokenAddress()) == address(pool);
     }
 
     modifier onlyOwner() {
-        require(msg.sender == owner, "AjnaKeeperTaker: Only owner can call this function");
+        if (msg.sender != owner) revert Unauthorized();
         _;
     }
 }
