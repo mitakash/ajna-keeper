@@ -414,6 +414,13 @@ Note: You will need to enable mainnet in Alchemy since hardhat queries from main
 
 ### Running tests
 
+#### Unit tests
+```bash
+yarn unit-tests
+```
+
+#### Integration tests
+
 In one terminal run:
 
 ```bash
@@ -423,7 +430,7 @@ npx hardhat node
 In a second terminal run:
 
 ```bash
-npx hardhat test
+yarn integration-tests
 ```
 
 ## Disclaimer

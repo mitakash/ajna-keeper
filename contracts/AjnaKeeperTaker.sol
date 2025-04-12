@@ -85,7 +85,7 @@ contract AjnaKeeperTaker is IERC20Taker {
         // invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
 
-        recoverERC20(IERC20(pool.quoteTokenAddress())); // send excess quote token (profit) to owner
+        recover(IERC20(pool.quoteTokenAddress())); // send excess quote token (profit) to owner
     }
 
     /// @dev Called by `Pool` to allow a taker to externally swap collateral for quote token.
