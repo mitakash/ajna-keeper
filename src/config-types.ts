@@ -81,11 +81,22 @@ export interface KickSettings {
   priceFactor: number;
 }
 
+// should match LiquiditySource enum in AjnaKeeperTaker.sol
+export enum LiquiditySource {
+  NONE = 0,   // disable
+  ONEINCH = 1 // use 1inch `quote` API for pricing and `swap` API to swap
+}
+
+// TODO: All settings should be optional and combinations validated.
 export interface TakeSettings {
   /** Minimum amount of collateral in liquidation to arbTake. */
   minCollateral: number;
   /** Will only arbTake when auctionPrice < hpb * hpbPriceFactor. */
   hpbPriceFactor: number;
+  /** Determines market price used to assess takeability */
+  liquiditySource?: LiquiditySource;
+  /** Will only take when auctionPrice < marketPrice * marketPriceFactor. */
+  marketPriceFactor?: number;
 }
 
 export interface CollectSettings {
