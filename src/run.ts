@@ -7,7 +7,7 @@ import {
   RequireFields,
 } from './utils';
 import { handleKicks } from './kick';
-import { handleArbTakes } from './take';
+import { handleTakes } from './take';
 import { collectBondFromPool } from './collect-bond';
 import { LpCollector } from './collect-lp';
 import { logger } from './logging';
@@ -27,7 +27,7 @@ export async function startKeeperFromConfig(config: KeeperConfig) {
   const poolMap = await getPoolsFromConfig(ajna, config);
 
   kickPoolsLoop({ poolMap, config, signer });
-  arbTakePoolsLoop({ poolMap, config, signer });
+  takePoolsLoop({ poolMap, config, signer });
   collectBondLoop({ poolMap, config, signer });
   collectLpRewardsLoop({ poolMap, config, signer });
 }
@@ -83,13 +83,13 @@ function hasKickSettings(
   return !!config.kick;
 }
 
-async function arbTakePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
+async function takePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
   const poolsWithTakeSettings = config.pools.filter(hasTakeSettings);
   while (true) {
     for (const poolConfig of poolsWithTakeSettings) {
       const pool = poolMap.get(poolConfig.address)!;
       try {
-        await handleArbTakes({
+        await handleTakes({
           pool,
           poolConfig,
           signer,

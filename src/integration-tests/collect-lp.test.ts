@@ -10,7 +10,7 @@ import { getBalanceOfErc20 } from '../erc20';
 import { handleKicks } from '../kick';
 import { NonceTracker } from '../nonce';
 import { RewardActionTracker } from '../reward-action-tracker';
-import { handleArbTakes } from '../take';
+import { handleTakes } from '../take';
 import { delay, waitForConditionToBeTrue } from '../utils';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import './subgraph-mock';
@@ -107,7 +107,7 @@ describe('LpCollector subscription', () => {
       )
     );
     await lpCollector.startSubscription();
-    await handleArbTakes({
+    await handleTakes({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
       signer,
@@ -158,7 +158,7 @@ describe('LpCollector subscription', () => {
     const takerSigner = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.collateralWhaleAddress2
     );
-    await handleArbTakes({
+    await handleTakes({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
       signer: takerSigner,
@@ -209,7 +209,7 @@ describe('LpCollector subscription', () => {
     const takerSigner = await impersonateSigner(
       MAINNET_CONFIG.SOL_WETH_POOL.quoteWhaleAddress2
     );
-    await handleArbTakes({
+    await handleTakes({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
       signer: takerSigner,
@@ -266,7 +266,7 @@ describe('LpCollector collections', () => {
       )
     );
     await lpCollector.startSubscription();
-    await handleArbTakes({
+    await handleTakes({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
       signer,

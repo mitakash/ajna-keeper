@@ -12,29 +12,45 @@ interface HandleArbParams {
   config: Pick<KeeperConfig, 'dryRun' | 'subgraphUrl' | 'delayBetweenActions'>;
 }
 
-export async function handleArbTakes({
+export async function handleTakes({
   signer,
   pool,
   poolConfig,
   config,
 }: HandleArbParams) {
-  for await (const liquidation of getLiquidationsToArbTake({
+  for await (const liquidation of getLiquidationsToTake({
     pool,
     poolConfig,
     config,
   })) {
-    await arbTakeLiquidation({
-      pool,
-      poolConfig,
-      signer,
-      liquidation,
-      config,
-    });
+    if (liquidation.takeStrategy === TakeStrategy.Take) {
+      await takeLiquidation({
+        pool,
+        poolConfig,
+        signer,
+        liquidation,
+        config,
+      });
+    } else if (liquidation.takeStrategy === TakeStrategy.ArbTake) {
+      await arbTakeLiquidation({
+        pool,
+        poolConfig,
+        signer,
+        liquidation,
+        config,
+      });
+    }
     await delay(config.delayBetweenActions);
   }
 }
 
-interface LiquidationToArbTake {
+enum TakeStrategy {
+  Take = 1,
+  ArbTake = 2,
+}
+
+interface LiquidationToTake {
+  takeStrategy: TakeStrategy;
   borrower: string;
   hpbIndex: number;
 }
@@ -44,11 +60,11 @@ interface GetLiquidationsToArbTakeParams
   config: Pick<KeeperConfig, 'subgraphUrl'>;
 }
 
-export async function* getLiquidationsToArbTake({
+export async function* getLiquidationsToTake({
   pool,
   poolConfig,
   config,
-}: GetLiquidationsToArbTakeParams): AsyncGenerator<LiquidationToArbTake> {
+}: GetLiquidationsToArbTakeParams): AsyncGenerator<LiquidationToTake> {
   const { subgraphUrl } = config;
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
@@ -62,6 +78,18 @@ export async function* getLiquidationsToArbTake({
     const { borrower } = auction;
     const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
     const price = weiToDecimaled(liquidationStatus.price);
+
+    // TODO: Create a `checkIfTakeable` function which calculates takeablePrice based on configuration and
+    // liquiditySource (1inch) API
+    const takeablePrice = 0;
+    if (price <= takeablePrice) {
+      logger.debug(
+        `Found liquidation to take - pool: ${pool.name}, borrower: ${borrower}, price: ${price} takeablePrice: ${takeablePrice}.`
+      );
+      yield { takeStrategy: TakeStrategy.Take, borrower, hpbIndex: 0 };
+    }
+
+    // TODO: Perhaps refactor this into a `checkIfArbTakeable` function.
     // TODO: May want to include a hardcoded minDeposit value when minCollateral is zero.
     const { buckets } = await subgraph.getHighestMeaningfulBucket(
       config.subgraphUrl,
@@ -75,7 +103,7 @@ export async function* getLiquidationsToArbTake({
       logger.debug(
         `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hmbPrice}.`
       );
-      yield { borrower, hpbIndex: hmbIndex };
+      yield { takeStrategy: TakeStrategy.ArbTake, borrower, hpbIndex: hmbIndex };
     } else {
       logger.debug(
         `Not taking liquidation since price is too high. price: ${price} hpb: ${hmbPrice}`
@@ -86,8 +114,22 @@ export async function* getLiquidationsToArbTake({
 
 interface ArbTakeLiquidationParams
   extends Pick<HandleArbParams, 'pool' | 'poolConfig' | 'signer'> {
-  liquidation: LiquidationToArbTake;
+  liquidation: LiquidationToTake;
   config: Pick<KeeperConfig, 'dryRun'>;
+}
+
+export async function takeLiquidation({
+  pool,
+  poolConfig,
+  signer,
+  liquidation,
+  config,
+}) {
+  const { borrower } = liquidation;
+  const { dryRun } = config;
+
+  // TODO: Check configured liquidity source.  If 1inch, call 1inch API's `swap` function and
+  // pass data to the AjnaKeeperTaker contract.
 }
 
 export async function arbTakeLiquidation({

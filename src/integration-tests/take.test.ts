@@ -21,8 +21,8 @@ import {
 import { expect } from 'chai';
 import {
   arbTakeLiquidation,
-  getLiquidationsToArbTake,
-  handleArbTakes,
+  getLiquidationsToTake,
+  handleTakes,
 } from '../take';
 import { Wallet } from 'ethers';
 import { arrayFromAsync, decimaledToWei, weiToDecimaled } from '../utils';
@@ -90,7 +90,7 @@ describe('getLiquidationsToArbTake', () => {
     const pool = await setup();
 
     const liquidationsToArbTake = await arrayFromAsync(
-      getLiquidationsToArbTake({
+      getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
         config: {
@@ -106,7 +106,7 @@ describe('getLiquidationsToArbTake', () => {
     await increaseTime(SECONDS_PER_DAY * 1);
 
     const liquidationsToArbTake = await arrayFromAsync(
-      getLiquidationsToArbTake({
+      getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
         config: {
@@ -133,7 +133,7 @@ describe('arbTakeLiquidation', () => {
     setBalance(signer.address, decimaledToWei(100).toHexString());
 
     const liquidationsToArbTake = await arrayFromAsync(
-      getLiquidationsToArbTake({
+      getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
         config: {
@@ -219,7 +219,7 @@ describe('handleTakes', () => {
     const AUCTION_WAIT_TIME = 60 * 20 * 6 + 2 * 2 * 60 * 60 + 50 * 60;
     await increaseTime(AUCTION_WAIT_TIME);
 
-    await handleArbTakes({
+    await handleTakes({
       signer,
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
@@ -235,7 +235,7 @@ describe('handleTakes', () => {
       'Bucket 1 should only have dust remaining'
     );
 
-    await handleArbTakes({
+    await handleTakes({
       signer,
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
