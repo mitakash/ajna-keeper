@@ -84,8 +84,8 @@ export interface KickSettings {
 export interface TakeSettings {
   /** Minimum amount of collateral in liquidation to arbTake. */
   minCollateral: number;
-  /** Will only arbTake when auctionPrice < hpb * priceFactor. */
-  priceFactor: number;
+  /** Will only arbTake when auctionPrice < hpb * hpbPriceFactor. */
+  hpbPriceFactor: number;
 }
 
 export interface CollectSettings {

@@ -99,7 +99,7 @@ export async function* getLiquidationsToTake({
     if (buckets.length == 0) continue;
     const hmbIndex = buckets[0].bucketIndex;
     const hmbPrice = weiToDecimaled(pool.getBucketByIndex(hmbIndex).price);
-    if (price < hmbPrice * poolConfig.take.priceFactor) {
+    if (price < hmbPrice * poolConfig.take.hpbPriceFactor) {
       logger.debug(
         `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hmbPrice}.`
       );
