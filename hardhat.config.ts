@@ -1,8 +1,12 @@
-/** @type import('hardhat/config').HardhatUserConfig */
-require('dotenv').config();
+import dotenv from 'dotenv';
+import { HardhatUserConfig } from "hardhat/config";
+import '@typechain/hardhat'
+import '@nomicfoundation/hardhat-ethers'
 import "@nomicfoundation/hardhat-verify";
 
-module.exports = {
+dotenv.config();
+
+const config: HardhatUserConfig = {
   solidity: '0.8.28',
   paths: {
     tests: './src/integration-tests',
@@ -24,9 +28,6 @@ module.exports = {
       url: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
     }
   },
-  etherscan: {
-    apiKey: {
-      base: process.env.ETHERSCAN_API_KEY_BASE,
-    }
-  },
 };
+
+export default config;

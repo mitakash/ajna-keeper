@@ -1,23 +1,14 @@
 import { ethers } from 'ethers';
 import { BigNumber } from 'ethers';
-// Had to modify ABI to resolve:
+// Had to modify ABI plucked from Etherscan to resolve:
 // duplicate definition - ETHTransferFailed()
 // duplicate definition - InvalidMsgValue()
 import genericRouterABI from './abis/1inch-genericrouter.abi.json';
-
-export interface SwapDescription {
-  sourceToken: string;
-  destinationToken: string
-  sourceReceiver: string;
-  destinationReceiver: string;
-  amount: BigNumber;
-  minReturnAmount: BigNumber;
-  flags: BigNumber;
-}
+import { SwapDescriptionStructOutput } from '../typechain-types/contracts/AjnaKeeperTaker';
 
 export interface SwapCalldata {
   aggregationExecutor: string;
-  swapDescription: SwapDescription;
+  swapDescription: SwapDescriptionStructOutput;
   encodedCalls: string;
 }
 

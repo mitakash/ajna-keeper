@@ -21,16 +21,17 @@ You'll need `node` and related tools (`npm`, `yarn`). This was developed with no
 
 Download node here: https://nodejs.org/en Downloading `node` also installs `npm`.
 
-Install `yarn`
+Install `yarn` and dependencies:
 
 ```bash
 npm install --global yarn
+yarn --frozen-lockfile
 ```
 
-Install node dependencies.
+Compile to generate types using TypeChain:
 
 ```bash
-yarn --frozen-lockfile
+yarn compile
 ```
 
 ### Create a new config file

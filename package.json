@@ -6,10 +6,10 @@
   "scripts": {
     "start": "./node_modules/ts-node/dist/bin.js src/index.ts",
     "format": "prettier --write .",
+    "compile": "npx hardhat compile",
     "unit-tests": "npx mocha --require ts-node/register 'src/unit-tests/**/*.test.ts'",
     "integration-tests": "npx hardhat test",
     "create-keystore": "./node_modules/ts-node/dist/bin.js scripts/create-keystore.ts",
-    "compile": "npx hardhat compile",
     "fork-base": "FORK_ENABLED=true FORK_NETWORK=base hardhat node"
   },
   "author": "",
@@ -33,7 +33,10 @@
     "yargs": "^17.7.2"
   },
   "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.8",
     "@nomicfoundation/hardhat-verify": "^2.0.13",
+    "@typechain/ethers-v5": "^10.1.0",
+    "@typechain/hardhat": "6.1.2",
     "@types/chai": "^5.0.1",
     "@types/chai-as-promised": "^8.0.1",
     "@types/mocha": "^10.0.10",
@@ -44,6 +47,7 @@
     "dotenv": "^16.4.7",
     "hardhat": "^2.22.18",
     "prettier": "^3.4.2",
-    "sinon": "^19.0.2"
+    "sinon": "^19.0.2",
+    "typechain": "^8.1.0"
   }
 }
