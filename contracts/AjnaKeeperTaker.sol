@@ -142,15 +142,30 @@ contract AjnaKeeperTaker is IERC20Taker {
         );
     }
 
+
     /// @dev Called by query-1inch.ts to test mutating calldata to send to 1inch GenericRouter.swap
-    function testOneInchSwapWithCalldataMutation(
+    function testOneInchSwapBytes(
         IGenericRouter swapRouter,
-        address aggregationExecutor,
-        SwapDescription memory swapDescription,
-        bytes calldata swapData,
+        bytes calldata swapDetails,
         uint256 actualCollateralAmount
     ) external onlyOwner {
-        _swapWithOneInch(swapRouter, aggregationExecutor, swapDescription, swapData, actualCollateralAmount);
+        OneInchSwapDetails memory details = abi.decode(swapDetails, (OneInchSwapDetails));
+        testOneInchSwapStruct(swapRouter, details, actualCollateralAmount);
+    }
+
+    /// @dev Called by query-1inch.ts to test mutating calldata to send to 1inch GenericRouter.swap
+    function testOneInchSwapStruct(
+        IGenericRouter swapRouter,
+        OneInchSwapDetails memory swapDetails,
+        uint256 actualCollateralAmount
+    ) public onlyOwner {
+        _swapWithOneInch(
+            swapRouter,
+            swapDetails.aggregationExecutor,
+            swapDetails.swapDescription,
+            swapDetails.opaqueData,
+            actualCollateralAmount
+        );
     }
 
     function _validatePool(IERC20Pool pool) private view returns(bool) {

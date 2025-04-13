@@ -83,11 +83,14 @@ export interface KickSettings {
 
 // should match LiquiditySource enum in AjnaKeeperTaker.sol
 export enum LiquiditySource {
-  NONE = 0,   // disable
+  NONE = 0,   // invalid
   ONEINCH = 1 // use 1inch `quote` API for pricing and `swap` API to swap
 }
 
 // TODO: All settings should be optional and combinations validated.
+// Either first two, last two, or all four should be configured.
+// If last two (take) are configured, KeeperConfig.keeperTaker should also be set.
+// liquiditySource should not be set to NONE.
 export interface TakeSettings {
   /** Minimum amount of collateral in liquidation to arbTake. */
   minCollateral: number;

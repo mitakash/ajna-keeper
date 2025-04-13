@@ -1,15 +1,19 @@
 import { Signer, FungiblePool } from '@ajna-finance/sdk';
 import subgraph from './subgraph';
 import { delay, RequireFields, weiToDecimaled } from './utils';
-import { KeeperConfig, PoolConfig } from './config-types';
+import { KeeperConfig, LiquiditySource, PoolConfig } from './config-types';
 import { logger } from './logging';
 import { liquidationArbTake } from './transactions';
+import { DexRouter } from './dex-router';
+import { BigNumber } from 'ethers';
+import { SwapCalldata } from './1inch';
+import { AjnaKeeperTaker__factory } from '../typechain-types';
 
-interface HandleArbParams {
+interface HandleTakeParams {
   signer: Signer;
   pool: FungiblePool;
   poolConfig: RequireFields<PoolConfig, 'take'>;
-  config: Pick<KeeperConfig, 'dryRun' | 'subgraphUrl' | 'delayBetweenActions'>;
+  config: Pick<KeeperConfig, 'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'connectorTokens' | 'oneInchRouters' | 'keeperTaker'>;
 }
 
 export async function handleTakes({
@@ -17,7 +21,7 @@ export async function handleTakes({
   pool,
   poolConfig,
   config,
-}: HandleArbParams) {
+}: HandleTakeParams) {
   for await (const liquidation of getLiquidationsToTake({
     pool,
     poolConfig,
@@ -53,10 +57,11 @@ interface LiquidationToTake {
   takeStrategy: TakeStrategy;
   borrower: string;
   hpbIndex: number;
+  collateral: BigNumber;
 }
 
-interface GetLiquidationsToArbTakeParams
-  extends Pick<HandleArbParams, 'pool' | 'poolConfig'> {
+interface GetLiquidationsToTakeParams
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig'> {
   config: Pick<KeeperConfig, 'subgraphUrl'>;
 }
 
@@ -64,7 +69,7 @@ export async function* getLiquidationsToTake({
   pool,
   poolConfig,
   config,
-}: GetLiquidationsToArbTakeParams): AsyncGenerator<LiquidationToTake> {
+}: GetLiquidationsToTakeParams): AsyncGenerator<LiquidationToTake> {
   const { subgraphUrl } = config;
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
@@ -78,6 +83,7 @@ export async function* getLiquidationsToTake({
     const { borrower } = auction;
     const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
     const price = weiToDecimaled(liquidationStatus.price);
+    const collateral = liquidationStatus.collateral
 
     // TODO: Create a `checkIfTakeable` function which calculates takeablePrice based on configuration and
     // liquiditySource (1inch) API
@@ -86,7 +92,7 @@ export async function* getLiquidationsToTake({
       logger.debug(
         `Found liquidation to take - pool: ${pool.name}, borrower: ${borrower}, price: ${price} takeablePrice: ${takeablePrice}.`
       );
-      yield { takeStrategy: TakeStrategy.Take, borrower, hpbIndex: 0 };
+      yield { takeStrategy: TakeStrategy.Take, borrower, hpbIndex: 0, collateral };
     }
 
     // TODO: Perhaps refactor this into a `checkIfArbTakeable` function.
@@ -103,7 +109,7 @@ export async function* getLiquidationsToTake({
       logger.debug(
         `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hmbPrice}.`
       );
-      yield { takeStrategy: TakeStrategy.ArbTake, borrower, hpbIndex: hmbIndex };
+      yield { takeStrategy: TakeStrategy.ArbTake, borrower, hpbIndex: hmbIndex, collateral };
     } else {
       logger.debug(
         `Not taking liquidation since price is too high. price: ${price} hpb: ${hmbPrice}`
@@ -112,10 +118,10 @@ export async function* getLiquidationsToTake({
   }
 }
 
-interface ArbTakeLiquidationParams
-  extends Pick<HandleArbParams, 'pool' | 'poolConfig' | 'signer'> {
+interface TakeLiquidationParams
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
   liquidation: LiquidationToTake;
-  config: Pick<KeeperConfig, 'dryRun'>;
+  config: Pick<KeeperConfig, 'dryRun' | 'connectorTokens' | 'oneInchRouters' | 'keeperTaker'>;
 }
 
 export async function takeLiquidation({
@@ -124,12 +130,56 @@ export async function takeLiquidation({
   signer,
   liquidation,
   config,
-}) {
+}: TakeLiquidationParams) {
   const { borrower } = liquidation;
   const { dryRun } = config;
 
-  // TODO: Check configured liquidity source.  If 1inch, call 1inch API's `swap` function and
-  // pass data to the AjnaKeeperTaker contract.
+  if (dryRun) {
+    logger.info(
+      `DryRun - would Take - poolAddress: ${pool.poolAddress}, borrower: ${borrower} using ${poolConfig.take.liquiditySource}`
+    );
+  } else {
+    if (poolConfig.take.liquiditySource === LiquiditySource.ONEINCH) {
+        const dexRouter = new DexRouter(signer, {
+          oneInchRouters: config.oneInchRouters ?? {},
+          connectorTokens: config.connectorTokens ?? [],
+        });
+        const swapData = await dexRouter.getSwapDataFromOneInch(
+              await signer.getChainId(),
+              liquidation.collateral,
+              pool.collateralAddress,
+              pool.quoteAddress,
+              1,
+              await signer.getAddress(),
+              true,
+            );
+        // const swapCalldata: SwapCalldata = decodeSwapCalldata(swapData.data);
+        // const swapDetails = {
+        //   aggregationExecutor: swapCalldata.aggregationExecutor,
+        //   swapDescription: swapCalldata.swapDescription,
+        //   opaqueData: swapCalldata.encodedCalls,
+        // }
+
+        const keeperTaker = AjnaKeeperTaker__factory.connect(config.keeperTaker!!, signer);
+        // TODO: need to encode and pass OneInchSwapDetails as last parameter
+        /*const tx = await keeperTaker.takeWithAtomicSwap(
+          pool.poolAddress,
+          liquidation.borrower,
+          liquidation.collateral,
+          poolConfig.take.liquiditySource,
+          dexRouter.getRouter(await signer.getChainId())!!,
+          swapDetails, // TODO: Need to abi.encode
+        );*/
+    } else {
+      logger.error(`Valid liquidity source not configured. Skipping liquidation of poolAddress: ${pool.poolAddress}, borrower: ${borrower}.`);
+    }
+  }
+}
+
+interface ArbTakeLiquidationParams
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
+  liquidation: LiquidationToTake;
+  config: Pick<KeeperConfig, 'dryRun'>;
 }
 
 export async function arbTakeLiquidation({

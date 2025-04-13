@@ -4,13 +4,14 @@ import yargs from 'yargs/yargs';
 import { AjnaSDK, FungiblePool } from '@ajna-finance/sdk';
 import { ContractFactory, ethers } from 'ethers';
 import { promises as fs } from 'fs';
+import { exit } from 'process';
 
 import { configureAjna, readConfigFile } from "../src/config-types";
 import { approveErc20, getAllowanceOfErc20, transferErc20 } from '../src/erc20';
 import { DexRouter } from '../src/dex-router';
 import { getProviderAndSigner } from '../src/utils';
-import { decodeSwapCalldata, SwapCalldata } from '../src/1inch';
-import { exit } from 'process';
+import { convertSwapApiResponseToDetailsBytes } from '../src/1inch';
+import { AjnaKeeperTaker__factory } from '../typechain-types';
 
 const PATH_TO_COMPILER_OUTPUT = 'artifacts/contracts/AjnaKeeperTaker.sol/AjnaKeeperTaker.json';
 
@@ -53,6 +54,7 @@ async function main() {
   const chainId = await signer.getChainId()
 
   if (argv.action === 'deploy') {
+    // TODO: Try to deploy through hardhat with verification rather than ethers.
     const compilerOutput = await fs.readFile(PATH_TO_COMPILER_OUTPUT, 'utf8');
     const keeperTakerFactory: ContractFactory = ContractFactory.fromSolidity(compilerOutput, signer);
     const keeperTaker = await keeperTakerFactory.deploy(config.ajna.erc20PoolFactory);
@@ -123,22 +125,13 @@ async function main() {
       signer.address,
       true,
     );
-    const swapCalldata: SwapCalldata = decodeSwapCalldata(swapData.data);
-    console.log('Decoded swap data: ', swapCalldata);
 
     if (config.keeperTaker) {
       console.log('Attempting to transact with keeperTaker at', config.keeperTaker);
-      const compilerOutput = await fs.readFile(PATH_TO_COMPILER_OUTPUT, 'utf8');
-      const keeperTaker = new ethers.Contract(
-        config.keeperTaker,
-        JSON.parse(compilerOutput).abi,
-        signer
-      );
-      const tx = await keeperTaker.testOneInchSwapWithCalldataMutation(
+      const keeperTaker = AjnaKeeperTaker__factory.connect(config.keeperTaker, signer);
+      const tx = await keeperTaker.testOneInchSwapBytes(
         dexRouter.getRouter(chainId)!!,
-        swapCalldata.aggregationExecutor,
-        swapCalldata.swapDescription,
-        swapCalldata.encodedCalls,
+        convertSwapApiResponseToDetailsBytes(swapData.data),
         amount.mul(9).div(10), // 90% of the amount
       );
       console.log('Transaction hash:', tx.hash);
