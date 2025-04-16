@@ -1,5 +1,5 @@
 import { AjnaSDK, FungiblePool, Signer } from '@ajna-finance/sdk';
-import { configureAjna, KeeperConfig, PoolConfig } from './config-types';
+import { configureAjna, KeeperConfig, PoolConfig, validateTakeSettings } from './config-types';
 import {
   delay,
   getProviderAndSigner,
@@ -89,6 +89,7 @@ async function takePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
     for (const poolConfig of poolsWithTakeSettings) {
       const pool = poolMap.get(poolConfig.address)!;
       try {
+        validateTakeSettings(poolConfig.take, config);
         await handleTakes({
           pool,
           poolConfig,

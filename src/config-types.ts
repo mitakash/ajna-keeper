@@ -5,6 +5,7 @@ import { FeeAmount } from '@uniswap/v3-sdk';
 import { logger } from './logging';
 import { getWethToken } from './uniswap';
 import { JsonRpcProvider } from './provider';
+import { ethers } from 'ethers';
 
 export interface AjnaConfigParams {
   erc20PoolFactory: Address;
@@ -87,15 +88,11 @@ export enum LiquiditySource {
   ONEINCH = 1 // use 1inch `quote` API for pricing and `swap` API to swap
 }
 
-// TODO: All settings should be optional and combinations validated.
-// Either first two, last two, or all four should be configured.
-// If last two (take) are configured, KeeperConfig.keeperTaker should also be set.
-// liquiditySource should not be set to NONE.
 export interface TakeSettings {
   /** Minimum amount of collateral in liquidation to arbTake. */
-  minCollateral: number;
+  minCollateral?: number;
   /** Will only arbTake when auctionPrice < hpb * hpbPriceFactor. */
-  hpbPriceFactor: number;
+  hpbPriceFactor?: number;
   /** Determines market price used to assess takeability */
   liquiditySource?: LiquiditySource;
   /** Will only take when auctionPrice < marketPrice * marketPriceFactor. */
@@ -285,3 +282,36 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
 //     );
 //   }
 // }
+
+export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperConfig): void {
+  const hasArbTake = config.minCollateral !== undefined && config.hpbPriceFactor !== undefined;
+  const hasTake = config.liquiditySource !== undefined && config.marketPriceFactor !== undefined;
+
+  if (!hasArbTake && !hasTake) {
+    throw new Error('TakeSettings: Must configure arbTake (minCollateral, hpbPriceFactor) or take (liquiditySource, marketPriceFactor)');
+  }
+
+  if (hasTake) {
+    if (config.liquiditySource === LiquiditySource.NONE) {
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH');
+    }
+    if (config.liquiditySource !== LiquiditySource.ONEINCH) {
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH');
+    }
+    if (config.marketPriceFactor === undefined || config.marketPriceFactor <= 0) {
+      throw new Error('TakeSettings: marketPriceFactor must be positive');
+    }
+    if (!keeperConfig.keeperTaker) {
+      throw new Error('TakeSettings: keeperTaker required when take is configured');
+    }
+  }
+
+  if (hasArbTake) {
+    if (!ethers.BigNumber.from(config.minCollateral).gt(0)) {
+      throw new Error('TakeSettings: minCollateral must be greater than 0');
+    }
+    if (config.hpbPriceFactor === undefined || config.hpbPriceFactor <= 0) {
+      throw new Error('TakeSettings: hpbPriceFactor must be positive');
+    }
+  }
+}
