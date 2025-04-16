@@ -186,49 +186,52 @@ export async function takeLiquidation({
   liquidation,
   config,
 }: TakeLiquidationParams) {
-  const { borrower } = liquidation;
+  const { borrower, collateral } = liquidation;
   const { dryRun } = config;
 
   if (dryRun) {
     logger.info(
       `DryRun - would Take - poolAddress: ${pool.poolAddress}, borrower: ${borrower} using ${poolConfig.take.liquiditySource}`
     );
-  } else {
-    if (poolConfig.take.liquiditySource === LiquiditySource.ONEINCH) {
-        const dexRouter = new DexRouter(signer, {
-          oneInchRouters: config.oneInchRouters ?? {},
-          connectorTokens: config.connectorTokens ?? [],
-        });
-        const swapData = await dexRouter.getSwapDataFromOneInch(
-              await signer.getChainId(),
-              liquidation.collateral,
-              pool.collateralAddress,
-              pool.quoteAddress,
-              1,
-              await signer.getAddress(),
-              true,
-            );
-        // const swapCalldata: SwapCalldata = decodeSwapCalldata(swapData.data);
-        // const swapDetails = {
-        //   aggregationExecutor: swapCalldata.aggregationExecutor,
-        //   swapDescription: swapCalldata.swapDescription,
-        //   opaqueData: swapCalldata.encodedCalls,
-        // }
-
-        const keeperTaker = AjnaKeeperTaker__factory.connect(config.keeperTaker!!, signer);
-        // TODO: need to encode and pass OneInchSwapDetails as last parameter
-        /*const tx = await keeperTaker.takeWithAtomicSwap(
-          pool.poolAddress,
-          liquidation.borrower,
-          liquidation.collateral,
-          poolConfig.take.liquiditySource,
-          dexRouter.getRouter(await signer.getChainId())!!,
-          swapDetails, // TODO: Need to abi.encode
-        );*/
-    } else {
-      logger.error(`Valid liquidity source not configured. Skipping liquidation of poolAddress: ${pool.poolAddress}, borrower: ${borrower}.`);
-    }
   }
+
+  if (poolConfig.take.liquiditySource !== LiquiditySource.ONEINCH || !poolConfig.take.marketPriceFactor) {
+    logger.error(
+      `Valid liquidity source not configured or marketPriceFactor missing. Skipping liquidation of poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
+    );
+    return;
+  }
+    
+  const dexRouter = new DexRouter(signer, {
+    oneInchRouters: config.oneInchRouters ?? {},
+    connectorTokens: config.connectorTokens ?? [],
+  });
+  const swapData = await dexRouter.getSwapDataFromOneInch(
+        await signer.getChainId(),
+        liquidation.collateral,
+        pool.collateralAddress,
+        pool.quoteAddress,
+        1,
+        await signer.getAddress(),
+        true,
+      );
+  // const swapCalldata: SwapCalldata = decodeSwapCalldata(swapData.data);
+  // const swapDetails = {
+  //   aggregationExecutor: swapCalldata.aggregationExecutor,
+  //   swapDescription: swapCalldata.swapDescription,
+  //   opaqueData: swapCalldata.encodedCalls,
+  // }
+
+  const keeperTaker = AjnaKeeperTaker__factory.connect(config.keeperTaker!!, signer);
+  // TODO: need to encode and pass OneInchSwapDetails as last parameter
+  /*const tx = await keeperTaker.takeWithAtomicSwap(
+    pool.poolAddress,
+    liquidation.borrower,
+    liquidation.collateral,
+    poolConfig.take.liquiditySource,
+    dexRouter.getRouter(await signer.getChainId())!!,
+    swapDetails, // TODO: Need to abi.encode
+  );*/
 }
 
 interface ArbTakeLiquidationParams
