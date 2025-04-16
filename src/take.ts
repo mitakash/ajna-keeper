@@ -5,9 +5,11 @@ import { KeeperConfig, LiquiditySource, PoolConfig } from './config-types';
 import { logger } from './logging';
 import { liquidationArbTake } from './transactions';
 import { DexRouter } from './dex-router';
-import { BigNumber } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { SwapCalldata } from './1inch';
 import { AjnaKeeperTaker__factory } from '../typechain-types';
+import { getDecimalsErc20 } from './erc20';
+import { decimaledToWei } from './utils';
 
 interface HandleTakeParams {
   signer: Signer;
@@ -25,6 +27,7 @@ export async function handleTakes({
   for await (const liquidation of getLiquidationsToTake({
     pool,
     poolConfig,
+    signer,
     config,
   })) {
     if (liquidation.takeStrategy === TakeStrategy.Take) {
@@ -61,59 +64,111 @@ interface LiquidationToTake {
 }
 
 interface GetLiquidationsToTakeParams
-  extends Pick<HandleTakeParams, 'pool' | 'poolConfig'> {
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
   config: Pick<KeeperConfig, 'subgraphUrl'>;
+}
+
+async function checkIfArbTakeable(
+  pool: FungiblePool,
+  price: number,
+  collateral: BigNumber,
+  config: RequireFields<PoolConfig, 'take'>,
+  subgraphUrl: string,
+  minDeposit: string,
+  signer: Signer
+): Promise<{ isTakeable: boolean; hpbIndex: number }> {
+  if (!config.take.minCollateral || !config.take.hpbPriceFactor) {
+    return { isTakeable: false, hpbIndex: 0 };
+  }
+
+  const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
+  const minCollateral = ethers.BigNumber.from(decimaledToWei(config.take.minCollateral, collateralDecimals));
+  if (collateral.lt(minCollateral)) {
+    logger.debug(
+      `Collateral ${collateral} below minCollateral ${minCollateral} for pool: ${pool.name}`
+    );
+    return { isTakeable: false, hpbIndex: 0 };
+  }
+
+  const { buckets } = await subgraph.getHighestMeaningfulBucket(
+    subgraphUrl,
+    pool.poolAddress,
+    minDeposit
+  );
+  if (buckets.length === 0) {
+    return { isTakeable: false, hpbIndex: 0 };
+  }
+
+  const hmbIndex = buckets[0].bucketIndex;
+  const hmbPrice = Number(weiToDecimaled(pool.getBucketByIndex(hmbIndex).price));
+  const maxArbPrice = hmbPrice * config.take.hpbPriceFactor;
+  return {
+    isTakeable: price < maxArbPrice,
+    hpbIndex: hmbIndex,
+  };
 }
 
 export async function* getLiquidationsToTake({
   pool,
   poolConfig,
+  signer,
   config,
 }: GetLiquidationsToTakeParams): AsyncGenerator<LiquidationToTake> {
   const { subgraphUrl } = config;
+  const minCollateral = poolConfig.take.minCollateral ?? 0;
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
   } = await subgraph.getLiquidations(
     subgraphUrl,
     pool.poolAddress,
-    poolConfig.take.minCollateral
+    minCollateral
   );
-  const minDeposit = poolConfig.take.minCollateral / hpb;
+
+  const DEFAULT_MIN_DEPOSIT = '0.001';
+  let minDeposit = DEFAULT_MIN_DEPOSIT;
+  if (poolConfig.take.minCollateral && hpb && !ethers.BigNumber.from(hpb).isZero()) {
+    const minCollateralBN = ethers.BigNumber.from(decimaledToWei(poolConfig.take.minCollateral, 18));
+    const hpbBN = ethers.BigNumber.from(hpb);
+    minDeposit = minCollateralBN.mul(ethers.utils.parseUnits('1', 18)).div(hpbBN).toString();
+  }
+
   for (const auction of liquidationAuctions) {
     const { borrower } = auction;
     const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
-    const price = weiToDecimaled(liquidationStatus.price);
-    const collateral = liquidationStatus.collateral
+    const price = Number(weiToDecimaled(liquidationStatus.price));
+    const collateral = liquidationStatus.collateral;
 
     // TODO: Create a `checkIfTakeable` function which calculates takeablePrice based on configuration and
     // liquiditySource (1inch) API
     const takeablePrice = 0;
-    if (price <= takeablePrice) {
+    if (price <= takeablePrice && poolConfig.take.liquiditySource === LiquiditySource.ONEINCH && poolConfig.take.marketPriceFactor) {
       logger.debug(
-        `Found liquidation to take - pool: ${pool.name}, borrower: ${borrower}, price: ${price} takeablePrice: ${takeablePrice}.`
+        `Found liquidation to take - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, takeablePrice: ${takeablePrice}`
       );
       yield { takeStrategy: TakeStrategy.Take, borrower, hpbIndex: 0, collateral };
+      continue;
     }
 
-    // TODO: Perhaps refactor this into a `checkIfArbTakeable` function.
-    // TODO: May want to include a hardcoded minDeposit value when minCollateral is zero.
-    const { buckets } = await subgraph.getHighestMeaningfulBucket(
-      config.subgraphUrl,
-      pool.poolAddress,
-      minDeposit.toString()
-    );
-    if (buckets.length == 0) continue;
-    const hmbIndex = buckets[0].bucketIndex;
-    const hmbPrice = weiToDecimaled(pool.getBucketByIndex(hmbIndex).price);
-    if (price < hmbPrice * poolConfig.take.hpbPriceFactor) {
-      logger.debug(
-        `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hmbPrice}.`
+    if (poolConfig.take.minCollateral && poolConfig.take.hpbPriceFactor) {
+      const { isTakeable, hpbIndex: arbHpbIndex } = await checkIfArbTakeable(
+        pool,
+        price,
+        collateral,
+        poolConfig,
+        subgraphUrl,
+        minDeposit,
+        signer
       );
-      yield { takeStrategy: TakeStrategy.ArbTake, borrower, hpbIndex: hmbIndex, collateral };
-    } else {
-      logger.debug(
-        `Not taking liquidation since price is too high. price: ${price} hpb: ${hmbPrice}`
-      );
+      if (isTakeable) {
+        logger.debug(
+          `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
+        );
+        yield { takeStrategy: TakeStrategy.ArbTake, borrower, hpbIndex: arbHpbIndex, collateral };
+      } else {
+        logger.debug(
+          `Not taking liquidation since price is too high for pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
+        );
+      }
     }
   }
 }
