@@ -78,7 +78,6 @@ interface GetLiquidationsToTakeParams
   >;
 }
 
-
 async function checkIfArbTakeable(
   pool: FungiblePool,
   price: number,
@@ -217,15 +216,15 @@ export async function* getLiquidationsToTake({
   signer,
   config,
 }: GetLiquidationsToTakeParams): AsyncGenerator<LiquidationToTake> {
-    const { subgraphUrl, oneInchRouters, connectorTokens } = config;
-    const {
-      pool: { hpb, hpbIndex, liquidationAuctions },
-    } = await subgraph.getLiquidations(
-      subgraphUrl,
-      pool.poolAddress,
-      poolConfig.take.minCollateral ?? 0
-    );
-    for (const auction of liquidationAuctions) {
+  const { subgraphUrl, oneInchRouters, connectorTokens } = config;
+  const {
+    pool: { hpb, hpbIndex, liquidationAuctions },
+  } = await subgraph.getLiquidations(
+    subgraphUrl,
+    pool.poolAddress,
+    poolConfig.take.minCollateral ?? 0
+  );
+  for (const auction of liquidationAuctions) {
     const { borrower } = auction;
     const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
     const price = Number(weiToDecimaled(liquidationStatus.price));
