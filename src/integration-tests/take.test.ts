@@ -78,7 +78,7 @@ const setup = async () => {
     },
   });
 
-  return pool;
+  return { pool, signer };
 };
 
 describe('getLiquidationsToArbTake', () => {
@@ -87,14 +87,17 @@ describe('getLiquidationsToArbTake', () => {
   });
 
   it('gets nothing when there arent any kicked loans', async () => {
-    const pool = await setup();
+    const { pool, signer } = await setup();
 
     const liquidationsToArbTake = await arrayFromAsync(
       getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        signer,
         config: {
           subgraphUrl: '',
+          oneInchRouters: {},
+          connectorTokens: [],
         },
       })
     );
@@ -102,15 +105,18 @@ describe('getLiquidationsToArbTake', () => {
   });
 
   it('gets loans when there are kicked loans', async () => {
-    const pool = await setup();
+    const { pool, signer } = await setup();
     await increaseTime(SECONDS_PER_DAY * 1);
 
     const liquidationsToArbTake = await arrayFromAsync(
       getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        signer,
         config: {
           subgraphUrl: '',
+          oneInchRouters: {},
+          connectorTokens: [],
         },
       })
     );
@@ -127,7 +133,7 @@ describe('arbTakeLiquidation', () => {
   });
 
   it('ArbTakes eligible liquidations and earns lpb', async () => {
-    const pool = await setup();
+    const { pool } = await setup();
     await increaseTime(SECONDS_PER_DAY * 1); // Increase timestamp by 1 day.
     const signer = Wallet.fromMnemonic(USER1_MNEMONIC).connect(getProvider());
     setBalance(signer.address, decimaledToWei(100).toHexString());
@@ -136,8 +142,11 @@ describe('arbTakeLiquidation', () => {
       getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        signer,
         config: {
           subgraphUrl: '',
+          oneInchRouters: {},
+          connectorTokens: [],
         },
       })
     );
