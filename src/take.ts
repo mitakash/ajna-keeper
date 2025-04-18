@@ -6,7 +6,7 @@ import { logger } from './logging';
 import { liquidationArbTake } from './transactions';
 import { DexRouter } from './dex-router';
 import { BigNumber, ethers } from 'ethers';
-import { SwapCalldata } from './1inch';
+import { convertSwapApiResponseToDetailsBytes } from './1inch';
 import { AjnaKeeperTaker__factory } from '../typechain-types';
 import { getDecimalsErc20 } from './erc20';
 
@@ -230,8 +230,6 @@ export async function* getLiquidationsToTake({
     const price = Number(weiToDecimaled(liquidationStatus.price));
     const collateral = liquidationStatus.collateral;
 
-    // TODO: Create a `checkIfTakeable` function which calculates takeablePrice based on configuration and
-    // liquiditySource (1inch) API
     const { isTakeable: isTakeableForTake } = await checkIfTakeable(
       pool,
       price,
@@ -322,26 +320,33 @@ export async function takeLiquidation({
         await signer.getAddress(),
         true
       );
-      // const swapCalldata: SwapCalldata = decodeSwapCalldata(swapData.data);
-      // const swapDetails = {
-      //   aggregationExecutor: swapCalldata.aggregationExecutor,
-      //   swapDescription: swapCalldata.swapDescription,
-      //   opaqueData: swapCalldata.encodedCalls,
-      // }
 
       const keeperTaker = AjnaKeeperTaker__factory.connect(
         config.keeperTaker!!,
         signer
       );
-      // TODO: need to encode and pass OneInchSwapDetails as last parameter
-      /*const tx = await keeperTaker.takeWithAtomicSwap(
-          pool.poolAddress,
-          liquidation.borrower,
-          liquidation.collateral,
-          poolConfig.take.liquiditySource,
-          dexRouter.getRouter(await signer.getChainId())!!,
-          swapDetails, // TODO: Need to abi.encode
-        );*/
+      try {
+        logger.debug(
+          `Sending Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
+        );
+        const tx = await keeperTaker.takeWithAtomicSwap(
+            pool.poolAddress,
+            liquidation.borrower,
+            liquidation.collateral,
+            poolConfig.take.liquiditySource,
+            dexRouter.getRouter(await signer.getChainId())!!,
+            convertSwapApiResponseToDetailsBytes(swapData.data),
+        );
+        await tx.wait();
+        logger.info(
+          `Take successful - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
+        );
+      } catch (error) {
+        logger.error(
+          `Failed to Take. pool: ${pool.name}, borrower: ${borrower}`,
+          error
+        );
+      }
     } else {
       logger.error(
         `Valid liquidity source not configured. Skipping liquidation of poolAddress: ${pool.poolAddress}, borrower: ${borrower}.`
