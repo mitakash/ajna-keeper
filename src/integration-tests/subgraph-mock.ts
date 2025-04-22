@@ -8,6 +8,7 @@ import { getProvider } from './test-utils';
 import { decimaledToWei, weiToDecimaled } from '../utils';
 import { MAINNET_CONFIG } from './test-config';
 import { logger } from '../logging';
+import { BigNumber } from 'ethers';
 
 export function overrideGetLoans(
   fn: typeof subgraphModule.getLoans
@@ -75,14 +76,20 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
       pool.poolAddress,
       getProvider()
     );
+    const fromBlock = MAINNET_CONFIG.BLOCK_NUMBER;
+    const toBlock = 'latest';
+    console.log(`Querying Kick events from block ${fromBlock} to ${toBlock}`);
     const events = await poolContract.queryFilter(
       poolContract.filters.Kick(),
-      MAINNET_CONFIG.BLOCK_NUMBER
+      fromBlock,
+      toBlock
     );
+    console.log(`Found ${events.length} Kick events`);
     const borrowers: string[] = [];
     for (const evt of events) {
       const { borrower } = evt.args;
       borrowers.push(borrower);
+      console.log(`Kick event: borrower=${borrower}, blockNumber=${evt.blockNumber}`);
     }
     const liquidationAuctions: GetLiquidationResponse['pool']['liquidationAuctions'] =
       [];
@@ -90,25 +97,36 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
       try {
         const liquidation = await pool.getLiquidation(borrower);
         const liquidationStatus = await liquidation.getStatus();
-        if (weiToDecimaled(liquidationStatus.collateral) > minCollateral) {
+        const collateralWei = liquidationStatus.collateral;
+        const minCollateralWei = BigNumber.from(minCollateral.toString());
+        console.log(
+          `Liquidation for borrower=${borrower}: collateralWei=${collateralWei.toString()}, minCollateralWei=${minCollateralWei.toString()}`
+        );
+        if (collateralWei.gt(minCollateralWei)) {
           liquidationAuctions.push({
             borrower,
           });
+          console.log(`Added liquidation for borrower=${borrower}`);
+        } else {
+          console.log(
+            `Skipping borrower=${borrower}: collateralWei ${collateralWei.toString()} <= minCollateralWei ${minCollateralWei.toString()}`
+          );
         }
       } catch (e) {
-        logger.debug(
-          `Failed to find auction for borrower: ${borrower}, pool: ${pool.name}`
+        console.log(
+          `Failed to find auction for borrower: ${borrower}, pool: ${pool.name}, error: ${e}`
         );
       }
     }
-
-    return {
+    const result = {
       pool: {
         hpb: weiToDecimaled(hpb),
         hpbIndex,
         liquidationAuctions,
       },
     };
+    console.log(`Mocked liquidations: ${JSON.stringify(result.pool.liquidationAuctions)}`);
+    return result;
   };
 }
 
