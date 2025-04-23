@@ -34,7 +34,7 @@ export interface GetLiquidationResponse {
 async function getLiquidations(
   subgraphUrl: string,
   poolAddress: string,
-  minCollateral: number
+  minCollateral: string
 ) {
   // TODO: Should probably sort auctions by kickTime so that we kick the most profitable auctions first.
   const query = gql`
@@ -42,7 +42,7 @@ async function getLiquidations(
       pool (id: "${poolAddress}") {
         hpb
         hpbIndex
-        liquidationAuctions (where: {collateralRemaining_gt: "${minCollateral}"}) {
+        liquidationAuctions (where: {collateralRemaining_gt: ${minCollateral}}) {
           borrower
         }
       }

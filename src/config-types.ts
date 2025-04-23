@@ -90,7 +90,7 @@ export enum LiquiditySource {
 
 export interface TakeSettings {
   /** Minimum amount of collateral in liquidation to arbTake. */
-  minCollateral?: number;
+  minCollateral?: string;
   /** Will only arbTake when auctionPrice < hpb * hpbPriceFactor. */
   hpbPriceFactor?: number;
   /** Determines market price used to assess takeability */

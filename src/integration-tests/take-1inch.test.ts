@@ -18,7 +18,7 @@ import {
   overrideGetLoans,
 } from './subgraph-mock';
 import { expect } from 'chai';
-import { getLiquidationsToTake, handleTakes } from '../take';
+import { getLiquidationsToTake } from '../take';
 import { LiquiditySource } from '../config-types';
 import { Wallet } from 'ethers';
 import { arrayFromAsync, decimaledToWei } from '../utils';
@@ -151,7 +151,7 @@ describe('Take with 1inch Integration', () => {
         poolConfig: {
           ...MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
           take: {
-            minCollateral: Number('10000000000000000'),
+            minCollateral: '10000000000000000',
             liquiditySource: LiquiditySource.ONEINCH,
             marketPriceFactor: 0.9,
           },
@@ -165,5 +165,98 @@ describe('Take with 1inch Integration', () => {
       })
     );
     console.log(`Liquidations length: ${liquidations.length}`);
+  });
+
+  it('should wait until price is appropriate and then perform take earning quote token', async () => {
+    const { pool, signer } = await setup();
+
+    let liquidations = await arrayFromAsync(
+      getLiquidationsToTake({
+        pool,
+        poolConfig: {
+          ...MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+          take: {
+            minCollateral: '10000000000000000',
+            liquiditySource: LiquiditySource.ONEINCH,
+            marketPriceFactor: 0.01,
+          },
+        },
+        signer,
+        config: {
+          subgraphUrl: '',
+          oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
+          connectorTokens: [],
+        },
+      })
+    );
+    expect(liquidations.length).to.equal(0);
+
+    liquidations = await arrayFromAsync(
+      getLiquidationsToTake({
+        pool,
+        poolConfig: {
+          ...MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+          take: {
+            minCollateral: '10000000000000000',
+            liquiditySource: LiquiditySource.ONEINCH,
+            marketPriceFactor: 0.95,
+          },
+        },
+        signer,
+        config: {
+          subgraphUrl: '',
+          oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
+          connectorTokens: [],
+        },
+      })
+    );
+  });
+
+  it('should allow request mutation when collateral changes between swap and execution', async () => {
+    const { pool, signer, borrower } = await setup();
+
+    overrideGetLiquidations(() => Promise.resolve({
+      pool: {
+        hpb: 0,
+        hpbIndex: 0,
+        liquidationAuctions: [
+          {
+            borrower,
+            price: BigNumber.from('10000000000000000'),
+            collateral: BigNumber.from('2000000000000000000'),
+            debt: BigNumber.from('1000000000000000000'),
+          },
+        ],
+      },
+    }));
+
+    sinon.stub(pool, 'getLiquidation').returns({
+      getStatus: async () => ({
+        price: BigNumber.from('10000000000000000'),
+        collateral: BigNumber.from('100000000000000000'),
+      }),
+    } as any);
+
+    const liquidations = await arrayFromAsync(
+      getLiquidationsToTake({
+        pool,
+        poolConfig: {
+          ...MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+          take: {
+            minCollateral: '10000000000000000',
+            liquiditySource: LiquiditySource.ONEINCH,
+            marketPriceFactor: 0.9,
+          },
+        },
+        signer,
+        config: {
+          subgraphUrl: '',
+          oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
+          connectorTokens: [],
+        },
+      })
+    );
+
+    expect(liquidations.length).to.equal(0);
   });
 });
