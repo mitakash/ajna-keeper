@@ -330,12 +330,12 @@ export async function takeLiquidation({
           `Sending Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
         );
         const tx = await keeperTaker.takeWithAtomicSwap(
-            pool.poolAddress,
-            liquidation.borrower,
-            liquidation.collateral,
-            poolConfig.take.liquiditySource,
-            dexRouter.getRouter(await signer.getChainId())!!,
-            convertSwapApiResponseToDetailsBytes(swapData.data),
+          pool.poolAddress,
+          liquidation.borrower,
+          liquidation.collateral,
+          poolConfig.take.liquiditySource,
+          dexRouter.getRouter(await signer.getChainId())!!,
+          convertSwapApiResponseToDetailsBytes(swapData.data)
         );
         await tx.wait();
         logger.info(
