@@ -68,7 +68,7 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
   return async (
     subgraphUrl: string,
     poolAddress: string,
-    minCollateral: string
+    minCollateral: number
   ): Promise<GetLiquidationResponse> => {
     const { hpb, hpbIndex } = await pool.getPrices();
     const poolContract = ERC20Pool__factory.connect(
@@ -90,7 +90,7 @@ export function makeGetLiquidationsFromSdk(pool: FungiblePool) {
       try {
         const liquidation = await pool.getLiquidation(borrower);
         const liquidationStatus = await liquidation.getStatus();
-        if (weiToDecimaled(liquidationStatus.collateral) > parseFloat(minCollateral)) {
+         if (weiToDecimaled(liquidationStatus.collateral) > minCollateral) {
           liquidationAuctions.push({
             borrower,
           });

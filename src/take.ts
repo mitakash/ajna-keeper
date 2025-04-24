@@ -95,10 +95,12 @@ async function checkIfArbTakeable(
     signer,
     pool.collateralAddress
   );
-
-  if (collateral.lt(config.take.minCollateral)) {
+  const minCollateral = ethers.BigNumber.from(
+    decimaledToWei(config.take.minCollateral, collateralDecimals)
+  );
+  if (collateral.lt(minCollateral)) {
     logger.debug(
-      `Collateral ${collateral} below minCollateral ${config.take.minCollateral} for pool: ${pool.name}`
+      `Collateral ${collateral} below minCollateral ${minCollateral} for pool: ${pool.name}`
     );
     return { isTakeable: false, hpbIndex: 0 };
   }
@@ -220,7 +222,7 @@ export async function* getLiquidationsToTake({
   } = await subgraph.getLiquidations(
     subgraphUrl,
     pool.poolAddress,
-    poolConfig.take.minCollateral ?? '0'
+    poolConfig.take.minCollateral ?? 0
   );
   for (const auction of liquidationAuctions) {
     const { borrower } = auction;
@@ -251,7 +253,7 @@ export async function* getLiquidationsToTake({
     }
 
     if (poolConfig.take.minCollateral && poolConfig.take.hpbPriceFactor) {
-      const minDeposit = parseFloat(poolConfig.take.minCollateral) / hpb;
+      const minDeposit = poolConfig.take.minCollateral / hpb;
       const { isTakeable, hpbIndex: arbHpbIndex } = await checkIfArbTakeable(
         pool,
         price,
