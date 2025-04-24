@@ -54,7 +54,7 @@ describe('Take with 1inch Integration', () => {
   };
 
   before(async () => {
-    process.env.ONEINCH_API = 'https://api.1inch.io/v5.0';
+    process.env.ONEINCH_API = 'https://api.1inch.io/v6.0';
     process.env.ONEINCH_API_KEY = 'mock_api_key';
     provider = getProvider();
     await resetHardhat();
@@ -311,7 +311,6 @@ describe('Take with 1inch Integration', () => {
 
   // TODO: Last transaction fails with revert
   it.skip('should handle collateral mutation between swap and execution', async () => {
-    const initialCollateral = BigNumber.from('14000000000000000000');
     const mutatedCollateral = BigNumber.from('10000000000000000000');
 
     const ONE_INCH_SWAP_RESPONSE_MUTATED = {
