@@ -42,7 +42,7 @@ async function getLiquidations(
       pool (id: "${poolAddress}") {
         hpb
         hpbIndex
-        liquidationAuctions (where: {collateralRemaining_gt: "${minCollateral}}") {
+        liquidationAuctions (where: {collateralRemaining_gt: "${minCollateral}"}) {
           borrower
         }
       }
