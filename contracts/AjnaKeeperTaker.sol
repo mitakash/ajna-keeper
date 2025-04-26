@@ -37,12 +37,15 @@ contract AjnaKeeperTaker is IERC20Taker {
     PoolDeployer public immutable poolFactory;
 
 
+    // sig: 0x2083cd40
     /// @notice Pool invoking callback is not from the Ajna deployment configured in this contract.
     error InvalidPool();
 
+    // sig: 0x82b42900
     /// @notice Caller is not the owner of this contract.
     error Unauthorized();
 
+    // sig: 0xf54a7ed9
     /// @notice Emitted when the requested liquidity source is not available on this deployment of the contract.
     error UnsupportedLiquiditySource();
 
@@ -83,7 +86,7 @@ contract AjnaKeeperTaker is IERC20Taker {
             })
         );
         // invoke the take
-        pool.take(borrowerAddress, maxAmount, address(this), data);
+        // pool.take(borrowerAddress, maxAmount, address(this), data);
 
         recover(IERC20(pool.quoteTokenAddress())); // send excess quote token (profit) to owner
     }
