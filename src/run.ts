@@ -99,7 +99,7 @@ async function takePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
         await delay(config.delayBetweenActions);
       } catch (error) {
         logger.error(
-          `Failed to handle arb take for pool: ${pool.name}.`,
+          `Failed to handle take for pool: ${pool.name}.`,
           error
         );
       }

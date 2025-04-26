@@ -74,7 +74,7 @@ interface GetLiquidationsToTakeParams
   extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
   config: Pick<
     KeeperConfig,
-    'subgraphUrl' | 'oneInchRouters' | 'connectorTokens'
+    'subgraphUrl' | 'delayBetweenActions' | 'oneInchRouters' | 'connectorTokens'
   >;
 }
 
@@ -216,7 +216,7 @@ export async function* getLiquidationsToTake({
   signer,
   config,
 }: GetLiquidationsToTakeParams): AsyncGenerator<LiquidationToTake> {
-  const { subgraphUrl, oneInchRouters, connectorTokens } = config;
+  const { subgraphUrl, delayBetweenActions, oneInchRouters, connectorTokens } = config;
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
   } = await subgraph.getLiquidations(
@@ -279,6 +279,7 @@ export async function* getLiquidationsToTake({
         );
       }
     }
+    await delay(config.delayBetweenActions);
   }
 }
 
