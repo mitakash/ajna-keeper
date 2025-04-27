@@ -68,7 +68,8 @@ interface LiquidationToTake {
   takeStrategy: TakeStrategy;
   borrower: string;
   hpbIndex: number;
-  collateral: BigNumber;
+  collateral: BigNumber; // WAD
+  auctionPrice: BigNumber; // WAD
 }
 
 interface GetLiquidationsToTakeParams
@@ -254,6 +255,7 @@ export async function* getLiquidationsToTake({
         borrower,
         hpbIndex: 0,
         collateral,
+        auctionPrice: liquidationStatus.price,
       };
       continue;
     }
@@ -278,6 +280,7 @@ export async function* getLiquidationsToTake({
           borrower,
           hpbIndex: arbHpbIndex,
           collateral,
+          auctionPrice: liquidationStatus.price,
         };
       } else {
         logger.debug(
@@ -340,6 +343,7 @@ export async function takeLiquidation({
         const tx = await keeperTaker.takeWithAtomicSwap(
             pool.poolAddress,
             liquidation.borrower,
+            liquidation.auctionPrice,
             liquidation.collateral,
             poolConfig.take.liquiditySource,
             dexRouter.getRouter(await signer.getChainId())!!,
