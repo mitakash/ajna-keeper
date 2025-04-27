@@ -159,19 +159,18 @@ If the price source only has quote token priced in collateral, you may add `"inv
 
 #### Configuring for 1inch
 
-To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.
+To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.  Also be sure to set `delayBetweenActions` to 1 second or greater to avoid 1inch API rate limiting.
 
 ##### Environment Variables
 
 Create a .env file in your project root with:
 
 ```
-ONEINCH_API=https://api.1inch.io/v5.0
-ONEINCH_API_KEY=your-1inch-api-key-here
+ONEINCH_API=https://api.1inch.dev/swap/v6.0
+ONEINCH_API_KEY=[your-1inch-api-key-here]
 ```
 
-- ONEINCH_API: The 1inch API base URL (e.g., https://api.1inch.io/v6.0).
-- ONEINCH_API_KEY: Your API key from 1inch (get it from their developer portal).
+A 1inch API key may be obtained from their [developer portal](https://portal.1inch.dev/).
 
 ##### Config.ts Requirements
 

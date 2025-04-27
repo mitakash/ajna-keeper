@@ -54,6 +54,7 @@ export async function handleTakes({
         config,
       });
     }
+    // Delay between handling each liquidation, probably superfluous
     await delay(config.delayBetweenActions);
   }
 }
@@ -82,12 +83,12 @@ async function checkIfArbTakeable(
   pool: FungiblePool,
   price: number,
   collateral: BigNumber,
-  config: RequireFields<PoolConfig, 'take'>,
+  poolConfig: RequireFields<PoolConfig, 'take'>,
   subgraphUrl: string,
   minDeposit: string,
   signer: Signer
 ): Promise<{ isTakeable: boolean; hpbIndex: number }> {
-  if (!config.take.minCollateral || !config.take.hpbPriceFactor) {
+  if (!poolConfig.take.minCollateral || !poolConfig.take.hpbPriceFactor) {
     return { isTakeable: false, hpbIndex: 0 };
   }
 
@@ -96,7 +97,7 @@ async function checkIfArbTakeable(
     pool.collateralAddress
   );
   const minCollateral = ethers.BigNumber.from(
-    decimaledToWei(config.take.minCollateral, collateralDecimals)
+    decimaledToWei(poolConfig.take.minCollateral, collateralDecimals)
   );
   if (collateral.lt(minCollateral)) {
     logger.debug(
@@ -118,7 +119,7 @@ async function checkIfArbTakeable(
   const hmbPrice = Number(
     weiToDecimaled(pool.getBucketByIndex(hmbIndex).price)
   );
-  const maxArbPrice = hmbPrice * config.take.hpbPriceFactor;
+  const maxArbPrice = hmbPrice * poolConfig.take.hpbPriceFactor;
   return {
     isTakeable: price < maxArbPrice,
     hpbIndex: hmbIndex,
@@ -129,14 +130,15 @@ async function checkIfTakeable(
   pool: FungiblePool,
   price: number,
   collateral: BigNumber,
-  config: RequireFields<PoolConfig, 'take'>,
+  poolConfig: RequireFields<PoolConfig, 'take'>,
+  config: Pick<KeeperConfig, 'delayBetweenActions'>,
   signer: Signer,
   oneInchRouters: { [chainId: number]: string } | undefined,
   connectorTokens: string[] | undefined
 ): Promise<{ isTakeable: boolean }> {
   if (
-    config.take.liquiditySource !== LiquiditySource.ONEINCH ||
-    !config.take.marketPriceFactor
+    poolConfig.take.liquiditySource !== LiquiditySource.ONEINCH ||
+    !poolConfig.take.marketPriceFactor
   ) {
     return { isTakeable: false };
   }
@@ -156,6 +158,9 @@ async function checkIfTakeable(
       );
       return { isTakeable: false };
     }
+
+    // Pause between getting a quote for each liquidation to avoid 1inch rate limit
+    await delay(config.delayBetweenActions);
 
     const dexRouter = new DexRouter(signer, {
       oneInchRouters: oneInchRouters ?? {},
@@ -197,7 +202,7 @@ async function checkIfTakeable(
     );
 
     const marketPrice = quoteAmount / collateralAmount;
-    const takeablePrice = marketPrice * config.take.marketPriceFactor;
+    const takeablePrice = marketPrice * poolConfig.take.marketPriceFactor;
 
     logger.debug(
       `Market price: ${marketPrice}, takeablePrice: ${takeablePrice}, liquidation price: ${price} for pool ${pool.name}`
@@ -216,7 +221,7 @@ export async function* getLiquidationsToTake({
   signer,
   config,
 }: GetLiquidationsToTakeParams): AsyncGenerator<LiquidationToTake> {
-  const { subgraphUrl, delayBetweenActions, oneInchRouters, connectorTokens } = config;
+  const { subgraphUrl, oneInchRouters, connectorTokens } = config;
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
   } = await subgraph.getLiquidations(
@@ -235,6 +240,7 @@ export async function* getLiquidationsToTake({
       price,
       collateral,
       poolConfig,
+      config,
       signer,
       oneInchRouters,
       connectorTokens
@@ -279,7 +285,6 @@ export async function* getLiquidationsToTake({
         );
       }
     }
-    await delay(config.delayBetweenActions);
   }
 }
 
@@ -288,7 +293,7 @@ interface TakeLiquidationParams
   liquidation: LiquidationToTake;
   config: Pick<
     KeeperConfig,
-    'dryRun' | 'connectorTokens' | 'oneInchRouters' | 'keeperTaker'
+    'dryRun' | 'delayBetweenActions' | 'connectorTokens' | 'oneInchRouters' | 'keeperTaker'
   >;
 }
 
@@ -308,6 +313,8 @@ export async function takeLiquidation({
     );
   } else {
     if (poolConfig.take.liquiditySource === LiquiditySource.ONEINCH) {
+      // pause between getting the 1inch quote and requesting the swap to avoid 1inch rate limit
+      await delay(config.delayBetweenActions);
       const dexRouter = new DexRouter(signer, {
         oneInchRouters: config.oneInchRouters ?? {},
         connectorTokens: config.connectorTokens ?? [],
