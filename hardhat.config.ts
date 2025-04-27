@@ -28,6 +28,8 @@ const config: HardhatUserConfig = {
       url: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
     }
   },
+  sourcify: { enabled: true },
+  etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
 };
 
 export default config;

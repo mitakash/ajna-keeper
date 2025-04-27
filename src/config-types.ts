@@ -89,7 +89,7 @@ export enum LiquiditySource {
 }
 
 export interface TakeSettings {
-  /** Minimum amount of collateral in liquidation to arbTake. */
+  /** Minimum amount of collateral in liquidation to take/arbTake. */
   minCollateral?: number;
   /** Will only arbTake when auctionPrice < hpb * hpbPriceFactor. */
   hpbPriceFactor?: number;
@@ -307,7 +307,7 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
   }
 
   if (hasArbTake) {
-    if (!ethers.BigNumber.from(config.minCollateral).gt(0)) {
+    if (config.minCollateral!! <= 0) {
       throw new Error('TakeSettings: minCollateral must be greater than 0');
     }
     if (config.hpbPriceFactor === undefined || config.hpbPriceFactor <= 0) {

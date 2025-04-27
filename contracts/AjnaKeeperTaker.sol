@@ -37,12 +37,15 @@ contract AjnaKeeperTaker is IERC20Taker {
     PoolDeployer public immutable poolFactory;
 
 
+    // sig: 0x2083cd40
     /// @notice Pool invoking callback is not from the Ajna deployment configured in this contract.
     error InvalidPool();
 
+    // sig: 0x82b42900
     /// @notice Caller is not the owner of this contract.
     error Unauthorized();
 
+    // sig: 0xf54a7ed9
     /// @notice Emitted when the requested liquidity source is not available on this deployment of the contract.
     error UnsupportedLiquiditySource();
 
@@ -62,6 +65,7 @@ contract AjnaKeeperTaker is IERC20Taker {
     /// @notice Called by keeper to invoke `Pool.take`, passing `IERC20Taker` callback data.
     /// @param pool ERC20 pool with an active auction.
     /// @param borrowerAddress Identifies the liquidation to take.
+    /// @param auctionPrice Last known price of the auction, in `WAD` precision, used for quote token approval.
     /// @param maxAmount Limit collateral to take from the auction, in `WAD` precision.
     /// @param source Identifies the source of liquidity to use for the swap (e.g. 1inch).
     /// @param swapRouter Address of the router to use for the swap.
@@ -69,6 +73,7 @@ contract AjnaKeeperTaker is IERC20Taker {
     function takeWithAtomicSwap(
         IERC20Pool pool,
         address borrowerAddress,
+        uint256 auctionPrice,
         uint256 maxAmount,
         LiquiditySource source,
         address swapRouter,
@@ -82,6 +87,11 @@ contract AjnaKeeperTaker is IERC20Taker {
                 details: swapDetails
             })
         );
+
+        // approve the pool to spend this contract's quote token
+        uint256 approvalAmount = _ceilWmul(maxAmount, auctionPrice) / pool.quoteTokenScale(); // convert WAD to token precision
+        IERC20(pool.quoteTokenAddress()).approve(address(pool), approvalAmount);
+
         // invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
 
@@ -170,6 +180,11 @@ contract AjnaKeeperTaker is IERC20Taker {
 
     function _validatePool(IERC20Pool pool) private view returns(bool) {
         return poolFactory.deployedPools(ERC20_NON_SUBSET_HASH, pool.collateralAddress(), pool.quoteTokenAddress()) == address(pool);
+    }
+
+    /// @dev multiplies two WADs and rounds up to the nearest decimal
+    function _ceilWmul(uint256 x, uint256 y) internal pure returns (uint256) {
+        return (x * y + 1e18 - 1) / 1e18;
     }
 
     modifier onlyOwner() {

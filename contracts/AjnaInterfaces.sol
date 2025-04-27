@@ -15,6 +15,12 @@ interface IERC20Pool {
     function collateralScale() external view returns (uint256);
 
     /**
+     *  @notice Returns the `quoteTokenScale` state variable.
+     *  @return The precision of the quote `ERC20` token based on decimals.
+     */
+    function quoteTokenScale() external pure returns (uint256);
+
+    /**
      *  @notice Called by actors to purchase collateral from the auction in exchange for quote token.
      *  @param  borrowerAddress_  Address of the borower take is being called upon.
      *  @param  maxAmount_        Max amount of collateral that will be taken from the auction (`WAD` precision for `ERC20` pools, max number of `NFT`s for `ERC721` pools).
