@@ -41,10 +41,11 @@ const argv = yargs(process.argv.slice(2))
 
 async function main() {
   // validate script arguments
-  if (argv.action in ['approve', 'quote', 'send', 'swap']) {
+  if (['approve', 'quote', 'send', 'swap'].includes(argv.action)) {
     if (!argv.poolName) throw new Error('Pool name is required for this action');
     if (!argv.amount) throw new Error('Amount is required for this action');
   }
+
   // read config file and unlock keystore
   const config = await readConfigFile(argv.config);
   const { provider, signer } = await getProviderAndSigner(
@@ -115,14 +116,14 @@ async function main() {
       console.error(`Failed to send token ${pool.collateralAddress}: ${error}`);
     }
 
-  } else if (argv.action === 'swap' && pool && dexRouter) {
+  } else if (argv.action === 'swap' && pool && dexRouter && config.keeperTaker) {
     const swapData = await dexRouter.getSwapDataFromOneInch(
       chainId,
       amount,
       pool.collateralAddress,
       pool.quoteAddress,
       1,
-      signer.address,
+      config.keeperTaker,
       true,
     );
 
