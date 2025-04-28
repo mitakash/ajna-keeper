@@ -316,6 +316,11 @@ export async function takeLiquidation({
     );
   } else {
     if (poolConfig.take.liquiditySource === LiquiditySource.ONEINCH) {
+      const keeperTaker = AjnaKeeperTaker__factory.connect(
+        config.keeperTaker!!,
+        signer
+      );
+
       // pause between getting the 1inch quote and requesting the swap to avoid 1inch rate limit
       await delay(config.delayBetweenActions);
       const dexRouter = new DexRouter(signer, {
@@ -328,14 +333,10 @@ export async function takeLiquidation({
         pool.collateralAddress,
         pool.quoteAddress,
         1,
-        await signer.getAddress(),
+        keeperTaker.address,
         true
       );
 
-      const keeperTaker = AjnaKeeperTaker__factory.connect(
-        config.keeperTaker!!,
-        signer
-      );
       try {
         logger.debug(
           `Sending Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`

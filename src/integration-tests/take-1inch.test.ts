@@ -249,6 +249,7 @@ describe('Take with 1inch Integration', () => {
           subgraphUrl: '',
           oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
           connectorTokens: [],
+          delayBetweenActions: 1,
         },
       })
     );
@@ -276,6 +277,7 @@ describe('Take with 1inch Integration', () => {
           subgraphUrl: '',
           oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
           connectorTokens: [],
+          delayBetweenActions: 1,
         },
       })
     );
@@ -299,6 +301,7 @@ describe('Take with 1inch Integration', () => {
         oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
         connectorTokens: [],
         keeperTaker: keeperTakerAddress,
+        delayBetweenActions: 1,
       },
     });
 
@@ -370,6 +373,7 @@ describe('Take with 1inch Integration', () => {
           subgraphUrl: '',
           oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
           connectorTokens: [],
+          delayBetweenActions: 1,
         },
       })
     );
@@ -394,6 +398,7 @@ describe('Take with 1inch Integration', () => {
         oneInchRouters: { 1: '0x1111111254EEB25477B68fb85Ed929f73A960582' },
         connectorTokens: [],
         keeperTaker: keeperTakerAddress,
+        delayBetweenActions: 1,
       },
     });
 
