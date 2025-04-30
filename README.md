@@ -113,9 +113,6 @@ For each desired chain:
 
 Starts a liquidation when a loan's threshold price exceeds the lowest utilized price in the pool by a configurable percentage.
 
-### Arbtake
-
-When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
 
 ### Take
 
@@ -127,10 +124,11 @@ yarn compile
 scripts/query-1inch.ts --config [your-configuration].ts --action deploy
 ```
 
-To verify this contract:
-```
-npx hardhat verify --network [your-chain] [contract-address] [erc20pooladdress]
-```
+### Arbtake
+
+When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
+
+Note if keeper is configured to both `take` and `arbTake`, and prices are appropriate for both, the keeper will attempt to execute both strategies.  Whichever transaction is included in a block first will "win", with the other strategy potentially reverting onchain.  To conserve gas when using both, ensure one is configured at a more aggressive price than the other.
 
 ### Collect Liquidation Bond
 
