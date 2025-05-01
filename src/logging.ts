@@ -21,31 +21,29 @@ class CustomConsoleTransport extends Transport {
 }
 
 function createCustomLogger(logLevel: string = 'debug'): Logger {
+  // Simpler timestamp format
   const timestampFormat = format.timestamp({
     format: () => {
       const now = new Date();
-      // Format: YYYY-MM-DD HH:MM:SS
-      return now.toISOString().slice(0, 10) + ' ' + 
-       now.toLocaleTimeString('en-US', { 
-        hour12: false,
-        hour: '2-digit', 
-        minute: '2-digit', 
-        second: '2-digit'
-      });
+      return now.toISOString().replace('T', ' ').slice(0, 19); // Simple YYYY-MM-DD HH:MM:SS
     }
   });
-	
+
+  // For file logging, we can use a custom format that makes the timestamp appear first
+  const fileFormat = format.printf(({ level, message, timestamp }) => {
+    return `${timestamp} [${level}]: ${message}`;
+  });
+  
   return createLogger({
     level: logLevel,
     format: format.combine(
-      timestampFormat,    
+      timestampFormat,
       format((info) => {
         const levels = ['error', 'info', 'debug'];
         const globalLevelIndex = levels.indexOf(logLevel);
         const logLevelIndex = levels.indexOf(info.level);
         return logLevelIndex <= globalLevelIndex ? info : false;
-      })(),
-      format.json()
+      })()
     ),
     transports: [
       new CustomConsoleTransport({ level: logLevel }),
@@ -53,9 +51,9 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
         filename: `${LOGS_FOLDER}/debug.log`,
         level: 'debug',
         options: { mode: 0o600 },
-	format: format.combine(
+        format: format.combine(
           timestampFormat,
-          format.json()
+          fileFormat  // Use our custom format for files
         )
       }),
       new transports.File({
@@ -64,7 +62,7 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
         format: format.combine(
           timestampFormat,
           format((info) => (info.level === 'info' ? info : false))(),
-          format.json()
+          fileFormat  // Use our custom format for files
         ),
         options: { mode: 0o600 },
       }),
@@ -74,7 +72,7 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
         format: format.combine(
           timestampFormat,
           format((info) => (info.level === 'error' ? info : false))(),
-          format.json()
+          fileFormat  // Use our custom format for files
         ),
         options: { mode: 0o600 },
       }),
