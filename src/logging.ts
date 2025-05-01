@@ -24,8 +24,9 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
   const timestampFormat = format.timestamp({
     format: () => {
       const now = new Date();
-      // Format: HH:MM:SS (24-hour format with leading zeros)
-      return now.toLocaleTimeString('en-US', { 
+      // Format: YYYY-MM-DD HH:MM:SS
+      return now.toISOString().slice(0, 10) + ' ' + 
+       now.toLocaleTimeString('en-US', { 
         hour12: false,
         hour: '2-digit', 
         minute: '2-digit', 
