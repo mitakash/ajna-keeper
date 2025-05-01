@@ -37,7 +37,7 @@ export async function handleTakes({
     signer,
     config,
   })) {
-    if (liquidation.takeStrategy === TakeStrategy.Take) {
+    if (liquidation.isTakeable) {
       await takeLiquidation({
         pool,
         poolConfig,
@@ -45,7 +45,11 @@ export async function handleTakes({
         liquidation,
         config,
       });
-    } else if (liquidation.takeStrategy === TakeStrategy.ArbTake) {
+      // If an arbTake is also possible, give the take transaction some time to be included
+      // in a block before proceeding with the arbTake.
+      if (liquidation.isArbTakeable) await delay(config.delayBetweenActions);
+    }
+    if (liquidation.isArbTakeable) {
       await arbTakeLiquidation({
         pool,
         poolConfig,
@@ -54,22 +58,16 @@ export async function handleTakes({
         config,
       });
     }
-    // Delay between handling each liquidation, probably superfluous
-    await delay(config.delayBetweenActions);
   }
 }
 
-enum TakeStrategy {
-  Take = 1,
-  ArbTake = 2,
-}
-
 interface LiquidationToTake {
-  takeStrategy: TakeStrategy;
   borrower: string;
   hpbIndex: number;
   collateral: BigNumber; // WAD
   auctionPrice: BigNumber; // WAD
+  isTakeable: boolean;
+  isArbTakeable: boolean;
 }
 
 interface GetLiquidationsToTakeParams
@@ -88,9 +86,9 @@ async function checkIfArbTakeable(
   subgraphUrl: string,
   minDeposit: string,
   signer: Signer
-): Promise<{ isTakeable: boolean; hpbIndex: number }> {
+): Promise<{ isArbTakeable: boolean; hpbIndex: number }> {
   if (!poolConfig.take.minCollateral || !poolConfig.take.hpbPriceFactor) {
-    return { isTakeable: false, hpbIndex: 0 };
+    return { isArbTakeable: false, hpbIndex: 0 };
   }
 
   const collateralDecimals = await getDecimalsErc20(
@@ -104,7 +102,7 @@ async function checkIfArbTakeable(
     logger.debug(
       `Collateral ${collateral} below minCollateral ${minCollateral} for pool: ${pool.name}`
     );
-    return { isTakeable: false, hpbIndex: 0 };
+    return { isArbTakeable: false, hpbIndex: 0 };
   }
 
   const { buckets } = await subgraph.getHighestMeaningfulBucket(
@@ -113,7 +111,7 @@ async function checkIfArbTakeable(
     minDeposit
   );
   if (buckets.length === 0) {
-    return { isTakeable: false, hpbIndex: 0 };
+    return { isArbTakeable: false, hpbIndex: 0 };
   }
 
   const hmbIndex = buckets[0].bucketIndex;
@@ -122,7 +120,7 @@ async function checkIfArbTakeable(
   );
   const maxArbPrice = hmbPrice * poolConfig.take.hpbPriceFactor;
   return {
-    isTakeable: price < maxArbPrice,
+    isArbTakeable: price < maxArbPrice,
     hpbIndex: hmbIndex,
   };
 }
@@ -236,33 +234,26 @@ export async function* getLiquidationsToTake({
     const price = Number(weiToDecimaled(liquidationStatus.price));
     const collateral = liquidationStatus.collateral;
 
-    const { isTakeable: isTakeableForTake } = await checkIfTakeable(
-      pool,
-      price,
-      collateral,
-      poolConfig,
-      config,
-      signer,
-      oneInchRouters,
-      connectorTokens
-    );
-    if (isTakeableForTake) {
-      logger.debug(
-        `Found liquidation to take - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
-      );
-      yield {
-        takeStrategy: TakeStrategy.Take,
-        borrower,
-        hpbIndex: 0,
+    let isTakeable = false;
+    let isArbTakeable = false;
+    let arbHpbIndex = 0;
+
+    if (poolConfig.take.marketPriceFactor && poolConfig.take.liquiditySource) {
+      isTakeable = (await checkIfTakeable(
+        pool,
+        price,
         collateral,
-        auctionPrice: liquidationStatus.price,
-      };
-      continue;
+        poolConfig,
+        config,
+        signer,
+        oneInchRouters,
+        connectorTokens
+      )).isTakeable;
     }
 
     if (poolConfig.take.minCollateral && poolConfig.take.hpbPriceFactor) {
       const minDeposit = poolConfig.take.minCollateral / hpb;
-      const { isTakeable, hpbIndex: arbHpbIndex } = await checkIfArbTakeable(
+      const arbTakeCheck = await checkIfArbTakeable(
         pool,
         price,
         collateral,
@@ -271,22 +262,31 @@ export async function* getLiquidationsToTake({
         minDeposit.toString(),
         signer
       );
-      if (isTakeable) {
-        logger.debug(
-          `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
-        );
-        yield {
-          takeStrategy: TakeStrategy.ArbTake,
-          borrower,
-          hpbIndex: arbHpbIndex,
-          collateral,
-          auctionPrice: liquidationStatus.price,
-        };
-      } else {
-        logger.debug(
-          `Not taking liquidation since price is too high for pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
-        );
-      }
+      isArbTakeable = arbTakeCheck.isArbTakeable;
+      arbHpbIndex = arbTakeCheck.hpbIndex;
+    }
+
+    if (isTakeable || isArbTakeable) {
+      const strategyLog = isTakeable && !isArbTakeable ? 'take'
+        : !isTakeable && isArbTakeable ? 'arbTake'
+        : isTakeable && isArbTakeable ? 'take and arbTake'
+        : 'none';
+      logger.debug(`Found liquidation to ${strategyLog} - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`);
+
+      yield {
+        borrower,
+        hpbIndex: arbHpbIndex,
+        collateral,
+        auctionPrice: liquidationStatus.price,
+        isTakeable,
+        isArbTakeable,
+      };
+      continue;
+
+    } else {
+      logger.debug(
+        `Not taking liquidation since price ${price} is too high - pool: ${pool.name}, borrower: ${borrower}`
+      );
     }
   }
 }
