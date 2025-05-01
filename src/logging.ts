@@ -10,20 +10,34 @@ class CustomConsoleTransport extends Transport {
   }
 
   log(entry: LogEntry, callback: any) {
-    const { level, message, ...meta } = entry;
+    const { level, message, timestamp, ...meta } = entry;
     if (level === 'error') {
-      console.error(message);
+      console.error(`${timestamp} [${level}]: ${message}`);
     } else {
-      console.log(message);
+      console.log(`${timestamp} [${level}]: ${message}`);
     }
     callback();
   }
 }
 
 function createCustomLogger(logLevel: string = 'debug'): Logger {
+  const timestampFormat = format.timestamp({
+    format: () => {
+      const now = new Date();
+      // Format: HH:MM:SS (24-hour format with leading zeros)
+      return now.toLocaleTimeString('en-US', { 
+        hour12: false,
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit'
+      });
+    }
+  });
+	
   return createLogger({
     level: logLevel,
     format: format.combine(
+      timestampFormat,    
       format((info) => {
         const levels = ['error', 'info', 'debug'];
         const globalLevelIndex = levels.indexOf(logLevel);
@@ -38,17 +52,29 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
         filename: `${LOGS_FOLDER}/debug.log`,
         level: 'debug',
         options: { mode: 0o600 },
+	format: format.combine(
+          timestampFormat,
+          format.json()
+        )
       }),
       new transports.File({
         filename: `${LOGS_FOLDER}/info.log`,
         level: 'info',
-        format: format((info) => (info.level === 'info' ? info : false))(),
+        format: format.combine(
+          timestampFormat,
+          format((info) => (info.level === 'info' ? info : false))(),
+          format.json()
+        ),
         options: { mode: 0o600 },
       }),
       new transports.File({
         filename: `${LOGS_FOLDER}/error.log`,
         level: 'error',
-        format: format((info) => (info.level === 'error' ? info : false))(),
+        format: format.combine(
+          timestampFormat,
+          format((info) => (info.level === 'error' ? info : false))(),
+          format.json()
+        ),
         options: { mode: 0o600 },
       }),
     ],
