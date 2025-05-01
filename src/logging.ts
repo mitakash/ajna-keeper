@@ -10,27 +10,40 @@ class CustomConsoleTransport extends Transport {
   }
 
   log(entry: LogEntry, callback: any) {
-    const { level, message, ...meta } = entry;
+    const { level, message, timestamp, ...meta } = entry;
     if (level === 'error') {
-      console.error(message);
+      console.error(`${timestamp} [${level}]: ${message}`);
     } else {
-      console.log(message);
+      console.log(`${timestamp} [${level}]: ${message}`);
     }
     callback();
   }
 }
 
 function createCustomLogger(logLevel: string = 'debug'): Logger {
+  // Simpler timestamp format
+  const timestampFormat = format.timestamp({
+    format: () => {
+      const now = new Date();
+      return now.toISOString().replace('T', ' ').slice(0, 19); // Simple YYYY-MM-DD HH:MM:SS
+    }
+  });
+
+  // For file logging, we can use a custom format that makes the timestamp appear first
+  const fileFormat = format.printf(({ level, message, timestamp }) => {
+    return `${timestamp} [${level}]: ${message}`;
+  });
+  
   return createLogger({
     level: logLevel,
     format: format.combine(
+      timestampFormat,
       format((info) => {
         const levels = ['error', 'info', 'debug'];
         const globalLevelIndex = levels.indexOf(logLevel);
         const logLevelIndex = levels.indexOf(info.level);
         return logLevelIndex <= globalLevelIndex ? info : false;
-      })(),
-      format.json()
+      })()
     ),
     transports: [
       new CustomConsoleTransport({ level: logLevel }),
@@ -38,17 +51,29 @@ function createCustomLogger(logLevel: string = 'debug'): Logger {
         filename: `${LOGS_FOLDER}/debug.log`,
         level: 'debug',
         options: { mode: 0o600 },
+        format: format.combine(
+          timestampFormat,
+          fileFormat  // Use our custom format for files
+        )
       }),
       new transports.File({
         filename: `${LOGS_FOLDER}/info.log`,
         level: 'info',
-        format: format((info) => (info.level === 'info' ? info : false))(),
+        format: format.combine(
+          timestampFormat,
+          format((info) => (info.level === 'info' ? info : false))(),
+          fileFormat  // Use our custom format for files
+        ),
         options: { mode: 0o600 },
       }),
       new transports.File({
         filename: `${LOGS_FOLDER}/error.log`,
         level: 'error',
-        format: format((info) => (info.level === 'error' ? info : false))(),
+        format: format.combine(
+          timestampFormat,
+          format((info) => (info.level === 'error' ? info : false))(),
+          fileFormat  // Use our custom format for files
+        ),
         options: { mode: 0o600 },
       }),
     ],
