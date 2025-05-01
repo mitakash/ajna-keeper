@@ -1,6 +1,7 @@
 import { createLogger, transports, LogEntry, Logger, format } from 'winston';
 import Transport, { TransportStreamOptions } from 'winston-transport';
 
+// FIXME: this always writes a log folder in the module location, which is not always desirable
 const LOGS_FOLDER = 'logs';
 
 class CustomConsoleTransport extends Transport {

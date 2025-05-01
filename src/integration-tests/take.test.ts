@@ -21,8 +21,8 @@ import {
 import { expect } from 'chai';
 import {
   arbTakeLiquidation,
-  getLiquidationsToArbTake,
-  handleArbTakes,
+  getLiquidationsToTake,
+  handleTakes,
 } from '../take';
 import { Wallet } from 'ethers';
 import { arrayFromAsync, decimaledToWei, weiToDecimaled } from '../utils';
@@ -78,7 +78,7 @@ const setup = async () => {
     },
   });
 
-  return pool;
+  return { pool, signer };
 };
 
 describe('getLiquidationsToArbTake', () => {
@@ -87,14 +87,17 @@ describe('getLiquidationsToArbTake', () => {
   });
 
   it('gets nothing when there arent any kicked loans', async () => {
-    const pool = await setup();
+    const { pool, signer } = await setup();
 
     const liquidationsToArbTake = await arrayFromAsync(
-      getLiquidationsToArbTake({
+      getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        signer,
         config: {
           subgraphUrl: '',
+          oneInchRouters: {},
+          connectorTokens: [],
         },
       })
     );
@@ -102,15 +105,18 @@ describe('getLiquidationsToArbTake', () => {
   });
 
   it('gets loans when there are kicked loans', async () => {
-    const pool = await setup();
+    const { pool, signer } = await setup();
     await increaseTime(SECONDS_PER_DAY * 1);
 
     const liquidationsToArbTake = await arrayFromAsync(
-      getLiquidationsToArbTake({
+      getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        signer,
         config: {
           subgraphUrl: '',
+          oneInchRouters: {},
+          connectorTokens: [],
         },
       })
     );
@@ -127,17 +133,20 @@ describe('arbTakeLiquidation', () => {
   });
 
   it('ArbTakes eligible liquidations and earns lpb', async () => {
-    const pool = await setup();
+    const { pool } = await setup();
     await increaseTime(SECONDS_PER_DAY * 1); // Increase timestamp by 1 day.
     const signer = Wallet.fromMnemonic(USER1_MNEMONIC).connect(getProvider());
     setBalance(signer.address, decimaledToWei(100).toHexString());
 
     const liquidationsToArbTake = await arrayFromAsync(
-      getLiquidationsToArbTake({
+      getLiquidationsToTake({
         pool,
         poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
+        signer,
         config: {
           subgraphUrl: '',
+          oneInchRouters: {},
+          connectorTokens: [],
         },
       })
     );
@@ -219,7 +228,7 @@ describe('handleTakes', () => {
     const AUCTION_WAIT_TIME = 60 * 20 * 6 + 2 * 2 * 60 * 60 + 50 * 60;
     await increaseTime(AUCTION_WAIT_TIME);
 
-    await handleArbTakes({
+    await handleTakes({
       signer,
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
@@ -235,7 +244,7 @@ describe('handleTakes', () => {
       'Bucket 1 should only have dust remaining'
     );
 
-    await handleArbTakes({
+    await handleTakes({
       signer,
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,

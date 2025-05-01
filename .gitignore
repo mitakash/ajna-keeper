@@ -4,7 +4,9 @@
 .env
 
 # Hardhat
+/artifacts
 /cache
+/typechain-types
 
 # logging
 /logs

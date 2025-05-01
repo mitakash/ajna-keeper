@@ -1,5 +1,5 @@
 import { AjnaSDK, FungiblePool, Signer } from '@ajna-finance/sdk';
-import { configureAjna, KeeperConfig, PoolConfig } from './config-types';
+import { configureAjna, KeeperConfig, PoolConfig, validateTakeSettings } from './config-types';
 import {
   delay,
   getProviderAndSigner,
@@ -7,7 +7,7 @@ import {
   RequireFields,
 } from './utils';
 import { handleKicks } from './kick';
-import { handleArbTakes } from './take';
+import { handleTakes } from './take';
 import { collectBondFromPool } from './collect-bond';
 import { LpCollector } from './collect-lp';
 import { logger } from './logging';
@@ -27,7 +27,7 @@ export async function startKeeperFromConfig(config: KeeperConfig) {
   const poolMap = await getPoolsFromConfig(ajna, config);
 
   kickPoolsLoop({ poolMap, config, signer });
-  arbTakePoolsLoop({ poolMap, config, signer });
+  takePoolsLoop({ poolMap, config, signer });
   collectBondLoop({ poolMap, config, signer });
   collectLpRewardsLoop({ poolMap, config, signer });
 }
@@ -83,13 +83,14 @@ function hasKickSettings(
   return !!config.kick;
 }
 
-async function arbTakePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
+async function takePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
   const poolsWithTakeSettings = config.pools.filter(hasTakeSettings);
   while (true) {
     for (const poolConfig of poolsWithTakeSettings) {
       const pool = poolMap.get(poolConfig.address)!;
       try {
-        await handleArbTakes({
+        validateTakeSettings(poolConfig.take, config);
+        await handleTakes({
           pool,
           poolConfig,
           signer,
@@ -98,7 +99,7 @@ async function arbTakePoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
         await delay(config.delayBetweenActions);
       } catch (error) {
         logger.error(
-          `Failed to handle arb take for pool: ${pool.name}.`,
+          `Failed to handle take for pool: ${pool.name}.`,
           error
         );
       }

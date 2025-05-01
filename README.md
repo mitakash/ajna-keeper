@@ -21,16 +21,17 @@ You'll need `node` and related tools (`npm`, `yarn`). This was developed with no
 
 Download node here: https://nodejs.org/en Downloading `node` also installs `npm`.
 
-Install `yarn`
+Install `yarn` and dependencies:
 
 ```bash
 npm install --global yarn
+yarn --frozen-lockfile
 ```
 
-Install node dependencies.
+Compile to generate types using TypeChain:
 
 ```bash
-yarn --frozen-lockfile
+yarn compile
 ```
 
 ### Create a new config file
@@ -112,9 +113,22 @@ For each desired chain:
 
 Starts a liquidation when a loan's threshold price exceeds the lowest utilized price in the pool by a configurable percentage.
 
+
+### Take
+
+When auction price drops a configurable percentage below a DEX price, swaps collateral for quote token using a DEX or DEX aggregator, repaying debt and earning profit for the taker.
+
+This feature requires deploying a smart contract owned by the EOA operating the keeper.  To deploy this contract:
+```
+yarn compile
+scripts/query-1inch.ts --config [your-configuration].ts --action deploy
+```
+
 ### Arbtake
 
 When auction price drops a configurable percentage below the highest price bucket, exchanges quote token in that bucket for collateral, earning a share of that bucket.
+
+Note if keeper is configured to both `take` and `arbTake`, and prices are appropriate for both, the keeper will attempt to execute both strategies.  Whichever transaction is included in a block first will "win", with the other strategy potentially reverting onchain.  To conserve gas when using both, ensure one is configured at a more aggressive price than the other.
 
 ### Collect Liquidation Bond
 
@@ -143,19 +157,18 @@ If the price source only has quote token priced in collateral, you may add `"inv
 
 #### Configuring for 1inch
 
-To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.
+To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.  Also be sure to set `delayBetweenActions` to 1 second or greater to avoid 1inch API rate limiting.
 
 ##### Environment Variables
 
 Create a .env file in your project root with:
 
 ```
-ONEINCH_API=https://api.1inch.io/v5.0
-ONEINCH_API_KEY=your-1inch-api-key-here
+ONEINCH_API=https://api.1inch.dev/swap/v6.0
+ONEINCH_API_KEY=[your-1inch-api-key-here]
 ```
 
-- ONEINCH_API: The 1inch API base URL (e.g., https://api.1inch.io/v6.0).
-- ONEINCH_API_KEY: Your API key from 1inch (get it from their developer portal).
+A 1inch API key may be obtained from their [developer portal](https://portal.1inch.dev/).
 
 ##### Config.ts Requirements
 
@@ -399,6 +412,13 @@ Note: You will need to enable mainnet in Alchemy since hardhat queries from main
 
 ### Running tests
 
+#### Unit tests
+```bash
+yarn unit-tests
+```
+
+#### Integration tests
+
 In one terminal run:
 
 ```bash
@@ -408,7 +428,7 @@ npx hardhat node
 In a second terminal run:
 
 ```bash
-npx hardhat test
+yarn integration-tests
 ```
 
 ## Disclaimer

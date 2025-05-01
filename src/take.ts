@@ -1,92 +1,376 @@
 import { Signer, FungiblePool } from '@ajna-finance/sdk';
 import subgraph from './subgraph';
-import { delay, RequireFields, weiToDecimaled } from './utils';
-import { KeeperConfig, PoolConfig } from './config-types';
+import { decimaledToWei, delay, RequireFields, weiToDecimaled } from './utils';
+import { KeeperConfig, LiquiditySource, PoolConfig } from './config-types';
 import { logger } from './logging';
 import { liquidationArbTake } from './transactions';
+import { DexRouter } from './dex-router';
+import { BigNumber, ethers } from 'ethers';
+import { convertSwapApiResponseToDetailsBytes } from './1inch';
+import { AjnaKeeperTaker__factory } from '../typechain-types';
+import { getDecimalsErc20 } from './erc20';
 
-interface HandleArbParams {
+interface HandleTakeParams {
   signer: Signer;
   pool: FungiblePool;
   poolConfig: RequireFields<PoolConfig, 'take'>;
-  config: Pick<KeeperConfig, 'dryRun' | 'subgraphUrl' | 'delayBetweenActions'>;
+  config: Pick<
+    KeeperConfig,
+    | 'dryRun'
+    | 'subgraphUrl'
+    | 'delayBetweenActions'
+    | 'connectorTokens'
+    | 'oneInchRouters'
+    | 'keeperTaker'
+  >;
 }
 
-export async function handleArbTakes({
+export async function handleTakes({
   signer,
   pool,
   poolConfig,
   config,
-}: HandleArbParams) {
-  for await (const liquidation of getLiquidationsToArbTake({
+}: HandleTakeParams) {
+  for await (const liquidation of getLiquidationsToTake({
     pool,
     poolConfig,
+    signer,
     config,
   })) {
-    await arbTakeLiquidation({
-      pool,
-      poolConfig,
-      signer,
-      liquidation,
-      config,
-    });
-    await delay(config.delayBetweenActions);
+    if (liquidation.isTakeable) {
+      await takeLiquidation({
+        pool,
+        poolConfig,
+        signer,
+        liquidation,
+        config,
+      });
+      // If an arbTake is also possible, give the take transaction some time to be included
+      // in a block before proceeding with the arbTake.
+      if (liquidation.isArbTakeable) await delay(config.delayBetweenActions);
+    }
+    if (liquidation.isArbTakeable) {
+      await arbTakeLiquidation({
+        pool,
+        poolConfig,
+        signer,
+        liquidation,
+        config,
+      });
+    }
   }
 }
 
-interface LiquidationToArbTake {
+interface LiquidationToTake {
   borrower: string;
   hpbIndex: number;
+  collateral: BigNumber; // WAD
+  auctionPrice: BigNumber; // WAD
+  isTakeable: boolean;
+  isArbTakeable: boolean;
 }
 
-interface GetLiquidationsToArbTakeParams
-  extends Pick<HandleArbParams, 'pool' | 'poolConfig'> {
-  config: Pick<KeeperConfig, 'subgraphUrl'>;
+interface GetLiquidationsToTakeParams
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
+  config: Pick<
+    KeeperConfig,
+    'subgraphUrl' | 'delayBetweenActions' | 'oneInchRouters' | 'connectorTokens'
+  >;
 }
 
-export async function* getLiquidationsToArbTake({
+async function checkIfArbTakeable(
+  pool: FungiblePool,
+  price: number,
+  collateral: BigNumber,
+  poolConfig: RequireFields<PoolConfig, 'take'>,
+  subgraphUrl: string,
+  minDeposit: string,
+  signer: Signer
+): Promise<{ isArbTakeable: boolean; hpbIndex: number }> {
+  if (!poolConfig.take.minCollateral || !poolConfig.take.hpbPriceFactor) {
+    return { isArbTakeable: false, hpbIndex: 0 };
+  }
+
+  const collateralDecimals = await getDecimalsErc20(
+    signer,
+    pool.collateralAddress
+  );
+  const minCollateral = ethers.BigNumber.from(
+    decimaledToWei(poolConfig.take.minCollateral, collateralDecimals)
+  );
+  if (collateral.lt(minCollateral)) {
+    logger.debug(
+      `Collateral ${collateral} below minCollateral ${minCollateral} for pool: ${pool.name}`
+    );
+    return { isArbTakeable: false, hpbIndex: 0 };
+  }
+
+  const { buckets } = await subgraph.getHighestMeaningfulBucket(
+    subgraphUrl,
+    pool.poolAddress,
+    minDeposit
+  );
+  if (buckets.length === 0) {
+    return { isArbTakeable: false, hpbIndex: 0 };
+  }
+
+  const hmbIndex = buckets[0].bucketIndex;
+  const hmbPrice = Number(
+    weiToDecimaled(pool.getBucketByIndex(hmbIndex).price)
+  );
+  const maxArbPrice = hmbPrice * poolConfig.take.hpbPriceFactor;
+  return {
+    isArbTakeable: price < maxArbPrice,
+    hpbIndex: hmbIndex,
+  };
+}
+
+async function checkIfTakeable(
+  pool: FungiblePool,
+  price: number,
+  collateral: BigNumber,
+  poolConfig: RequireFields<PoolConfig, 'take'>,
+  config: Pick<KeeperConfig, 'delayBetweenActions'>,
+  signer: Signer,
+  oneInchRouters: { [chainId: number]: string } | undefined,
+  connectorTokens: string[] | undefined
+): Promise<{ isTakeable: boolean }> {
+  if (
+    poolConfig.take.liquiditySource !== LiquiditySource.ONEINCH ||
+    !poolConfig.take.marketPriceFactor
+  ) {
+    return { isTakeable: false };
+  }
+
+  if (!collateral.gt(0)) {
+    logger.debug(
+      `Invalid collateral amount: ${collateral.toString()} for pool ${pool.name}`
+    );
+    return { isTakeable: false };
+  }
+
+  try {
+    const chainId = await signer.getChainId();
+    if (!oneInchRouters || !oneInchRouters[chainId]) {
+      logger.debug(
+        `No 1inch router configured for chainId ${chainId} in pool ${pool.name}`
+      );
+      return { isTakeable: false };
+    }
+
+    // Pause between getting a quote for each liquidation to avoid 1inch rate limit
+    await delay(config.delayBetweenActions);
+
+    const dexRouter = new DexRouter(signer, {
+      oneInchRouters: oneInchRouters ?? {},
+      connectorTokens: connectorTokens ?? [],
+    });
+    const quoteResult = await dexRouter.getQuoteFromOneInch(
+      chainId,
+      collateral,
+      pool.collateralAddress,
+      pool.quoteAddress
+    );
+
+    if (!quoteResult.success) {
+      logger.debug(
+        `No valid quote data for collateral ${ethers.utils.formatUnits(collateral, await getDecimalsErc20(signer, pool.collateralAddress))} in pool ${pool.name}: ${quoteResult.error}`
+      );
+      return { isTakeable: false };
+    }
+
+    const amountOut = ethers.BigNumber.from(quoteResult.dstAmount);
+    if (amountOut.isZero()) {
+      logger.debug(
+        `Zero amountOut for collateral ${ethers.utils.formatUnits(collateral, await getDecimalsErc20(signer, pool.collateralAddress))} in pool ${pool.name}`
+      );
+      return { isTakeable: false };
+    }
+
+    const collateralDecimals = await getDecimalsErc20(
+      signer,
+      pool.collateralAddress
+    );
+    const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+
+    const collateralAmount = Number(
+      ethers.utils.formatUnits(collateral, collateralDecimals)
+    );
+    const quoteAmount = Number(
+      ethers.utils.formatUnits(amountOut, quoteDecimals)
+    );
+
+    const marketPrice = quoteAmount / collateralAmount;
+    const takeablePrice = marketPrice * poolConfig.take.marketPriceFactor;
+
+    logger.debug(
+      `Market price: ${marketPrice}, takeablePrice: ${takeablePrice}, liquidation price: ${price} for pool ${pool.name}`
+    );
+
+    return { isTakeable: price <= takeablePrice };
+  } catch (error) {
+    logger.error(`Failed to fetch quote data for pool ${pool.name}: ${error}`);
+    return { isTakeable: false };
+  }
+}
+
+export async function* getLiquidationsToTake({
   pool,
   poolConfig,
+  signer,
   config,
-}: GetLiquidationsToArbTakeParams): AsyncGenerator<LiquidationToArbTake> {
-  const { subgraphUrl } = config;
+}: GetLiquidationsToTakeParams): AsyncGenerator<LiquidationToTake> {
+  const { subgraphUrl, oneInchRouters, connectorTokens } = config;
   const {
     pool: { hpb, hpbIndex, liquidationAuctions },
   } = await subgraph.getLiquidations(
     subgraphUrl,
     pool.poolAddress,
-    poolConfig.take.minCollateral
+    poolConfig.take.minCollateral ?? 0
   );
-  const minDeposit = poolConfig.take.minCollateral / hpb;
   for (const auction of liquidationAuctions) {
     const { borrower } = auction;
     const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
-    const price = weiToDecimaled(liquidationStatus.price);
-    // TODO: May want to include a hardcoded minDeposit value when minCollateral is zero.
-    const { buckets } = await subgraph.getHighestMeaningfulBucket(
-      config.subgraphUrl,
-      pool.poolAddress,
-      minDeposit.toString()
-    );
-    if (buckets.length == 0) continue;
-    const hmbIndex = buckets[0].bucketIndex;
-    const hmbPrice = weiToDecimaled(pool.getBucketByIndex(hmbIndex).price);
-    if (price < hmbPrice * poolConfig.take.priceFactor) {
-      logger.debug(
-        `Found liquidation to arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}, hpb: ${hmbPrice}.`
+    const price = Number(weiToDecimaled(liquidationStatus.price));
+    const collateral = liquidationStatus.collateral;
+
+    let isTakeable = false;
+    let isArbTakeable = false;
+    let arbHpbIndex = 0;
+
+    if (poolConfig.take.marketPriceFactor && poolConfig.take.liquiditySource) {
+      isTakeable = (await checkIfTakeable(
+        pool,
+        price,
+        collateral,
+        poolConfig,
+        config,
+        signer,
+        oneInchRouters,
+        connectorTokens
+      )).isTakeable;
+    }
+
+    if (poolConfig.take.minCollateral && poolConfig.take.hpbPriceFactor) {
+      const minDeposit = poolConfig.take.minCollateral / hpb;
+      const arbTakeCheck = await checkIfArbTakeable(
+        pool,
+        price,
+        collateral,
+        poolConfig,
+        subgraphUrl,
+        minDeposit.toString(),
+        signer
       );
-      yield { borrower, hpbIndex: hmbIndex };
+      isArbTakeable = arbTakeCheck.isArbTakeable;
+      arbHpbIndex = arbTakeCheck.hpbIndex;
+    }
+
+    if (isTakeable || isArbTakeable) {
+      const strategyLog = isTakeable && !isArbTakeable ? 'take'
+        : !isTakeable && isArbTakeable ? 'arbTake'
+        : isTakeable && isArbTakeable ? 'take and arbTake'
+        : 'none';
+      logger.debug(`Found liquidation to ${strategyLog} - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`);
+
+      yield {
+        borrower,
+        hpbIndex: arbHpbIndex,
+        collateral,
+        auctionPrice: liquidationStatus.price,
+        isTakeable,
+        isArbTakeable,
+      };
+      continue;
+
     } else {
       logger.debug(
-        `Not taking liquidation since price is too high. price: ${price} hpb: ${hmbPrice}`
+        `Not taking liquidation since price ${price} is too high - pool: ${pool.name}, borrower: ${borrower}`
+      );
+    }
+  }
+}
+
+interface TakeLiquidationParams
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
+  liquidation: LiquidationToTake;
+  config: Pick<
+    KeeperConfig,
+    'dryRun' | 'delayBetweenActions' | 'connectorTokens' | 'oneInchRouters' | 'keeperTaker'
+  >;
+}
+
+export async function takeLiquidation({
+  pool,
+  poolConfig,
+  signer,
+  liquidation,
+  config,
+}: TakeLiquidationParams) {
+  const { borrower } = liquidation;
+  const { dryRun } = config;
+
+  if (dryRun) {
+    logger.info(
+      `DryRun - would Take - poolAddress: ${pool.poolAddress}, borrower: ${borrower} using ${poolConfig.take.liquiditySource}`
+    );
+  } else {
+    if (poolConfig.take.liquiditySource === LiquiditySource.ONEINCH) {
+      const keeperTaker = AjnaKeeperTaker__factory.connect(
+        config.keeperTaker!!,
+        signer
+      );
+
+      // pause between getting the 1inch quote and requesting the swap to avoid 1inch rate limit
+      await delay(config.delayBetweenActions);
+      const dexRouter = new DexRouter(signer, {
+        oneInchRouters: config.oneInchRouters ?? {},
+        connectorTokens: config.connectorTokens ?? [],
+      });
+      const swapData = await dexRouter.getSwapDataFromOneInch(
+        await signer.getChainId(),
+        liquidation.collateral,
+        pool.collateralAddress,
+        pool.quoteAddress,
+        1,
+        keeperTaker.address,
+        true
+      );
+
+      try {
+        logger.debug(
+          `Sending Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
+        );
+        const tx = await keeperTaker.takeWithAtomicSwap(
+          pool.poolAddress,
+          liquidation.borrower,
+            liquidation.auctionPrice,
+          liquidation.collateral,
+          poolConfig.take.liquiditySource,
+          dexRouter.getRouter(await signer.getChainId())!!,
+          convertSwapApiResponseToDetailsBytes(swapData.data)
+        );
+        await tx.wait();
+        logger.info(
+          `Take successful - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
+        );
+      } catch (error) {
+        logger.error(
+          `Failed to Take. pool: ${pool.name}, borrower: ${borrower}`,
+          error
+        );
+      }
+    } else {
+      logger.error(
+        `Valid liquidity source not configured. Skipping liquidation of poolAddress: ${pool.poolAddress}, borrower: ${borrower}.`
       );
     }
   }
 }
 
 interface ArbTakeLiquidationParams
-  extends Pick<HandleArbParams, 'pool' | 'poolConfig' | 'signer'> {
-  liquidation: LiquidationToArbTake;
+  extends Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer'> {
+  liquidation: LiquidationToTake;
   config: Pick<KeeperConfig, 'dryRun'>;
 }
 

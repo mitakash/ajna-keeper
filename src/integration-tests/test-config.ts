@@ -43,7 +43,7 @@ export const MAINNET_CONFIG = {
       take: {
         minCollateral: 0,
         withdrawRewardLiquidity: true,
-        priceFactor: 0.99,
+        hpbPriceFactor: 0.99,
       },
     } as RequireFields<PoolConfig, 'kick' | 'take'>,
   },
@@ -69,7 +69,7 @@ export const MAINNET_CONFIG = {
       take: {
         minCollateral: 1e-8,
         withdrawRewardLiquidity: true,
-        priceFactor: 0.99,
+        hpbPriceFactor: 0.99,
       },
     } as RequireFields<PoolConfig, 'kick' | 'take'>,
   },

@@ -59,7 +59,7 @@ const config: KeeperConfig = {
       },
       take: {
         minCollateral: 0.01,
-        priceFactor: 0.9,
+        hpbPriceFactor: 0.9,
       },
       collectBond: true,
       collectLpReward: {
@@ -89,7 +89,7 @@ const config: KeeperConfig = {
       },
       take: {
         minCollateral: 0.01,
-        priceFactor: 0.9,
+        hpbPriceFactor: 0.9,
       },
       collectBond: true,
       collectLpReward: {
@@ -115,7 +115,7 @@ const config: KeeperConfig = {
       },
       take: {
         minCollateral: 0.01,
-        priceFactor: 0.9,
+        hpbPriceFactor: 0.9,
       },
       collectBond: true,
       collectLpReward: {
@@ -137,7 +137,7 @@ const config: KeeperConfig = {
       },
       take: {
         minCollateral: 0.07,
-        priceFactor: 0.98,
+        hpbPriceFactor: 0.98,
       },
       collectBond: true,
       collectLpReward: {

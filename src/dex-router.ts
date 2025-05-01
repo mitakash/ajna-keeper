@@ -7,6 +7,9 @@ import { logger } from './logging';
 import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
 
+// TODO:
+// Why does this log errors and return failure rather than throwing exceptions?
+
 export class DexRouter {
   private signer: Signer;
   private oneInchRouters: { [chainId: number]: string };
@@ -29,7 +32,11 @@ export class DexRouter {
       : '';
   }
 
-  private async getQuoteFromOneInch(
+  public getRouter(chainId: number): string | undefined {
+    return this.oneInchRouters[chainId];
+  }
+
+  public async getQuoteFromOneInch(
     chainId: number,
     amount: BigNumber,
     tokenIn: string,
@@ -64,6 +71,7 @@ export class DexRouter {
           Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
         },
       });
+      console.log('1inch quote response:', response.data);
 
       return { success: true, dstAmount: response.data.dstAmount };
     } catch (error: Error | any) {
@@ -73,12 +81,74 @@ export class DexRouter {
     }
   }
 
+  public async getSwapDataFromOneInch(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    slippage: number,
+    fromAddress: string,
+    usePatching: boolean = false,
+  ) : Promise<{ success: boolean; data?: any; error?: string }> {
+    const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
+    const params: {
+      fromTokenAddress: string;
+      toTokenAddress: string;
+      amount: string;
+      fromAddress: string;
+      slippage: number;
+      connectorTokens?: string;
+      usePatching?: boolean;
+      disableEstimate?: boolean;
+    } = {
+      fromTokenAddress: tokenIn,
+      toTokenAddress: tokenOut,
+      amount: amount.toString(),
+      fromAddress,
+      slippage,
+    };
+
+    if (this.connectorTokens.length > 0) {
+      params['connectorTokens'] = this.connectorTokens;
+    }
+    if (usePatching) {
+      params['usePatching'] = true;     // allow mutations to the swap data
+      params['disableEstimate'] = true; // skip API balance check (collateral will come mid-transaction)
+    }
+
+    logger.debug(
+      `Sending these parameters to 1inch: ${JSON.stringify(params)}`
+    );
+
+    const response = await axios.get(url, {
+      params,
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
+      },
+    });
+
+    if (
+      !response.data.tx ||
+      !response.data.tx.to ||
+      !response.data.tx.data
+    ) {
+      logger.error('No valid transaction received from 1inch');
+      return {
+        success: false,
+        error: 'No valid transaction received from 1inch',
+      };
+    }
+
+    return { success: true, data: response.data.tx };
+  }
+
   private async swapWithOneInch(
     chainId: number,
     amount: BigNumber,
     tokenIn: string,
     tokenOut: string,
-    slippage: number
+    slippage: number,
   ): Promise<{ success: boolean; receipt?: any; error?: string }> {
     if (!process.env.ONEINCH_API) {
       logger.error(
@@ -93,7 +163,6 @@ export class DexRouter {
       return { success: false, error: 'ONEINCH_API_KEY is not configured' };
     }
 
-    const url = `${process.env.ONEINCH_API}/${chainId}/swap`;
     const fromAddress = await this.signer.getAddress();
 
     if (slippage < 0 || slippage > 100) {
@@ -114,55 +183,23 @@ export class DexRouter {
       `1inch quote: ${amount.toString()} ${tokenIn} -> ${quoteResult.dstAmount} ${tokenOut}`
     );
 
-    const params: {
-      fromTokenAddress: string;
-      toTokenAddress: string;
-      amount: string;
-      fromAddress: string;
-      slippage: number;
-      connectorTokens?: string;
-    } = {
-      fromTokenAddress: tokenIn,
-      toTokenAddress: tokenOut,
-      amount: amount.toString(),
-      fromAddress,
-      slippage,
-    };
-
-    if (this.connectorTokens.length > 0) {
-      params['connectorTokens'] = this.connectorTokens;
-    }
-
-    logger.debug(
-      `Sending these parameters to 1inch: ${JSON.stringify(params)}`
-    );
-
     const retries = 3;
     const delayMs = 2000;
 
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        const response = await axios.get(url, {
-          params,
-          headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
-          },
-        });
-
-        if (
-          !response.data.tx ||
-          !response.data.tx.to ||
-          !response.data.tx.data
-        ) {
-          logger.error('No valid transaction received from 1inch');
-          return {
-            success: false,
-            error: 'No valid transaction received from 1inch',
-          };
+        const swapDataResult = await this.getSwapDataFromOneInch(
+          chainId,
+          amount,
+          tokenIn,
+          tokenOut,
+          slippage,
+          fromAddress
+        );
+        if (!swapDataResult.success) {
+          return { success: false, error: swapDataResult.error };
         }
-
-        const txFrom1inch = response.data.tx;
+        const txFrom1inch = swapDataResult.data!;
         logger.debug(`Transaction from 1inch: ${JSON.stringify(txFrom1inch)}`);
 
         const tx = {

@@ -15,7 +15,6 @@ import { addLiquidity } from './uniswap-helpers';
 import { expect } from 'chai';
 import { getPoolInfo, swapToWeth } from '../uniswap';
 import { getBalanceOfErc20 } from '../erc20';
-import { decimaledToWei, tokenChangeDecimals, weiToDecimaled } from '../utils';
 
 const UNISWAP_V3_ROUTER = '0xE592427A0AEce92De3Edee1F18E0157C05861564';
 const NONFUNGIBLE_POSITION_MANAGER_ADDRESS =
@@ -163,12 +162,12 @@ describe('Uniswap V3 Integration Tests', function () {
       wbtcSigner,
       MAINNET_CONFIG.WETH_ADDRESS
     );
-    const amountToSwapWad = decimaledToWei(0.1, 18);
+    const amountToSwap = ethers.BigNumber.from('10000000');
 
     await swapToWeth(
       wbtcSigner,
       wbtcToken.address,
-      amountToSwapWad,
+      amountToSwap,
       FeeAmount.MEDIUM,
       {
         wethAddress: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
@@ -184,7 +183,6 @@ describe('Uniswap V3 Integration Tests', function () {
       wbtcSigner,
       MAINNET_CONFIG.WETH_ADDRESS
     );
-    const amountToSwap = tokenChangeDecimals(amountToSwapWad, 18, 8);
     const amountSpent = tokenToSwapBalanceBefore.sub(tokenToSwapBalanceAfter);
     expect(
       amountSpent.eq(amountToSwap),

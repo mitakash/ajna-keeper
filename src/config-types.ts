@@ -5,6 +5,7 @@ import { FeeAmount } from '@uniswap/v3-sdk';
 import { logger } from './logging';
 import { getWethToken } from './uniswap';
 import { JsonRpcProvider } from './provider';
+import { ethers } from 'ethers';
 
 export interface AjnaConfigParams {
   erc20PoolFactory: Address;
@@ -81,11 +82,21 @@ export interface KickSettings {
   priceFactor: number;
 }
 
+// should match LiquiditySource enum in AjnaKeeperTaker.sol
+export enum LiquiditySource {
+  NONE = 0,   // invalid
+  ONEINCH = 1 // use 1inch `quote` API for pricing and `swap` API to swap
+}
+
 export interface TakeSettings {
-  /** Minimum amount of collateral in liquidation to arbTake. */
-  minCollateral: number;
-  /** Will only arbTake when auctionPrice < hpb * priceFactor. */
-  priceFactor: number;
+  /** Minimum amount of collateral in liquidation to take/arbTake. */
+  minCollateral?: number;
+  /** Will only arbTake when auctionPrice < hpb * hpbPriceFactor. */
+  hpbPriceFactor?: number;
+  /** Determines market price used to assess takeability */
+  liquiditySource?: LiquiditySource;
+  /** Will only take when auctionPrice < marketPrice * marketPriceFactor. */
+  marketPriceFactor?: number;
 }
 
 export interface CollectSettings {
@@ -171,6 +182,8 @@ export interface KeeperConfig {
   subgraphUrl: string;
   /** Path to encrypted keystore json file. See README for instructions on how to create this file.*/
   keeperKeystore: string;
+  /** Contract used for atomically taking liquidations with external liquidity */
+  keeperTaker?: string;
   /** If true, doesn't send any requests. */
   dryRun?: boolean;
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */
@@ -200,6 +213,7 @@ export interface KeeperConfig {
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {
   try {
     if (filePath.endsWith('.ts')) {
+      // FIXME: this prevents users from reading config files from other folders
       const imported = await import('../' + filePath);
       const config = imported.default;
       // await validateUniswapAddresses(config);
@@ -268,3 +282,36 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
 //     );
 //   }
 // }
+
+export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperConfig): void {
+  const hasArbTake = config.minCollateral !== undefined && config.hpbPriceFactor !== undefined;
+  const hasTake = config.liquiditySource !== undefined && config.marketPriceFactor !== undefined;
+
+  if (!hasArbTake && !hasTake) {
+    throw new Error('TakeSettings: Must configure arbTake (minCollateral, hpbPriceFactor) or take (liquiditySource, marketPriceFactor)');
+  }
+
+  if (hasTake) {
+    if (config.liquiditySource === LiquiditySource.NONE) {
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH');
+    }
+    if (config.liquiditySource !== LiquiditySource.ONEINCH) {
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH');
+    }
+    if (config.marketPriceFactor === undefined || config.marketPriceFactor <= 0) {
+      throw new Error('TakeSettings: marketPriceFactor must be positive');
+    }
+    if (!keeperConfig.keeperTaker) {
+      throw new Error('TakeSettings: keeperTaker required when take is configured');
+    }
+  }
+
+  if (hasArbTake) {
+    if (config.minCollateral!! <= 0) {
+      throw new Error('TakeSettings: minCollateral must be greater than 0');
+    }
+    if (config.hpbPriceFactor === undefined || config.hpbPriceFactor <= 0) {
+      throw new Error('TakeSettings: hpbPriceFactor must be positive');
+    }
+  }
+}
