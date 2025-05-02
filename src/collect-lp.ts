@@ -196,16 +196,16 @@ export class LpCollector {
       try {
         logger.debug(`Collecting LP reward as quote. pool: ${this.pool.name}`);
         
-        // ADDED CODE: Get LP balance before the transaction
+        // Get LP balance before the transaction
         const signerAddress = await this.signer.getAddress();
         const { lpBalance: lpBalanceBefore } = await bucket.getPosition(signerAddress);
         
         await bucketRemoveQuoteToken(bucket, this.signer, quoteToWithdraw);
         
-        // ADDED CODE: Get LP balance after the transaction
+        // Get LP balance after the transaction
         const { lpBalance: lpBalanceAfter } = await bucket.getPosition(signerAddress);
         
-        // ADDED CODE: Calculate the actual LP used
+        // Calculate the actual LP used
         const actualLpUsed = lpBalanceBefore.sub(lpBalanceAfter);
         
         logger.info(
@@ -219,12 +219,8 @@ export class LpCollector {
             quoteToWithdraw
           );
         }
-
-        // REMOVED CODE: 
-        // // FIXME: this calculates how much we LP we tried to redeem, not how much we actually redeemed
-        // return wdiv(quoteToWithdraw, exchangeRate);
         
-        // ADDED CODE: Return the actual LP used instead of calculating it
+        // Return the actual LP used
         return actualLpUsed;
       } catch (error) {
         logger.error(
@@ -253,7 +249,7 @@ export class LpCollector {
           `Collecting LP reward as collateral. pool ${this.pool.name}`
         );
         
-        // ADDED CODE: Get LP balance before the transaction
+        // Get LP balance before the transaction
         const signerAddress = await this.signer.getAddress();
         const { lpBalance: lpBalanceBefore } = await bucket.getPosition(signerAddress);
         
@@ -263,10 +259,10 @@ export class LpCollector {
           collateralToWithdraw
         );
         
-        // ADDED CODE: Get LP balance after the transaction
+        // Get LP balance after the transaction
         const { lpBalance: lpBalanceAfter } = await bucket.getPosition(signerAddress);
         
-        // ADDED CODE: Calculate the actual LP used
+        // Calculate the actual LP used
         const actualLpUsed = lpBalanceBefore.sub(lpBalanceAfter);
         
         logger.info(
@@ -280,13 +276,8 @@ export class LpCollector {
             collateralToWithdraw
           );
         }
-
-        // REMOVED CODE:
-        // const price = indexToPrice(bucketIndex);
-        // // FIXME: this calculates how much we LP we tried to redeem, not how much we actually redeemed
-        // return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
         
-        // ADDED CODE: Return the actual LP used instead of calculating it
+        // Return the actual LP used 
         return actualLpUsed;
       } catch (error) {
         logger.error(
