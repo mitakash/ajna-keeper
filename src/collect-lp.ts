@@ -205,9 +205,6 @@ export class LpCollector {
         // Get LP balance after the transaction
         const { lpBalance: lpBalanceAfter } = await bucket.getPosition(signerAddress);
         
-        // Calculate the actual LP used
-        const actualLpUsed = lpBalanceBefore.sub(lpBalanceAfter);
-        
         logger.info(
           `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
         );
@@ -221,7 +218,8 @@ export class LpCollector {
         }
         
         // Return the actual LP used
-        return actualLpUsed;
+        return lpBalanceBefore.sub(lpBalanceAfter);
+
       } catch (error) {
         logger.error(
           `Failed to collect LP reward as quote. pool: ${this.pool.name}`,
@@ -262,9 +260,6 @@ export class LpCollector {
         // Get LP balance after the transaction
         const { lpBalance: lpBalanceAfter } = await bucket.getPosition(signerAddress);
         
-        // Calculate the actual LP used
-        const actualLpUsed = lpBalanceBefore.sub(lpBalanceAfter);
-        
         logger.info(
           `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
         );
@@ -278,7 +273,8 @@ export class LpCollector {
         }
         
         // Return the actual LP used 
-        return actualLpUsed;
+        return lpBalanceBefore.sub(lpBalanceAfter);
+
       } catch (error) {
         logger.error(
           `Failed to collect LP reward as collateral. pool: ${this.pool.name}`,
