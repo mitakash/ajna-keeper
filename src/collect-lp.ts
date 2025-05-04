@@ -195,7 +195,16 @@ export class LpCollector {
     } else {
       try {
         logger.debug(`Collecting LP reward as quote. pool: ${this.pool.name}`);
+        
+        // Get LP balance before the transaction
+        const signerAddress = await this.signer.getAddress();
+        const { lpBalance: lpBalanceBefore } = await bucket.getPosition(signerAddress);
+        
         await bucketRemoveQuoteToken(bucket, this.signer, quoteToWithdraw);
+        
+        // Get LP balance after the transaction
+        const { lpBalance: lpBalanceAfter } = await bucket.getPosition(signerAddress);
+        
         logger.info(
           `Collected LP reward as quote. pool: ${this.pool.name}, amount: ${weiToDecimaled(quoteToWithdraw)}`
         );
@@ -207,9 +216,10 @@ export class LpCollector {
             quoteToWithdraw
           );
         }
+        
+        // Return the actual LP used
+        return lpBalanceBefore.sub(lpBalanceAfter);
 
-        // FIXME: this calculates how much we LP we tried to redeem, not how much we actually redeemed
-        return wdiv(quoteToWithdraw, exchangeRate);
       } catch (error) {
         logger.error(
           `Failed to collect LP reward as quote. pool: ${this.pool.name}`,
@@ -236,11 +246,20 @@ export class LpCollector {
         logger.debug(
           `Collecting LP reward as collateral. pool ${this.pool.name}`
         );
+        
+        // Get LP balance before the transaction
+        const signerAddress = await this.signer.getAddress();
+        const { lpBalance: lpBalanceBefore } = await bucket.getPosition(signerAddress);
+        
         await bucketRemoveCollateralToken(
           bucket,
           this.signer,
           collateralToWithdraw
         );
+        
+        // Get LP balance after the transaction
+        const { lpBalance: lpBalanceAfter } = await bucket.getPosition(signerAddress);
+        
         logger.info(
           `Collected LP reward as collateral. pool: ${this.pool.name}, token: ${this.pool.collateralSymbol}, amount: ${weiToDecimaled(collateralToWithdraw)}`
         );
@@ -252,10 +271,10 @@ export class LpCollector {
             collateralToWithdraw
           );
         }
+        
+        // Return the actual LP used 
+        return lpBalanceBefore.sub(lpBalanceAfter);
 
-        const price = indexToPrice(bucketIndex);
-        // FIXME: this calculates how much we LP we tried to redeem, not how much we actually redeemed
-        return wdiv(wdiv(collateralToWithdraw, price), exchangeRate);
       } catch (error) {
         logger.error(
           `Failed to collect LP reward as collateral. pool: ${this.pool.name}`,
