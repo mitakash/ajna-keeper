@@ -10,7 +10,7 @@ export interface GetLoanResponse {
 async function getLoans(subgraphUrl: string, poolAddress: string) {
   const query = gql`
     query {
-      loans (where: {inLiquidation: false, poolAddress: "${poolAddress}"}){
+      loans (where: {inLiquidation: false, poolAddress: "${poolAddress.toLowerCase()}"}){
         borrower
         thresholdPrice
       }
@@ -39,7 +39,7 @@ async function getLiquidations(
   // TODO: Should probably sort auctions by kickTime so that we kick the most profitable auctions first.
   const query = gql`
     query {
-      pool (id: "${poolAddress}") {
+      pool (id: "${poolAddress.toLowerCase()}") {
         hpb
         hpbIndex
         liquidationAuctions (where: {collateralRemaining_gt: "${minCollateral}"}) {
@@ -69,7 +69,7 @@ async function getHighestMeaningfulBucket(
       buckets(
         where: {
           deposit_gt: "${minDeposit}"
-          poolAddress: "${poolAddress}"
+          poolAddress: "${poolAddress.toLowerCase()}"
         }
         first: 1
         orderBy: bucketPrice
