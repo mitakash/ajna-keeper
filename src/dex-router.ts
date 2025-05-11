@@ -6,6 +6,7 @@ import { approveErc20, getAllowanceOfErc20, getDecimalsErc20 } from './erc20';
 import { logger } from './logging';
 import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
+import { swapWithUniversalRouter } from './universal-router-module';
 
 // TODO:
 // Why does this log errors and return failure rather than throwing exceptions?
@@ -255,16 +256,24 @@ export class DexRouter {
   }
 
   public async swap(
-    chainId: number,
-    amount: BigNumber,
-    tokenIn: string,
-    tokenOut: string,
-    to: string,
-    useOneInch: boolean,
-    slippage: number = 1,
-    feeAmount: number = 3000,
-    uniswapOverrides?: { wethAddress?: string; uniswapV3Router?: string }
-  ): Promise<{ success: boolean; error?: string }> {
+  chainId: number,
+  amount: BigNumber,
+  tokenIn: string,
+  tokenOut: string,
+  to: string,
+  useOneInch: boolean,
+  slippage: number = 1,
+  feeAmount: number = 3000,
+  uniswapOverrides?: { 
+    wethAddress?: string; 
+    uniswapV3Router?: string;
+    universalRouterAddress?: string;
+    permit2Address?: string;
+    poolFactoryAddress?: string;
+    defaultFeeTier?: number;
+    defaultSlippage?: number;
+  }
+    ): Promise<{ success: boolean; error?: string }> {
     if (!chainId || !amount || !tokenIn || !tokenOut || !to) {
       logger.error('Invalid parameters provided to swap');
       return { success: false, error: 'Invalid parameters provided to swap' };
@@ -294,7 +303,7 @@ export class DexRouter {
       return { success: false, error: `Insufficient balance for ${tokenIn}` };
     }
 
-    const effectiveUseOneInch = chainId === 43114 ? true : useOneInch;
+    const effectiveUseOneInch = useOneInch;
     if (effectiveUseOneInch) {
       const oneInchRouter = this.oneInchRouters[chainId];
       if (!oneInchRouter) {
@@ -342,6 +351,32 @@ export class DexRouter {
       );
       return result;
     } else {
+        // Check if we have Universal Router settings
+     if (uniswapOverrides?.universalRouterAddress && uniswapOverrides?.permit2Address && uniswapOverrides?.poolFactoryAddress) {
+       try {
+       logger.info(`Using Universal Router for swap`);
+      // Use the Universal Router if configuration is available
+      await swapWithUniversalRouter(
+        this.signer,
+        tokenIn,
+        adjustedAmount,
+        tokenOut,
+        slippage * 100, // Convert percentage to basis points
+        uniswapOverrides.universalRouterAddress,
+        uniswapOverrides.permit2Address,
+        uniswapOverrides.defaultFeeTier || feeAmount,
+        uniswapOverrides.poolFactoryAddress
+      );
+      logger.info(
+        `Universal Router swap successful: ${adjustedAmount.toString()} ${tokenIn} -> ${tokenOut}`
+      );
+      return { success: true };
+    } catch (error) {
+      logger.error(`Universal Router swap failed for token: ${tokenIn}: ${error}`);
+      return { success: false, error: `Universal Router swap failed: ${error}` };
+    }
+  } else {
+
       try {
         await swapToWeth(
           this.signer,
@@ -360,4 +395,5 @@ export class DexRouter {
       }
     }
   }
+}
 }

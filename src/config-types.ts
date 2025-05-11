@@ -173,6 +173,16 @@ export interface UniswapV3Overrides {
   uniswapV3Router?: string;
 }
 
+export interface UniversalRouterOverrides {
+  universalRouterAddress?: string;
+  wethAddress?: string;
+  permit2Address?: string;
+  defaultFeeTier?: number;
+  defaultSlippage?: number;
+  poolFactoryAddress?: string;
+}
+
+
 export interface KeeperConfig {
   /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
   ethRpcUrl: string;
@@ -208,6 +218,8 @@ export interface KeeperConfig {
   tokenAddresses?: { [tokenSymbol: string]: string };
   /** Optional list of token addresses used as intermediate connectors in 1inch swap routes */
   connectorTokens?: Array<string>;
+  /** Uniswap Universal Router for Uni v3 */
+  universalRouterOverrides?: UniversalRouterOverrides;
 }
 
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {

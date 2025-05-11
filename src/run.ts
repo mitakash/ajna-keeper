@@ -143,7 +143,11 @@ async function collectLpRewardsLoop({
     oneInchRouters: config?.oneInchRouters ?? {},
     connectorTokens: config?.connectorTokens ?? [],
   });
-  const exchangeTracker = new RewardActionTracker(signer, config, dexRouter);
+  const exchangeTracker = new RewardActionTracker(
+  signer,
+  config,
+  dexRouter,
+);
 
   for (const poolConfig of poolsWithCollectLpSettings) {
     const pool = poolMap.get(poolConfig.address)!;

@@ -51,17 +51,12 @@ function deserializeRewardAction(serial: string): {
 
 export class RewardActionTracker {
   private feeTokenAmountMap: Map<string, BigNumber> = new Map();
+  // New: Add a map to track retry attempts for each token
+  private retryCountMap: Map<string, number> = new Map();
 
   constructor(
     private signer: Signer,
-    private config: Pick<
-      KeeperConfig,
-      | 'uniswapOverrides'
-      | 'delayBetweenActions'
-      | 'pools'
-      | 'oneInchRouters'
-      | 'tokenAddresses'
-    >,
+    private config: KeeperConfig,
     private dexRouter: DexRouter
   ) {}
 
@@ -77,7 +72,7 @@ export class RewardActionTracker {
     const address = await this.signer.getAddress();
 
     const targetAddress =
-      chainId === 43114 && targetToken in (this.config.tokenAddresses || {})
+      targetToken in (this.config.tokenAddresses || {})
         ? this.config.tokenAddresses![targetToken]
         : this.config.uniswapOverrides?.wethAddress;
 
@@ -90,7 +85,11 @@ export class RewardActionTracker {
         error: `No target address for ${targetToken} on chain ${chainId}`,
       };
     }
-
+    // Combine uniswapOverrides and universalRouterOverrides into a single object to pass to swap
+    const combinedUniswapSettings = {
+      ...this.config.uniswapOverrides,
+      ...this.config.universalRouterOverrides
+    };
     const result = await this.dexRouter.swap(
       chainId,
       amount,
@@ -100,69 +99,126 @@ export class RewardActionTracker {
       useOneInch,
       slippage,
       feeAmount,
-      this.config.uniswapOverrides
+      combinedUniswapSettings, 
     );
     return result;
   }
 
   public async handleAllTokens(): Promise<void> {
+    // Define maximum number of retry attempts
+    const MAX_RETRY_COUNT = 3;
+    
+    // Get all non-zero token entries
     const nonZeroEntries = Array.from(this.feeTokenAmountMap.entries()).filter(
       ([_, amountWad]) => amountWad.gt(constants.Zero)
     );
+    
     for (const [key, amountWad] of nonZeroEntries) {
       const { rewardAction, token } = deserializeRewardAction(key);
-
-      switch (rewardAction.action) {
-        case RewardActionLabel.TRANSFER:
-          await this.transferReward(
-            rewardAction as TransferReward,
-            token,
-            amountWad
-          );
-          break;
-
-        case RewardActionLabel.EXCHANGE:
-          const tokenConfig = rewardAction as TokenConfig;
-          const slippage =
-            tokenConfig?.slippage ??
-            (rewardAction as ExchangeReward).slippage ??
-            1;
-          const targetToken =
-            tokenConfig?.targetToken ??
-            (rewardAction as ExchangeReward).targetToken ??
-            'weth';
-          const useOneInch =
-            tokenConfig?.useOneInch ??
-            (rewardAction as ExchangeReward).useOneInch ??
-            false;
-          const feeAmount =
-            (rewardAction as ExchangeReward).fee ?? tokenConfig?.feeAmount;
-
-          const swapResult = await this.swapToken(
-            await this.signer.getChainId(),
-            token,
-            amountWad,
-            targetToken,
-            useOneInch,
-            slippage,
-            feeAmount
-          );
-          if (swapResult.success) {
-            this.removeToken(rewardAction, token, amountWad);
-            logger.info(
-              `Successfully swapped ${weiToDecimaled(amountWad)} of ${token} to ${targetToken}`
-            );
-            await delay(this.config.delayBetweenActions);
-          } else {
-            logger.error(
-              `Failed to swap ${weiToDecimaled(amountWad)} of ${token}: ${swapResult.error}`
-            );
-          }
-          break;
-
-        default:
-          logger.warn('Unsupported reward action');
+      
+      // Get current retry count for this token (default to 0 if not present)
+      const retryCount = this.retryCountMap.get(key) || 0;
+      
+      // Skip if we've already tried too many times
+      if (retryCount >= MAX_RETRY_COUNT) {
+        logger.warn(`Skipping token ${token} after ${MAX_RETRY_COUNT} failed swap attempts - removing from queue`);
+        this.removeToken(rewardAction, token, amountWad);
+        this.retryCountMap.delete(key); // Clean up retry counter
+        continue;
       }
+
+      try {
+        switch (rewardAction.action) {
+          case RewardActionLabel.TRANSFER:
+            await this.transferReward(
+              rewardAction as TransferReward,
+              token,
+              amountWad
+            );
+            break;
+
+          case RewardActionLabel.EXCHANGE:
+            // Extract swap parameters
+            const tokenConfig = rewardAction as TokenConfig;
+            const slippage =
+              tokenConfig?.slippage ??
+              (rewardAction as ExchangeReward).slippage ??
+              1;
+            const targetToken =
+              tokenConfig?.targetToken ??
+              (rewardAction as ExchangeReward).targetToken ??
+              'weth';
+            const useOneInch =
+              tokenConfig?.useOneInch ??
+              (rewardAction as ExchangeReward).useOneInch ??
+              false;
+            const feeAmount =
+              (rewardAction as ExchangeReward).fee ?? tokenConfig?.feeAmount;
+
+            // If not the first attempt, log that we're retrying
+            if (retryCount > 0) {
+              logger.info(`Retry attempt ${retryCount + 1}/${MAX_RETRY_COUNT} for swapping ${weiToDecimaled(amountWad)} of ${token}`);
+            }
+            
+            // Attempt the swap
+            const swapResult = await this.swapToken(
+              await this.signer.getChainId(),
+              token,
+              amountWad,
+              targetToken,
+              useOneInch,
+              slippage,
+              feeAmount
+            );
+            
+            if (swapResult.success) {
+              // Success: remove token and clear retry count
+              this.removeToken(rewardAction, token, amountWad);
+              this.retryCountMap.delete(key);
+              logger.info(
+                `Successfully swapped ${weiToDecimaled(amountWad)} of ${token} to ${targetToken}`
+              );
+            } else {
+              // Failure: increment retry count
+              const newRetryCount = retryCount + 1;
+              this.retryCountMap.set(key, newRetryCount);
+              
+              logger.error(
+                `Failed to swap ${weiToDecimaled(amountWad)} of ${token} (attempt ${newRetryCount}/${MAX_RETRY_COUNT}): ${swapResult.error}`
+              );
+              
+              // If we've reached max retries, remove the token
+              if (newRetryCount >= MAX_RETRY_COUNT) {
+                logger.warn(`Max retry count reached for ${token} - removing from queue`);
+                this.removeToken(rewardAction, token, amountWad);
+                this.retryCountMap.delete(key);
+              }
+              // Otherwise we'll try again on next loop iteration
+            }
+            break;
+
+          default:
+            logger.warn('Unsupported reward action');
+        }
+      } catch (error) {
+        // Handle unexpected errors
+        logger.error(`Error processing reward action for ${token}:`, error);
+        
+        // Increment retry count for the next attempt
+        const newRetryCount = retryCount + 1;
+        this.retryCountMap.set(key, newRetryCount);
+        
+        // Remove token if max retries reached
+        if (newRetryCount >= MAX_RETRY_COUNT) {
+          logger.warn(`Removing token ${token} after ${MAX_RETRY_COUNT} failed attempts due to errors`);
+          this.removeToken(rewardAction, token, amountWad);
+          this.retryCountMap.delete(key);
+        }
+      }
+      
+      // The config.delayBetweenActions (61 seconds in current config) provides
+      // natural spacing between actions and retry attempts
+      await delay(this.config.delayBetweenActions);
     }
   }
 
@@ -184,6 +240,12 @@ export class RewardActionTracker {
     const key = serializeRewardAction(rewardAction, tokenCollected);
     const currAmount = this.feeTokenAmountMap.get(key) ?? constants.Zero;
     this.feeTokenAmountMap.set(key, currAmount.sub(amountWadToSub));
+  }
+
+  // Helper to manually clear retry count if needed
+  clearRetryCount(rewardAction: RewardAction, tokenCollected: string) {
+    const key = serializeRewardAction(rewardAction, tokenCollected);
+    this.retryCountMap.delete(key);
   }
 
   async transferReward(
