@@ -216,7 +216,7 @@ export class RewardActionTracker {
         }
       }
       
-      // The config.delayBetweenActions (61 seconds in current config) provides
+      // The config.delayBetweenActions provides
       // natural spacing between actions and retry attempts
       await delay(this.config.delayBetweenActions);
     }

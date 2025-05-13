@@ -303,8 +303,8 @@ export class DexRouter {
       return { success: false, error: `Insufficient balance for ${tokenIn}` };
     }
 
-    const effectiveUseOneInch = useOneInch;
-    if (effectiveUseOneInch) {
+    
+    if (useOneInch) {
       const oneInchRouter = this.oneInchRouters[chainId];
       if (!oneInchRouter) {
         logger.error(`No 1inch router defined for chainId ${chainId}`);
