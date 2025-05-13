@@ -36,4 +36,32 @@ describe('NonceTracker', () => {
     const nonceAfterReset = await NonceTracker.getNonce(signer);
     expect(nonceAfterReset).equals(10);
   });
+
+  it('resets nonce when transaction fails', async () => {
+  const address = await signer.getAddress();
+  sinon.stub(signer, 'getTransactionCount').resolves(10);
+  
+  // First, let's get a nonce and increment it
+  await NonceTracker.getNonce(signer); // Should be 10
+  await NonceTracker.getNonce(signer); // Should be 11
+  
+  // Set up a transaction function that will fail
+  const txFunction = async (nonce: number) => {
+    throw new Error('Transaction failed');
+  };
+
+  // Attempt transaction and expect it to fail
+  try {
+    await NonceTracker.queueTransaction(signer, txFunction);
+    // Should not reach here
+    expect.fail('Transaction should have failed');
+  } catch (error) {
+    // Expected to fail
+  }
+
+  // Instead of checking if resetNonce was called, check if the nonce was actually reset
+  // by getting the next nonce - it should be 10 (reset) and not 12 (incremented)
+  const nextNonce = await NonceTracker.getNonce(signer);
+  expect(nextNonce).to.equal(10);
+  });
 });
