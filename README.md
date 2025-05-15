@@ -433,4 +433,4 @@ yarn integration-tests
 
 ## Disclaimer
 
-User assumes all risk of data presented and transactions placed by this keeper.
+User assumes all risk of data presented and transactions placed by this keeper; see license for more details.
