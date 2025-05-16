@@ -7,6 +7,7 @@ import { DexRouter } from '../dex-router';
 import * as erc20 from '../erc20';
 import { MAINNET_CONFIG } from '../integration-tests/test-config';
 import { logger } from '../logging';
+import { NonceTracker } from '../nonce';
 
 chai.use(chaiAsPromised);
 
@@ -88,6 +89,13 @@ describe('DexRouter', () => {
     sinon.stub(ethers, 'Contract').callsFake((address, abi, provider) => {
       return contractStub;
     });
+
+    sinon.stub(NonceTracker, 'queueTransaction').callsFake(
+     async (signer, txFunc) => {
+      // Simply execute the transaction function with a dummy nonce
+      return await txFunc(10);
+     }
+    );
 
     dexRouter = new DexRouter(signer, {
       oneInchRouters: {
@@ -283,6 +291,12 @@ describe('DexRouter', () => {
           feeAmount
         );
 
+        console.log('Result (approve insufficient):', result);
+        if (!result.success) {
+        console.log('Error details (approve insufficient):', result.error);
+        }
+
+
         expect(result.success).to.be.true;
         expect(getDecimalsStub.calledOnce).to.be.true;
         expect(getAllowanceStub.calledOnce).to.be.true;
@@ -331,6 +345,11 @@ describe('DexRouter', () => {
           slippage,
           feeAmount
         );
+        
+        console.log('Result (skip approval):', result);
+        if (!result.success) {
+        console.log('Error details (skip approval):', result.error);
+        }
 
         expect(result.success).to.be.true;
         expect(getDecimalsStub.calledOnce).to.be.true;
@@ -414,6 +433,11 @@ describe('DexRouter', () => {
           slippage,
           feeAmount
         );
+        
+        console.log('Result (execute transaction):', result);
+        if (!result.success) {
+        console.log('Error details (execute transaction):', result.error);
+        }
 
         expect(result.success).to.be.true;
         expect(axiosGetStub.calledTwice).to.be.true;
@@ -503,6 +527,11 @@ describe('DexRouter', () => {
         tokenOut,
         slippage
       );
+      
+      console.log('Result (1inch swap):', result);
+      if (!result.success) {
+      console.log('Error details (1inch swap):', result.error);
+      }   
 
       expect(result.success).to.be.true;
       expect(axiosGetStub.calledTwice).to.be.true;

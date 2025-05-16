@@ -230,31 +230,34 @@ export async function swapToWeth(
   const currentBlockTimestamp = currentBlock.timestamp;
 
   const signerAddress = await signer.getAddress();
-  try {
-    logger.debug(
+
+  logger.debug(
       `Swapping to WETH for token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, tokenToSwap.decimals)}`
     );
-    const nonce = NonceTracker.getNonce(signer);
-    const tx = await swapRouter.exactInputSingle(
-      {
-        tokenIn: tokenToSwap.address,
-        tokenOut: weth.address,
-        fee: feeAmount,
-        recipient: recipient,
-        deadline: currentBlockTimestamp + 60 * 60 * 60,
-        amountIn: amount,
-        amountOutMinimum: minOut,
-        sqrtPriceLimitX96: ethers.constants.Zero,
-      },
-      { nonce }
-    );
-    await tx.wait();
+
+  try {
+    await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+      const tx = await swapRouter.exactInputSingle(
+        {
+          tokenIn: tokenToSwap.address,
+          tokenOut: weth.address,
+          fee: feeAmount,
+          recipient: recipient,
+          deadline: currentBlockTimestamp + 60 * 60 * 60,
+          amountIn: amount,
+          amountOutMinimum: minOut,
+          sqrtPriceLimitX96: ethers.constants.Zero,
+        },
+        { nonce: nonce.toString() }
+      );
+      return await tx.wait();
+    });
+    
     logger.info(
       `Swap to WETH successful for token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, tokenToSwap.decimals)}`
     );
   } catch (error) {
     logger.error(`Swap to WETH failed for token: ${tokenAddress}`, error);
-    NonceTracker.resetNonce(signer, signerAddress);
     throw error;
   }
 }
