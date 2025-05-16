@@ -9,6 +9,7 @@ import { BigNumber, ethers } from 'ethers';
 import { convertSwapApiResponseToDetailsBytes } from './1inch';
 import { AjnaKeeperTaker__factory } from '../typechain-types';
 import { getDecimalsErc20 } from './erc20';
+import { NonceTracker } from './nonce';
 
 interface HandleTakeParams {
   signer: Signer;
@@ -341,17 +342,21 @@ export async function takeLiquidation({
         logger.debug(
           `Sending Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
         );
-        const tx = await keeperTaker.takeWithAtomicSwap(
+        await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+          const tx = await keeperTaker.takeWithAtomicSwap(
           pool.poolAddress,
           liquidation.borrower,
-            liquidation.auctionPrice,
+          liquidation.auctionPrice,
           liquidation.collateral,
-          poolConfig.take.liquiditySource,
+          Number(poolConfig.take.liquiditySource),
           dexRouter.getRouter(await signer.getChainId())!!,
-          convertSwapApiResponseToDetailsBytes(swapData.data)
-        );
-        await tx.wait();
-        logger.info(
+          convertSwapApiResponseToDetailsBytes(swapData.data),
+          { nonce: nonce.toString() }
+          );
+          return await tx.wait();
+        });
+	
+	logger.info(
           `Take successful - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
         );
       } catch (error) {

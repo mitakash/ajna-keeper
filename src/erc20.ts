@@ -45,28 +45,18 @@ export async function getAllowanceOfErc20(
   return await contract.allowance(signerAddress, allowedAddress);
 }
 
+
 export async function approveErc20(
-  signer: Signer,
-  tokenAddress: string,
-  allowedAddress: string,
-  amount: BigNumber
-) {
-  const signerAddress = await signer.getAddress();
-  try {
-    const nonce = NonceTracker.getNonce(signer);
+  signer: Signer, 
+  tokenAddress: string, 
+  allowedAddress: string, 
+  amount: BigNumber) {
+  return await NonceTracker.queueTransaction(signer, async (nonce: number) => {
     const contractUnconnected = new Contract(tokenAddress, Erc20Abi, signer);
     const contract = contractUnconnected.connect(signer);
-    const tx: TransactionResponse = await contract.approve(
-      allowedAddress,
-      amount,
-      { nonce }
-    );
-    console.log('submitted tx', tx.hash)
+    const tx = await contract.approve(allowedAddress, amount, { nonce: nonce.toString() });
     return await tx.wait();
-  } catch (error) {
-    NonceTracker.resetNonce(signer, signerAddress);
-    throw error;
-  }
+  });
 }
 
 export async function transferErc20(
@@ -75,17 +65,13 @@ export async function transferErc20(
   recipient: string,
   amount: BigNumber
 ) {
-  const signerAddress = await signer.getAddress();
-  try {
-    const nonce = NonceTracker.getNonce(signer);
+  return await NonceTracker.queueTransaction(signer, async (nonce: number) => {
     const contractUnconnected = new Contract(tokenAddress, Erc20Abi, signer);
     const contract = contractUnconnected.connect(signer);
-    const tx: TransactionResponse = await contract.transfer(recipient, amount, {
-      nonce,
+    const tx = await contract.transfer(recipient, amount, { 
+      nonce: nonce.toString() 
     });
     return await tx.wait();
-  } catch (error) {
-    NonceTracker.resetNonce(signer, signerAddress);
-    throw error;
-  }
+  });
 }
+

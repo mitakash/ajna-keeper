@@ -7,6 +7,7 @@ import { logger } from './logging';
 import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
 import { swapWithUniversalRouter } from './universal-router-module';
+import { NonceTracker } from './nonce';
 
 // TODO:
 // Why does this log errors and return failure rather than throwing exceptions?
@@ -233,10 +234,18 @@ export class DexRouter {
           };
         }
 
-        const txResponse = await this.signer.sendTransaction(tx);
-        const receipt = await txResponse.wait();
-        logger.info(
-          `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${txResponse.hash}`
+        const receipt = await NonceTracker.queueTransaction(this.signer, async (nonce: number) => {
+        // Create a new txWithNonce object that includes the nonce
+        const txWithNonce = {
+          ...tx,
+          nonce
+        };
+        const txResponse = await this.signer.sendTransaction(txWithNonce);
+        return await txResponse.wait();
+        });
+	
+	logger.info(
+          `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${receipt.transactionHash}`
         );
         return { success: true, receipt };
       } catch (error: Error | any) {
