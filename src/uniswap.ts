@@ -29,7 +29,7 @@ import {
 import ERC20_ABI from './abis/erc20.abi.json';
 import { logger } from './logging';
 import { NonceTracker } from './nonce';
-import { tokenChangeDecimals, weiToDecimaled } from './utils';
+import { weiToDecimaled } from './utils';
 import { approveErc20, getAllowanceOfErc20 } from './erc20';
 import { UniswapV3Overrides } from './config-types';
 
