@@ -14,8 +14,8 @@ const config: KeeperConfig = {
   keeperKeystore: 'FULL_PATH/keystore.json', //YOU NEED TO CHANGE THIS
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 484490,
-  delayBetweenRuns: 15,  //IN SECONDS
-  delayBetweenActions: 61, //VERY CONSERVATIVE 61 SECONDS BETWEEN ACTIONS
+  delayBetweenRuns: 2,  //IN SECONDS
+  delayBetweenActions: 31, //VERY CONSERVATIVE 31 SECONDS BETWEEN ACTIONS
   logLevel: 'debug',
   
   tokenAddresses: {
