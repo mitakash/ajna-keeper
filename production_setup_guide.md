@@ -75,7 +75,7 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 
 ## Step 3: Known Good Contract Addresses
 
-[Ajna Deployment Addresses with Brige Addresses](https://faqs.ajna.finance/info/deployment-addresses-and-bridges)
+[Ajna Deployment Addresses with Bridge Addresses](https://faqs.ajna.finance/info/deployment-addresses-and-bridges)
 
 ### Uniswap Universal Router Addresses
 
@@ -296,7 +296,7 @@ This is typically caused by:
 ### Transaction Failures
 1. Check gas price settings
 2. Verify wallet has sufficient balance
-2. Monitor for nonce issues in logs
-3. Check RPC provider status
+3. Monitor for nonce issues in logs
+4. Check RPC provider status
 
 This production setup guide reflects real-world deployment experience and should significantly reduce setup time and common issues when running the Ajna keeper in production environments.
