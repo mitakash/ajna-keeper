@@ -28,11 +28,34 @@ npm install --global yarn
 yarn --frozen-lockfile
 ```
 
+Note: If you encounter dependency conflicts or version mismatches, try:
+
+```bash
+rm yarn.lock
+yarn install
+```
+
 Compile to generate types using TypeChain:
 
 ```bash
 yarn compile
 ```
+
+## Production Deployment
+
+**For production deployments**, see the **[Production Setup Guide](production_setup_guide.md)**.
+
+The production guide covers the recommended approach using hosted services:
+- Hosted RPC setup (Alchemy/QuickNode) vs local nodes
+- Hosted subgraph deployment (BuiltByMom fork + Goldsky) vs local Graph Node  
+- Verified contract addresses for major chains (Avalanche, Hemi, Base, Arbitrum)
+- API rate limits and service tier recommendations
+- Real-world configuration examples
+- Production monitoring and troubleshooting
+- See `example-avalanche-config.ts` and `example-hemi-config.ts` for chain-specific examples.
+
+*The production approach is more reliable and easier to maintain than running everything locally.*
+
 
 ### Create a new config file
 
