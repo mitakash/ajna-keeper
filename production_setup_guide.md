@@ -140,8 +140,8 @@ const config: KeeperConfig = {
   keeperKeystore: 'PUT_YOUR_FULL_PATH_HERE/keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11', //This is generally same on most chains
   multicallBlock: 11907934,  //This will vary depending on what chain you are on
-  delayBetweenRuns: 15,
-  delayBetweenActions: 61, //conservative for free tier 1inch api key
+  delayBetweenRuns: 2, //minimum to quickly get through all loops
+  delayBetweenActions: 31, //free tier 1inch api key limits to 100K call per month, possibly increase
   
   // 1inch configuration
   oneInchRouters: {
@@ -186,8 +186,8 @@ const config: KeeperConfig = {
   keeperKeystore: 'PUT_YOUR_FULL_PATH_HERE/keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 484490,
-  delayBetweenRuns: 15,
-  delayBetweenActions: 61,
+  delayBetweenRuns: 2,
+  delayBetweenActions: 31, // this could be lower, set high for 1inch free tier api, no 1inch api on Hemi
   
   // Universal Router configuration for Hemi
   universalRouterOverrides: {
