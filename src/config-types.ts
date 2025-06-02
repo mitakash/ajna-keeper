@@ -150,6 +150,16 @@ interface CollectLpRewardSettings {
   rewardActionCollateral?: RewardAction;
 }
 
+
+export interface SettlementConfig {
+  enabled: boolean;
+  minAuctionAge?: number;        // Minimum auction age in seconds before settlement (default: 3600 = 1 hour)
+  maxBucketDepth?: number;       // Number of buckets to process per settlement call (default: 50)
+  maxIterations?: number;        // Maximum settlement iterations before giving up (default: 10)
+  checkBotIncentive?: boolean;   // Only settle if bot has bonds/rewards to claim (default: true)
+}
+
+
 export interface PoolConfig {
   name: string;
   address: Address;
@@ -164,6 +174,8 @@ export interface PoolConfig {
   collectBond?: boolean;
   /** Will only collect reward if settings are provided. */
   collectLpReward?: CollectLpRewardSettings;
+  /** Will do settlement if settings are provided. */
+  settlement?: SettlementConfig;
 }
 
 export interface UniswapV3Overrides {

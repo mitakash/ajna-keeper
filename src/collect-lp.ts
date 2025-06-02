@@ -221,6 +221,13 @@ export class LpCollector {
         return lpBalanceBefore.sub(lpBalanceAfter);
 
       } catch (error) {
+        // Re-throw AuctionNotCleared errors to trigger reactive settlement
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("AuctionNotCleared")) {
+          logger.debug(`Re-throwing AuctionNotCleared error from ${this.pool.name} to trigger reactive settlement`);
+          throw error; // Re-throw to outer catch block
+        }
+
         logger.error(
           `Failed to collect LP reward as quote. pool: ${this.pool.name}`,
           error
@@ -276,11 +283,15 @@ export class LpCollector {
         return lpBalanceBefore.sub(lpBalanceAfter);
 
       } catch (error) {
-        logger.error(
-          `Failed to collect LP reward as collateral. pool: ${this.pool.name}`,
-          error
-        );
-      }
+
+        // NEW: Re-throw AuctionNotCleared errors to trigger reactive settlement
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        if (errorMessage.includes("AuctionNotCleared")) {
+          logger.debug(`Re-throwing AuctionNotCleared error from ${this.pool.name} to trigger reactive settlement`);
+          throw error; // Re-throw to outer catch block
+        }
+	      
+	logger.error(`Failed to collect LP reward as collateral. pool: ${this.pool.name}`, error);}
     }
     return constants.Zero;
   }

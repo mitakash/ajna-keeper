@@ -15,6 +15,7 @@ import {
   approve,
 } from '@ajna-finance/sdk/dist/contracts/erc20-pool';
 import { Liquidation } from '@ajna-finance/sdk/dist/classes/Liquidation';
+import { settle } from '@ajna-finance/sdk/dist/contracts/pool';
 
 export async function poolWithdrawBonds(pool: FungiblePool, signer: Signer) {
   const contractPoolWithSigner = pool.contract.connect(signer);
@@ -123,3 +124,26 @@ export async function liquidationArbTake(
     return await tx.verifyAndSubmit();
   });
 }
+
+export async function poolSettle(
+  pool: FungiblePool, 
+  signer: Signer, 
+  borrower: string, 
+  bucketDepth: number = 50
+) {
+  const contractPoolWithSigner = pool.contract.connect(signer);
+  
+  await NonceTracker.queueTransaction(signer, async (nonce) => {
+    const tx = await settle(
+      contractPoolWithSigner,
+      borrower,
+      bucketDepth,
+      {
+        nonce: nonce.toString(),
+        gasLimit: 800000 // Conservative gas limit for settlement
+      }
+    );
+    return await tx.verifyAndSubmit();
+  });
+}
+
