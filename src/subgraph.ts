@@ -84,5 +84,50 @@ async function getHighestMeaningfulBucket(
   return result;
 }
 
+export interface GetUnsettledAuctionsResponse {
+  liquidationAuctions: {
+    borrower: string;
+    kickTime: string;
+    debtRemaining: string;
+    collateralRemaining: string;
+    neutralPrice: string;
+    debt: string;
+    collateral: string;
+  }[];
+}
+
+async function getUnsettledAuctions(subgraphUrl: string, poolAddress: string) {
+  const query = gql`
+    query GetUnsettledAuctions($poolId: String!) {
+      liquidationAuctions(
+        where: {
+          pool: $poolId,
+          settled: false
+        }
+      ) {
+        borrower
+        kickTime
+        debtRemaining
+        collateralRemaining
+        neutralPrice
+        debt
+        collateral
+      }
+    }
+  `;
+
+  const result: GetUnsettledAuctionsResponse = await request(subgraphUrl, query, {
+    poolId: poolAddress.toLowerCase()
+  });
+  return result;
+}
+
+
 // Exported as default module to enable mocking in tests.
-export default { getLoans, getLiquidations, getHighestMeaningfulBucket };
+export default { 
+  getLoans, 
+  getLiquidations, 
+  getHighestMeaningfulBucket, 
+  getUnsettledAuctions 
+};
+

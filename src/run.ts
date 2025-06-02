@@ -13,6 +13,7 @@ import { LpCollector } from './collect-lp';
 import { logger } from './logging';
 import { RewardActionTracker } from './reward-action-tracker';
 import { DexRouter } from './dex-router';
+import { handleSettlements, tryReactiveSettlement } from './settlement';
 
 type PoolMap = Map<string, FungiblePool>;
 
@@ -28,6 +29,7 @@ export async function startKeeperFromConfig(config: KeeperConfig) {
 
   kickPoolsLoop({ poolMap, config, signer });
   takePoolsLoop({ poolMap, config, signer });
+  settlementLoop({ poolMap, config, signer });
   collectBondLoop({ poolMap, config, signer });
   collectLpRewardsLoop({ poolMap, config, signer });
 }
@@ -122,7 +124,16 @@ async function collectBondLoop({ poolMap, config, signer }: KeepPoolParams) {
     for (const poolConfig of poolsWithCollectBondSettings) {
       const pool = poolMap.get(poolConfig.address)!;
       try {
-        await collectBondFromPool({ pool, signer, config });
+        await collectBondFromPool({ 
+          pool, 
+          signer, 
+          poolConfig,  // Pass full poolConfig instead of just config
+          config: {
+            dryRun: config.dryRun,
+            subgraphUrl: config.subgraphUrl,
+            delayBetweenActions: config.delayBetweenActions
+          }
+        });
         await delay(config.delayBetweenActions);
       } catch (error) {
         logger.error(`Failed to collect bond from pool: ${pool.name}.`, error);
@@ -131,6 +142,38 @@ async function collectBondLoop({ poolMap, config, signer }: KeepPoolParams) {
     await delay(config.delayBetweenRuns);
   }
 }
+
+async function settlementLoop({ poolMap, config, signer }: KeepPoolParams) {
+  const poolsWithSettlementSettings = config.pools.filter(hasSettlementSettings);
+  while (true) {
+    for (const poolConfig of poolsWithSettlementSettings) {
+      const pool = poolMap.get(poolConfig.address)!;
+      try {
+        await handleSettlements({
+          pool,
+          poolConfig: poolConfig as RequireFields<PoolConfig, 'settlement'>,
+          signer,
+          config: {
+            dryRun: config.dryRun,
+            subgraphUrl: config.subgraphUrl,
+            delayBetweenActions: config.delayBetweenActions
+          }
+        });
+        await delay(config.delayBetweenActions);
+      } catch (error) {
+        logger.error(`Failed to handle settlements for pool: ${pool.name}.`, error);
+      }
+    }
+    await delay(config.delayBetweenRuns);
+  }
+}
+
+function hasSettlementSettings(
+  config: PoolConfig
+): config is RequireFields<PoolConfig, 'settlement'> {
+  return !!config.settlement?.enabled;
+}
+
 
 async function collectLpRewardsLoop({
   poolMap,
@@ -170,11 +213,41 @@ async function collectLpRewardsLoop({
         await delay(config.delayBetweenActions);
       } catch (error) {
         const pool = poolMap.get(poolConfig.address)!;
-        logger.error(
-          `Failed to collect LP reward from pool: ${pool.name}.`,
-          error
-        );
-      }
+
+	//Properly handle TypeScript 'unknown' error type
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Check if this is specifically an AuctionNotCleared error
+        if (errorMessage.includes("AuctionNotCleared")) {
+          logger.info(`AuctionNotCleared detected - attempting settlement for ${pool.name}`);
+    
+        try {
+          const settled = await tryReactiveSettlement({
+            pool,
+            poolConfig,
+            signer,
+            config: {
+              dryRun: config.dryRun,
+              subgraphUrl: config.subgraphUrl,
+              delayBetweenActions: config.delayBetweenActions
+            }
+          });
+  
+          if (settled) {
+            logger.info(`Retrying LP collection after settlement in ${pool.name}`);
+            await collector.collectLpRewards();
+            await delay(config.delayBetweenActions);
+          } else {
+            logger.warn(`Settlement attempted but bonds still locked in ${pool.name}`);
+          }
+        } catch (settlementError) {
+          logger.error(`Settlement failed for ${pool.name}:`, settlementError);
+        }
+       } else {
+         // Handle all other errors normally
+         logger.error(`Failed to collect LP reward from pool: ${pool.name}.`, error);
+       }
+       }  
     }
     await exchangeTracker.handleAllTokens();
     await delay(config.delayBetweenRuns);
