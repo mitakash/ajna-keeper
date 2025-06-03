@@ -182,7 +182,7 @@ Settlement processes auctions in multiple iterations if needed, settling debt ag
 - `minAuctionAge` - Minimum time (seconds) to wait before settling an auction
 - `maxBucketDepth` - Number of buckets to process per settlement transaction
 - `maxIterations` - Maximum settlement iterations per auction
-- `checkBotIncentive` - 'true' mean only settle if bot is the kicker with bond rewards, 'false' means you are altruistically protecting the pool.
+- `checkBotIncentive` - 'true' means only settle if bot is the kicker with bond rewards, 'false' means you are altruistically protecting the pool.
 
 Settlement integrates seamlessly with other keeper operations - when bond collection or LP reward collection fails due to locked bonds, the keeper automatically attempts settlement before retrying the operation.
 

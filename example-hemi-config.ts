@@ -82,7 +82,7 @@ const config: KeeperConfig = {
       // Settlement configuration for test tokens - aggressive settings for faster testing
       settlement: {
         enabled: true,                    // Enable settlement
-        minAuctionAge: 18000,             // Wait 5 hour before settling (good for testing)
+        minAuctionAge: 18000,             // Wait 5 hours before settling (good for testing)
         maxBucketDepth: 50,              // Process 50 buckets per settlement call
         maxIterations: 10,               // Max 10 settlement iterations
         checkBotIncentive: false,         // set to false to help pool altruistically

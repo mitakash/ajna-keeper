@@ -316,7 +316,7 @@ This is typically caused by:
 **Settlement Performance:**
 1. High iteration counts may indicate complex debt structures
 2. Failed settlements with `checkBotIncentive: true` suggest no rewards available
-3. Consider disabling `checkBotIncentive` or setting to 'false' for critical system health pools
+3. Consider setting checkBotIncentive to false
 
 **Example Settlement Log Analysis:**
 ```bash
