@@ -161,6 +161,31 @@ Collects liquidation bonds (which were used to kick loans) once they are fully c
 
 Redeems rewarded LP for either Quote or Collateral based on config. Note: This will only collect LP rewarded while the bot is running and will not collect deposits.
 
+### Settlement
+
+Automatically settles completed auctions to unlock kicker bonds and handle bad debt scenarios. Settlement is triggered when:
+
+- Auctions have ended with remaining bad debt (collateral = 0, debt > 0)
+- Kicker bonds are locked and preventing normal operations
+- Auctions meet the configured minimum age requirement
+
+Settlement processes auctions in multiple iterations if needed, settling debt against available buckets in the pool. The keeper can be configured to only settle auctions where the bot has bond rewards to claim, ensuring profitability.
+
+**Key Benefits:**
+- **Automated bond recovery**: Unlocks kicker bonds automatically when auctions complete
+- **Bad debt handling**: Processes auctions with remaining debt that need settlement
+- **Reactive operation**: Triggers settlement when bond collection or LP collection fails due to locked bonds
+- **Configurable timing**: Respects minimum auction age before attempting settlement
+
+**Settlement Configuration:**
+- `enabled` - Enable/disable settlement for this pool
+- `minAuctionAge` - Minimum time (seconds) to wait before settling an auction
+- `maxBucketDepth` - Number of buckets to process per settlement transaction
+- `maxIterations` - Maximum settlement iterations per auction
+- `checkBotIncentive` - 'true' means only settle if bot is the kicker with bond rewards, 'false' means you are altruistically protecting the pool.
+
+Settlement integrates seamlessly with other keeper operations - when bond collection or LP reward collection fails due to locked bonds, the keeper automatically attempts settlement before retrying the operation.
+
 ## Configuration
 
 ### Configuration file

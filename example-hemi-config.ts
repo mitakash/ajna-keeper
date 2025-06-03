@@ -79,6 +79,15 @@ const config: KeeperConfig = {
           fee: FeeAmount.MEDIUM,
         },
       },
+      // Settlement configuration for test tokens - aggressive settings for faster testing
+      settlement: {
+        enabled: true,                    // Enable settlement
+        minAuctionAge: 18000,             // Wait 5 hours before settling (good for testing)
+        maxBucketDepth: 50,              // Process 50 buckets per settlement call
+        maxIterations: 10,               // Max 10 settlement iterations
+        checkBotIncentive: false,         // set to false to help pool altruistically
+      },
+
     },
     {
       name: 'USD_T4 / USD_T3',
@@ -110,8 +119,15 @@ const config: KeeperConfig = {
           fee: FeeAmount.MEDIUM,
         },
       },
+      // Settlement configuration - similar to first pool
+      settlement: {
+        enabled: true,                    // Enable settlement
+        minAuctionAge: 18000,             // Wait 5 hours before settling
+        maxBucketDepth: 50,              // Process 50 buckets per settlement call
+        maxIterations: 10,               // Max 10 settlement iterations
+        checkBotIncentive: true,         // Only settle if bot address has rewards to claim
+      },
     },
-
   ]
 };
 

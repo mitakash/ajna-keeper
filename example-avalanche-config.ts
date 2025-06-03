@@ -97,6 +97,15 @@ const config: KeeperConfig = {
           useOneInch: true                                       // Set to true for 1inch
         },
       },
+      // Settlement configuration for stable pools - conservative settings
+      settlement: {
+        enabled: true,                    // Enable settlement
+        minAuctionAge: 18000,             // Wait 5 hours for stable pools (18000 seconds)
+        maxBucketDepth: 100,             // Process more buckets for stable pools
+        maxIterations: 8,                // More iterations may be needed for complex settlements
+        checkBotIncentive: false,        // Settle even without kicker rewards for stable pools, being altruistic for the pool
+      },
+
     },
     {
       name: 'USD_T1 / USD_T2',
@@ -128,6 +137,15 @@ const config: KeeperConfig = {
           fee: FeeAmount.MEDIUM,
         },
       },
+      // Settlement configuration for test tokens - standard settings
+      settlement: {
+        enabled: true,                    // Enable settlement
+        minAuctionAge: 3600,             // Wait 1 hour before settling (3600 seconds)
+        maxBucketDepth: 50,              // Process 50 buckets per settlement call
+        maxIterations: 10,               // Max 10 settlement iterations
+        checkBotIncentive: true,         // Only settle if bot has rewards to claim
+      },
+
     },
   ]
 };

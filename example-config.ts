@@ -75,6 +75,15 @@ const config: KeeperConfig = {
           fee: FeeAmount.LOW,
         },
       },
+      // Settlement configuration - handles completed auctions and bad debt
+      settlement: {
+        enabled: true,                    // Enable automatic settlement
+        minAuctionAge: 18000,             // Wait 5 hours before settling (18000 seconds), Ajna auction price is at market price after 6 hours
+        maxBucketDepth: 50,              // Process up to 50 buckets per settlement call
+        maxIterations: 10,               // Maximum settlement iterations per auction
+        checkBotIncentive: true,         // Only settle auctions this bot kicked (has bond rewards to recover), set to false if you are altruistic
+      },
+
     },
     {
       name: 'WETH / USDC',
@@ -101,6 +110,10 @@ const config: KeeperConfig = {
           to: '0x0000000000000000000000000000000000000000',
         },
       },
+      // Settlement disabled for this pool - bonds may be locked longer
+      // settlement: {
+      //   enabled: false,
+      // },
     },
     {
       name: 'cbETH / WETH',
@@ -151,6 +164,14 @@ const config: KeeperConfig = {
           slippage: 1,
           useOneInch: true,
         },
+      },
+      // Settlement with longer wait time for stable pools
+      settlement: {
+        enabled: true,
+        minAuctionAge: 18000,             // Wait 5 hours for stable pools (18000 seconds)
+        maxBucketDepth: 100,             // Process more buckets for stable pools
+        maxIterations: 5,                // Fewer iterations expected for stable pools
+        checkBotIncentive: false,        // Settle ANY auction (even if this bot didn't kick it) for pool health
       },
     },
   ],
