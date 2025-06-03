@@ -299,4 +299,35 @@ This is typically caused by:
 3. Monitor for nonce issues in logs
 4. Check RPC provider status
 
+### Settlement-Related Issues
+
+**Bonds Permanently Locked:**
+1. Check if settlement is enabled: `settlement.enabled: true`
+2. Verify minimum auction age hasn't been set too high
+3. Check for auctions that actually need settlement vs normal auction activity
+4. Monitor settlement logs for failure reasons
+
+**Settlement Failures:**
+1. Insufficient gas limits - settlement can be gas-intensive
+2. Auction doesn't actually need settlement (check `needsSettlement` logs)
+3. Multiple bots attempting settlement simultaneously
+4. Network congestion causing timeouts
+
+**Settlement Performance:**
+1. High iteration counts may indicate complex debt structures
+2. Failed settlements with `checkBotIncentive: true` suggest no rewards available
+3. Consider disabling `checkBotIncentive` or setting to 'false' for critical system health pools
+
+**Example Settlement Log Analysis:**
+```bash
+# Good settlement pattern
+Settlement needed for borrower abc12345: Bad debt detected: 150.5 debt with 0 collateral
+Settlement completed for abc12345 in 3 iterations
+
+# Problematic pattern
+Settlement incomplete for def67890 after 10 iterations: Partial settlement after 10 iterations
+```
+
+This indicates the auction needs more settlement iterations or has complex debt distribution.
+
 This production setup guide reflects real-world deployment experience and should significantly reduce setup time and common issues when running the Ajna keeper in production environments.
