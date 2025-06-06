@@ -180,10 +180,9 @@ async function settlementLoop({ poolMap, config, signer }: KeepPoolParams) {
       }
       
       // Calculate settlement check interval
-      // TEMPORARY: Reduced interval for debugging stuck auctions
       const settlementCheckInterval = Math.max(
-        config.delayBetweenRuns * 5, // 5x normal delay for debugging (was 30x)
-        20000 // Minimum 20 seconds between settlement checks (was 120000)
+        config.delayBetweenRuns * 5, // 5x normal delay 
+        120000 // Minimum 120 seconds between settlement checks
       );
       
       const nextCheck = new Date(Date.now() + settlementCheckInterval).toISOString();

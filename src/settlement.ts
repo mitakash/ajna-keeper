@@ -69,7 +69,7 @@ export class SettlementHandler {
     const now = Date.now();
     const minAge = this.poolConfig.settlement.minAuctionAge || 3600;
     
-    // FIXED: Smart caching that doesn't prevent settlement of old auctions
+    // Smart caching that doesn't prevent settlement of old auctions
     const cacheAge = now - this.lastSubgraphQuery;
     const shouldUseCache = (
       cacheAge < this.QUERY_CACHE_DURATION && 
@@ -152,13 +152,13 @@ private async processAuction(auction: AuctionToSettle): Promise<void> {
   const { borrower } = auction;
   const settlementKey = `${this.pool.poolAddress}-${borrower}`;
   
-  // CRITICAL: Check lock before any processing
+  // Check lock before any processing
   if (SettlementHandler.activeSettlements.has(settlementKey)) {
     logger.debug(`Settlement already in progress for ${borrower.slice(0, 8)} in ${this.pool.name} - skipping duplicate`);
     return;
   }
   
-  // CRITICAL: Immediately claim the lock
+  // Immediately claim the lock
   SettlementHandler.activeSettlements.add(settlementKey);
   
   try {
@@ -198,7 +198,7 @@ private async processAuction(auction: AuctionToSettle): Promise<void> {
     }
     
   } finally {
-    // CRITICAL: Always release the lock
+    // Always release the lock
     SettlementHandler.activeSettlements.delete(settlementKey);
   }
 }
@@ -429,7 +429,7 @@ export async function handleSettlements({
 }
 
 /**
- * OPTIMIZED: Reactive settlement with early exit for high minAge
+ * Reactive settlement with early exit for high minAge
  */
 export async function tryReactiveSettlement({
   pool,
