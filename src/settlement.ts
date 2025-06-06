@@ -71,6 +71,16 @@ export class SettlementHandler {
     
     // Smart caching that doesn't prevent settlement of old auctions
     const cacheAge = now - this.lastSubgraphQuery;
+
+    // Use cached results to avoid expensive API calls when:
+    // 1. Cache is fresh (< 5 minutes old)
+    // 2. Last check found zero auctions (situation likely unchanged)
+    // 3. Haven't been using this "zero result" cache too long (< minAge)
+    //
+    // Logic: When no auctions need settlement (common case), avoid repeated
+    // API calls. When auctions ARE found, recheck frequently since it's dynamic.
+    // Example: If we checked 2 minutes ago and found nothing, probably still nothing
+    // But: If we found auctions last time, always recheck (things change fast)
     const shouldUseCache = (
       cacheAge < this.QUERY_CACHE_DURATION && 
       this.cachedAuctions.length === 0 &&
