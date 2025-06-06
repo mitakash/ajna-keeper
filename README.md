@@ -9,7 +9,7 @@ A bot to automate liquidations on the Ajna platform.
 - Each instance of the keeper connects to exactly one chain using a single RPC endpoint. The same keeper instance may interact with multiple pools on that chain.
 - Pool addresses must be explicitly configured.
 - Each instance of the keeper may unlock only a single wallet using a JSON keystore file. As such, if running multiple keepers on the same chain, different accounts should be used for each keeper to avoid nonce conflicts.
-- Kick, ArbTake, Bond Colelction, Reward LP Collection - can all be enabled/disabled per pool through the provided config.
+- Kick, ArbTake, Bond Collection, Reward LP Collection, Settlement, Take (connect outside liquidity to Ajna Liquidations) - can all be enabled/disabled per pool through the provided config.
 
 ## Quick Setup
 

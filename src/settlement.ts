@@ -29,6 +29,12 @@ interface AuctionToSettle {
 }
 
 export class SettlementHandler {
+  // Add caching properties for optimization
+  private lastSubgraphQuery: number = 0;
+  private cachedAuctions: AuctionToSettle[] = [];
+  private readonly QUERY_CACHE_DURATION = 300000; // 5 minutes
+  // ADD: Global lock to prevent duplicate processing
+  private static activeSettlements: Set<string> = new Set();
   constructor(
     private pool: FungiblePool,
     private signer: Signer,
@@ -57,60 +63,115 @@ export class SettlementHandler {
   }
 
   /**
-  * Find auctions that ACTUALLY need settlement (not just unsettled auctions)
-  */
+   * OPTIMIZED: Find auctions that ACTUALLY need settlement with caching and age filtering
+   */
   public async findSettleableAuctions(): Promise<AuctionToSettle[]> {
-    try {
-    // Get all unsettled auctions from subgraph
-    const result = await subgraph.getUnsettledAuctions(
-      this.config.subgraphUrl,
-      this.pool.poolAddress
+    const now = Date.now();
+    const minAge = this.poolConfig.settlement.minAuctionAge || 3600;
+    
+    // Smart caching that doesn't prevent settlement of old auctions
+    const cacheAge = now - this.lastSubgraphQuery;
+
+    // Use cached results to avoid expensive API calls when:
+    // 1. Cache is fresh (< 5 minutes old)
+    // 2. Last check found zero auctions (situation likely unchanged)
+    // 3. Haven't been using this "zero result" cache too long (< minAge)
+    //
+    // Logic: When no auctions need settlement (common case), avoid repeated
+    // API calls. When auctions ARE found, recheck frequently since it's dynamic.
+    // Example: If we checked 2 minutes ago and found nothing, probably still nothing
+    // But: If we found auctions last time, always recheck (things change fast)
+    const shouldUseCache = (
+      cacheAge < this.QUERY_CACHE_DURATION && 
+      this.cachedAuctions.length === 0 &&
+      cacheAge < minAge * 1000 // Don't cache longer than minAge - auctions might become settleable
     );
+
+    if (shouldUseCache) {
+      logger.debug(`Using cached settlement data for ${this.pool.name} (${Math.round(cacheAge / 1000)}s old)`);
+      return this.cachedAuctions;
+    }
+
+    logger.debug(`Querying subgraph for settlement data: ${this.pool.name} (cache age: ${Math.round(cacheAge / 1000)}s)`);
     
-    const actuallySettleable: AuctionToSettle[] = [];
-    
-    // 🔧 FIX: Check each auction to see if it actually needs settlement
-    for (const auction of result.liquidationAuctions) {
-      const borrower = auction.borrower;
+    try {
+      const result = await subgraph.getUnsettledAuctions(
+        this.config.subgraphUrl,
+        this.pool.poolAddress
+      );
       
-      logger.debug(`Checking if auction ${borrower.slice(0, 8)} actually needs settlement...`);
+      this.lastSubgraphQuery = now;
+      const actuallySettleable: AuctionToSettle[] = [];
       
-      // Check on-chain if this auction actually needs settlement
-      const settlementCheck = await this.needsSettlement(borrower);
-      
-      // Only include auctions that actually need settlement (collateral=0, debt>0)
-      if (settlementCheck.needs) {
-        logger.debug(`Auction ${borrower.slice(0, 8)} DOES need settlement: ${settlementCheck.reason}`);
-        actuallySettleable.push({
-          borrower: auction.borrower,
-          kickTime: parseInt(auction.kickTime) * 1000,
-          debtRemaining: ethers.utils.parseEther(auction.debtRemaining || '0'),
-          collateralRemaining: ethers.utils.parseEther(auction.collateralRemaining || '0')
-        });
-      } else {
-        logger.debug(`Auction ${borrower.slice(0, 8)} does NOT need settlement: ${settlementCheck.reason}`);
+      for (const auction of result.liquidationAuctions) {
+        const borrower = auction.borrower;
+        const kickTime = parseInt(auction.kickTime) * 1000;
+        const ageSeconds = (now - kickTime) / 1000;
+        
+        // AGE CHECK FIRST - before expensive on-chain calls
+        if (ageSeconds < minAge) {
+          logger.debug(`Auction ${borrower.slice(0, 8)} too young (${Math.round(ageSeconds)}s < ${minAge}s) - skipping on-chain check`);
+          continue;
+        }
+        
+        logger.debug(`Checking if auction ${borrower.slice(0, 8)} actually needs settlement (age: ${Math.round(ageSeconds)}s)...`);
+        
+        // Only do expensive on-chain checks for old-enough auctions
+        const settlementCheck = await this.needsSettlement(borrower);
+        
+        if (settlementCheck.needs) {
+          logger.debug(`Auction ${borrower.slice(0, 8)} DOES need settlement: ${settlementCheck.reason}`);
+          actuallySettleable.push({
+            borrower: auction.borrower,
+            kickTime,
+            debtRemaining: ethers.utils.parseEther(auction.debtRemaining || '0'),
+            collateralRemaining: ethers.utils.parseEther(auction.collateralRemaining || '0')
+          });
+        } else {
+          logger.debug(`Auction ${borrower.slice(0, 8)} does NOT need settlement: ${settlementCheck.reason}`);
+        }
       }
-    }
-    
-    if (actuallySettleable.length > 0) {
-      logger.info(`Found ${actuallySettleable.length} auctions that ACTUALLY need settlement in pool: ${this.pool.name}`);
-    } else {
-      logger.debug(`No auctions actually need settlement in pool: ${this.pool.name} (all are still active)`);
-    }
-    
-    return actuallySettleable;
+      
+      if (actuallySettleable.length > 0) {
+        logger.info(`Found ${actuallySettleable.length} auctions that ACTUALLY need settlement in pool: ${this.pool.name}`);
+      } else {
+        logger.debug(`No auctions actually need settlement in pool: ${this.pool.name} (all too young or already settled)`);
+      }
+      
+      this.cachedAuctions = actuallySettleable;
+      return actuallySettleable;
+      
     } catch (error) {
-    logger.error(`Failed to query unsettled auctions for pool ${this.pool.name}:`, error);
-    return [];
-    }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+  
+      // Handle network errors gracefully - don't crash, just return empty and retry later
+      if (errorMessage.includes('ECONNRESET') || errorMessage.includes('ETIMEDOUT')) {
+        logger.warn(`Network error querying settlements for ${this.pool.name}, will retry: ${errorMessage}`);
+      } else {
+      logger.error(`Error querying settlements for ${this.pool.name}:`, error);
+      }
+  
+      return []; // Return empty array, don't crash
+    }  
   }
 
   /**
    * Process a single auction for settlement
    */
-  private async processAuction(auction: AuctionToSettle): Promise<void> {
-    const { borrower } = auction;
-    
+private async processAuction(auction: AuctionToSettle): Promise<void> {
+  const { borrower } = auction;
+  const settlementKey = `${this.pool.poolAddress}-${borrower}`;
+  
+  // Check lock before any processing
+  if (SettlementHandler.activeSettlements.has(settlementKey)) {
+    logger.debug(`Settlement already in progress for ${borrower.slice(0, 8)} in ${this.pool.name} - skipping duplicate`);
+    return;
+  }
+  
+  // Immediately claim the lock
+  SettlementHandler.activeSettlements.add(settlementKey);
+  
+  try {
     logger.debug(`Checking settlement for borrower ${borrower.slice(0, 8)} in pool ${this.pool.name}`);
 
     // Check if auction meets age requirement
@@ -145,7 +206,13 @@ export class SettlementHandler {
     } else {
       logger.warn(`Settlement incomplete for ${borrower.slice(0, 8)} after ${result.iterations} iterations: ${result.reason}`);
     }
+    
+  } finally {
+    // Always release the lock
+    SettlementHandler.activeSettlements.delete(settlementKey);
   }
+}
+
 
   /**
    * Check if auction is old enough to settle based on config
@@ -372,7 +439,7 @@ export async function handleSettlements({
 }
 
 /**
- * Reactive settlement - try to settle when bonds are locked
+ * Reactive settlement with early exit for high minAge
  */
 export async function tryReactiveSettlement({
   pool,
@@ -389,7 +456,7 @@ export async function tryReactiveSettlement({
     return false;
   }
 
-  // 🔧 NEW: Check if any auctions actually need settlement BEFORE attempting
+
   const handler = new SettlementHandler(
     pool,
     signer,
@@ -401,7 +468,7 @@ export async function tryReactiveSettlement({
 
   if (auctions.length === 0) {
     logger.debug(`No auctions need settlement in ${pool.name} - bonds locked for normal reasons`);
-    return false; // Don't attempt settlement
+    return false;
   }
 
   logger.info(`Bonds locked in ${pool.name}, attempting reactive settlement...`);
