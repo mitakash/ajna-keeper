@@ -145,28 +145,69 @@ async function collectBondLoop({ poolMap, config, signer }: KeepPoolParams) {
 
 async function settlementLoop({ poolMap, config, signer }: KeepPoolParams) {
   const poolsWithSettlementSettings = config.pools.filter(hasSettlementSettings);
+  
+  logger.info(`Settlement loop started with ${poolsWithSettlementSettings.length} pools`);
+  logger.info(`Settlement pools: ${poolsWithSettlementSettings.map(p => p.name).join(', ')}`);
+  
   while (true) {
-    for (const poolConfig of poolsWithSettlementSettings) {
-      const pool = poolMap.get(poolConfig.address)!;
-      try {
-        await handleSettlements({
-          pool,
-          poolConfig: poolConfig as RequireFields<PoolConfig, 'settlement'>,
-          signer,
-          config: {
-            dryRun: config.dryRun,
-            subgraphUrl: config.subgraphUrl,
-            delayBetweenActions: config.delayBetweenActions
-          }
-        });
-        await delay(config.delayBetweenActions);
-      } catch (error) {
-        logger.error(`Failed to handle settlements for pool: ${pool.name}.`, error);
+    try {
+      const startTime = new Date().toISOString();
+      logger.debug(`Settlement loop iteration starting at ${startTime}`);
+      
+      for (const poolConfig of poolsWithSettlementSettings) {
+        const pool = poolMap.get(poolConfig.address)!;
+        try {
+          logger.debug(`Processing settlement check for pool: ${pool.name}`);
+          
+          await handleSettlements({
+            pool,
+            poolConfig: poolConfig as RequireFields<PoolConfig, 'settlement'>,
+            signer,
+            config: {
+              dryRun: config.dryRun,
+              subgraphUrl: config.subgraphUrl,
+              delayBetweenActions: config.delayBetweenActions
+            }
+          });
+          
+          logger.debug(`Settlement check completed for pool: ${pool.name}`);
+          await delay(config.delayBetweenActions);
+          
+        } catch (poolError) {
+          logger.error(`Failed to handle settlements for pool: ${pool.name}`, poolError);
+          // Continue with other pools instead of crashing the entire settlement loop
+        }
       }
+      
+      // Calculate settlement check interval
+      // TEMPORARY: Reduced interval for debugging stuck auctions
+      const settlementCheckInterval = Math.max(
+        config.delayBetweenRuns * 5, // 5x normal delay for debugging (was 30x)
+        20000 // Minimum 20 seconds between settlement checks (was 120000)
+      );
+      
+      const nextCheck = new Date(Date.now() + settlementCheckInterval).toISOString();
+      logger.debug(`Settlement loop completed, sleeping for ${settlementCheckInterval/1000}s until ${nextCheck}`);
+      await delay(settlementCheckInterval);
+      
+    } catch (outerError) {
+      // Properly handle TypeScript 'unknown' error type
+      const errorMessage = outerError instanceof Error ? outerError.message : String(outerError);
+      const errorStack = outerError instanceof Error ? outerError.stack : undefined;
+  
+       logger.error(`Settlement loop crashed, restarting in 30 seconds: ${errorMessage}`);
+       if (errorStack) {
+         logger.error(`Stack trace:`, errorStack);
+       }
+  
+       // Wait 30 seconds before restarting the loop to prevent rapid crash loops
+       await delay(30000);
+       logger.info(`Restarting settlement loop after crash recovery delay`);
+        
     }
-    await delay(config.delayBetweenRuns);
   }
-}
+} 
+
 
 function hasSettlementSettings(
   config: PoolConfig

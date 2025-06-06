@@ -217,8 +217,15 @@ export class LpCollector {
           );
         }
         
+        // Validate LP difference to prevent negative values
+        const lpUsed = lpBalanceBefore.sub(lpBalanceAfter);
+        if (lpUsed.lt(0)) {
+          logger.warn(`Negative LP calculation detected in redeemQuote, using zero instead. Pool: ${this.pool.name}, lpBefore: ${lpBalanceBefore.toString()}, lpAfter: ${lpBalanceAfter.toString()}`);
+          return constants.Zero;
+        }
+        
         // Return the actual LP used
-        return lpBalanceBefore.sub(lpBalanceAfter);
+        return lpUsed;
 
       } catch (error) {
         // Re-throw AuctionNotCleared errors to trigger reactive settlement
@@ -279,8 +286,15 @@ export class LpCollector {
           );
         }
         
+        // Validate LP difference to prevent negative values  
+        const lpUsed = lpBalanceBefore.sub(lpBalanceAfter);
+        if (lpUsed.lt(0)) {
+          logger.warn(`Negative LP calculation detected in redeemCollateral, using zero instead. Pool: ${this.pool.name}, lpBefore: ${lpBalanceBefore.toString()}, lpAfter: ${lpBalanceAfter.toString()}`);
+          return constants.Zero;
+        }
+        
         // Return the actual LP used 
-        return lpBalanceBefore.sub(lpBalanceAfter);
+        return lpUsed;
 
       } catch (error) {
 
@@ -291,7 +305,8 @@ export class LpCollector {
           throw error; // Re-throw to outer catch block
         }
 	      
-	logger.error(`Failed to collect LP reward as collateral. pool: ${this.pool.name}`, error);}
+	logger.error(`Failed to collect LP reward as collateral. pool: ${this.pool.name}`, error);
+      }
     }
     return constants.Zero;
   }
