@@ -22,7 +22,7 @@ import { expect } from 'chai';
 import {
   arbTakeLiquidation,
   getLiquidationsToTake,
-  handleTakes,
+  handleTakesWith1inch,
 } from '../take';
 import { Wallet } from 'ethers';
 import { arrayFromAsync, decimaledToWei, weiToDecimaled } from '../utils';
@@ -172,7 +172,7 @@ describe('arbTakeLiquidation', () => {
   });
 });
 
-describe('handleTakes', () => {
+describe('handleTakesWith1inch', () => {
   beforeEach(async () => {
     await resetHardhat();
     NonceTracker.clearNonces();
@@ -228,7 +228,7 @@ describe('handleTakes', () => {
     const AUCTION_WAIT_TIME = 60 * 20 * 6 + 2 * 2 * 60 * 60 + 50 * 60;
     await increaseTime(AUCTION_WAIT_TIME);
 
-    await handleTakes({
+    await handleTakesWith1inch({
       signer,
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
@@ -244,7 +244,7 @@ describe('handleTakes', () => {
       'Bucket 1 should only have dust remaining'
     );
 
-    await handleTakes({
+    await handleTakesWith1inch({
       signer,
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,

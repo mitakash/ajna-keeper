@@ -10,6 +10,8 @@ import { convertSwapApiResponseToDetailsBytes } from './1inch';
 import { AjnaKeeperTaker__factory } from '../typechain-types';
 import { getDecimalsErc20 } from './erc20';
 import { NonceTracker } from './nonce';
+import { SmartDexManager } from './smart-dex-manager';
+import { handleFactoryTakes } from './take-factory';
 
 interface HandleTakeParams {
   signer: Signer;
@@ -23,6 +25,9 @@ interface HandleTakeParams {
     | 'connectorTokens'
     | 'oneInchRouters'
     | 'keeperTaker'
+    | 'keeperTakerFactory'   
+    | 'takerContracts'
+    | 'universalRouterOverrides'     
   >;
 }
 
@@ -32,6 +37,63 @@ export async function handleTakes({
   poolConfig,
   config,
 }: HandleTakeParams) {
+  // Smart Detection - route to appropriate take handler
+  const dexManager = new SmartDexManager(signer, config);
+  const deploymentType = await dexManager.detectDeploymentType();
+  const validation = await dexManager.validateDeployment();
+
+  logger.debug(`Detection Results - Type: ${deploymentType}, Valid: ${validation.valid}`);
+  if (!validation.valid) {
+    logger.error(`Configuration errors: ${validation.errors.join(', ')}`);
+    return;
+  }
+
+  // Route based on deployment type
+  switch (deploymentType) {
+    case 'single':
+      // EXISTING 1inch path - zero changes to existing code
+      logger.debug(`Using single contract (1inch) take handler for pool: ${pool.name}`);
+      await handleTakesWith1inch({
+        signer,
+        pool,
+        poolConfig,
+        config,
+      });
+      break;
+
+    case 'factory':
+      // NEW factory path - completely separate code
+      logger.debug(`Using factory (multi-DEX) take handler for pool: ${pool.name}`);
+      await handleFactoryTakes({
+        signer,
+        pool,
+        poolConfig,
+        config: {
+          dryRun: config.dryRun,
+          subgraphUrl: config.subgraphUrl,
+          delayBetweenActions: config.delayBetweenActions,
+          keeperTakerFactory: config.keeperTakerFactory,
+          takerContracts: config.takerContracts,
+          universalRouterOverrides: (config as any).universalRouterOverrides, // Type fix
+        },
+      });
+      break;
+
+    case 'none':
+      // No external DEX available - this shouldn't happen if take is configured
+      logger.warn(`Take configured but no DEX integration available for pool ${pool.name}`);
+      break;
+  }
+}
+
+
+export async function handleTakesWith1inch({
+  signer,
+  pool,
+  poolConfig,
+  config,
+}: HandleTakeParams) {
+  
   for await (const liquidation of getLiquidationsToTake({
     pool,
     poolConfig,

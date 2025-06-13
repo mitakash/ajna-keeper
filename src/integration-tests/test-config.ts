@@ -13,7 +13,7 @@ export const USER1_MNEMONIC =
   'dragon empower index stage okay add nose worry grace play mail horse nurse rabbit blur';
 
 export const MAINNET_CONFIG = {
-  BLOCK_NUMBER: 21731352,
+  BLOCK_NUMBER: 21731361,
   WETH_ADDRESS: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
   UNISWAP_V3_ROUTER: '0xE592427A0AEce92De3Edee1F18E0157C05861564',
   AJNA_CONFIG: {
