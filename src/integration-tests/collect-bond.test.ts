@@ -26,7 +26,7 @@ import { weiToDecimaled } from '../utils';
 import { depositQuoteToken, drawDebt } from './loan-helpers';
 import { collectBondFromPool } from '../collect-bond';
 import { handleKicks } from '../kick';
-import { handleTakes } from '../take';
+import { handleTakes, handleTakesWith1inch } from '../take';
 import { NonceTracker } from '../nonce';
 import { SECONDS_PER_YEAR, SECONDS_PER_DAY } from '../constants';
 
@@ -161,7 +161,7 @@ describe('collectBondFromPool', () => {
       },
     });
     await increaseTime(SECONDS_PER_DAY * 2);
-    await handleTakes({
+    await handleTakesWith1inch ({
       pool,
       poolConfig: MAINNET_CONFIG.SOL_WETH_POOL.poolConfig,
       signer,

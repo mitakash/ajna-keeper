@@ -84,8 +84,11 @@ export interface KickSettings {
 
 // should match LiquiditySource enum in AjnaKeeperTaker.sol
 export enum LiquiditySource {
-  NONE = 0,   // invalid
-  ONEINCH = 1 // use 1inch `quote` API for pricing and `swap` API to swap
+  NONE = 0,      // invalid
+  ONEINCH = 1,   // use 1inch `quote` API for pricing and `swap` API to swap
+  UNISWAPV3 = 2, // use Uniswap V3 via Universal Router
+  SUSHISWAP = 3, // Future: SushiSwap integration
+  CURVE = 4,     // Future: Curve integration
 }
 
 export interface TakeSettings {
@@ -192,6 +195,7 @@ export interface UniversalRouterOverrides {
   defaultFeeTier?: number;
   defaultSlippage?: number;
   poolFactoryAddress?: string;
+  quoterV2Address?: string;  // NEW: QuoterV2 contract address per chain
 }
 
 
@@ -206,6 +210,12 @@ export interface KeeperConfig {
   keeperKeystore: string;
   /** Contract used for atomically taking liquidations with external liquidity */
   keeperTaker?: string;
+  /** NEW: Factory contract for routing to multiple taker implementations */
+  keeperTakerFactory?: string;
+  /** NEW: Individual taker contract addresses per DEX */
+  takerContracts?: {
+    [source: string]: string;
+  };
   /** If true, doesn't send any requests. */
   dryRun?: boolean;
   /** Use this to overwrite the multicall address. Only use this if you are getting multicall errors for this chain. See https://www.multicall3.com/deployments */
@@ -307,6 +317,7 @@ export function configureAjna(ajnaConfig: AjnaConfigParams): void {
 //   }
 // }
 
+
 export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperConfig): void {
   const hasArbTake = config.minCollateral !== undefined && config.hpbPriceFactor !== undefined;
   const hasTake = config.liquiditySource !== undefined && config.marketPriceFactor !== undefined;
@@ -316,17 +327,37 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
   }
 
   if (hasTake) {
+    // Fix 1: Proper validation for multiple DEX sources
     if (config.liquiditySource === LiquiditySource.NONE) {
-      throw new Error('TakeSettings: liquiditySource must be ONEINCH');
+      throw new Error('TakeSettings: liquiditySource cannot be NONE');
     }
-    if (config.liquiditySource !== LiquiditySource.ONEINCH) {
-      throw new Error('TakeSettings: liquiditySource must be ONEINCH');
+
+    if (config.liquiditySource !== LiquiditySource.ONEINCH &&
+        config.liquiditySource !== LiquiditySource.UNISWAPV3) {
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH or UNISWAPV3');
     }
+
     if (config.marketPriceFactor === undefined || config.marketPriceFactor <= 0) {
       throw new Error('TakeSettings: marketPriceFactor must be positive');
     }
-    if (!keeperConfig.keeperTaker) {
-      throw new Error('TakeSettings: keeperTaker required when take is configured');
+
+    // Fix 2: Different validation based on DEX type
+    if (config.liquiditySource === LiquiditySource.ONEINCH) {
+      if (!keeperConfig.keeperTaker) {
+        throw new Error('TakeSettings: keeperTaker required when liquiditySource is ONEINCH');
+      }
+    }
+
+    if (config.liquiditySource === LiquiditySource.UNISWAPV3) {
+      if (!keeperConfig.keeperTakerFactory) {
+        throw new Error('TakeSettings: keeperTakerFactory required when liquiditySource is UNISWAPV3');
+      }
+      if (!keeperConfig.takerContracts || !keeperConfig.takerContracts['UniswapV3']) {
+        throw new Error('TakeSettings: takerContracts.UniswapV3 required when liquiditySource is UNISWAPV3');
+      }
+      if (!keeperConfig.universalRouterOverrides) {
+        throw new Error('TakeSettings: universalRouterOverrides required when liquiditySource is UNISWAPV3');
+      }
     }
   }
 

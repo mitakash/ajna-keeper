@@ -26,7 +26,17 @@ const config: HardhatUserConfig = {
     base: {
       chainId: 8453,
       url: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
-    }
+    },
+    hemi: {
+    url: "https://boldest-soft-moon.hemi-mainnet.quiknode.pro/${process.env.QUICKNODE_API_KEY}",
+    chainId: 43111, // Hemi mainnet chain ID
+    accounts: {
+      mnemonic: process.env.MNEMONIC || "your mnemonic here",
+      // Or use your keystore approach - whatever you prefer
+    },
+    gasPrice: 1000000000, // 1 gwei
+    gas: 8000000, // 8M gas limit
+  },
   },
   sourcify: { enabled: true },
   etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
