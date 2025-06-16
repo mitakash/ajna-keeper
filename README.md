@@ -140,12 +140,7 @@ Starts a liquidation when a loan's threshold price exceeds the lowest utilized p
 ### Take
 
 When auction price drops a configurable percentage below a DEX price, swaps collateral for quote token using a DEX or DEX aggregator, repaying debt and earning profit for the taker.
-
-This feature requires deploying a smart contract owned by the EOA operating the keeper.  To deploy this contract:
-```
-yarn compile
-scripts/query-1inch.ts --config [your-configuration].ts --action deploy
-```
+This usually requires contract deployment for either 1inch or individual DEX's like Uniswap. Please see contract deployment section below.
 
 ### Arbtake
 
@@ -218,7 +213,203 @@ ONEINCH_API_KEY=[your-1inch-api-key-here]
 
 A 1inch API key may be obtained from their [developer portal](https://portal.1inch.dev/).
 
-##### Config.ts Requirements
+## Contract Deployment (Required for External Takes)
+
+**External takes** connect Ajna liquidation auctions to external DEX liquidity with Atomic Swaps. This requires deploying smart contracts to atomically take collateral and swap it.
+
+### Choose Your Deployment Approach
+
+**Option A: 1inch Integration (Major Chains)**
+- For chains with 1inch support (Ethereum, Avalanche, Base, Arbitrum)
+- Single contract deployment
+- Uses 1inch aggregator for best pricing
+
+```bash
+# Compile contracts first
+yarn compile
+
+# Deploy 1inch connector contract
+yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
+
+# Update your config with the deployed address
+# keeperTaker: '0x[deployed-address]'
+```
+
+**Option B: Factory System (Newer Chains)**  
+- For chains without 1inch (Hemi, emerging L2s)
+- Multi-DEX factory pattern supporting Uniswap V3 + future DEXs
+- Direct Uniswap V3 integration via Universal Router
+
+```bash
+# Compile contracts first  
+yarn compile
+
+# Deploy factory system
+yarn ts-node scripts/deploy-factory-system.ts your-config.ts
+
+# Update your config with deployed addresses:
+# keeperTakerFactory: '0x[factory-address]'
+# takerContracts: { 'UniswapV3': '0x[taker-address]' }
+```
+
+**Option C: No External Takes**
+- Skip contract deployment
+- Use arbTake and settlement only
+- Still supports LP reward swapping (no contracts needed)
+
+> **Note**: LP reward swapping works on both approaches without additional contracts.
+
+---
+
+## Dex Router Configuration:
+
+### Configuring for External Takes
+
+External takes require contract deployment and specific configuration:
+
+#### 1inch Integration (Single Contract)
+
+**Contract Deployment:**
+```bash
+yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
+```
+
+**Config.ts Setup:**
+```typescript
+const config: KeeperConfig = {
+  // Required for 1inch external takes
+  keeperTaker: '0x[deployed-address]',
+  oneInchRouters: {
+    1: '0x1111111254EEB25477B68fb85Ed929f73A960582',    // Ethereum
+    43114: '0x111111125421ca6dc452d289314280a0f8842a65', // Avalanche  
+    8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',  // Base
+  },
+  
+  pools: [{
+    take: {
+      liquiditySource: LiquiditySource.ONEINCH,
+      marketPriceFactor: 0.98, // Take when auction < market * 0.98
+    }
+  }]
+}
+```
+
+#### Uniswap V3 Integration (Factory System)
+
+**Contract Deployment:**
+```bash  
+yarn ts-node scripts/deploy-factory-system.ts your-config.ts
+```
+
+**Config.ts Setup:**
+```typescript
+const config: KeeperConfig = {
+  // Required for Uniswap V3 external takes
+  keeperTakerFactory: '0x[factory-address]',
+  takerContracts: {
+    'UniswapV3': '0x[taker-address]'
+  },
+  universalRouterOverrides: {
+    universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    permit2Address: '0xB952578f3520EE8Ea45b7914994dcf4702cEe578',
+    poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
+    quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5',
+    defaultFeeTier: 3000,
+    defaultSlippage: 0.5,
+  },
+  
+  pools: [{
+    take: {
+      liquiditySource: LiquiditySource.UNISWAPV3,
+      marketPriceFactor: 0.99, // Take when auction < market * 0.99
+    }
+  }]
+}
+```
+
+### Configuring for LP Reward Swapping
+
+LP reward swapping doesn't require contract deployment - just configuration:
+
+#### Using 1inch for LP Rewards
+```typescript
+collectLpReward: {
+  rewardActionCollateral: {
+    action: RewardActionLabel.EXCHANGE,
+    address: '0x[collateral-token]',
+    targetToken: 'usdc',
+    slippage: 1,
+    useOneInch: true  // Use 1inch API
+  }
+}
+```
+
+#### Using Uniswap V3 for LP Rewards  
+```typescript
+collectLpReward: {
+  rewardActionCollateral: {
+    action: RewardActionLabel.EXCHANGE,
+    address: '0x[collateral-token]', 
+    targetToken: 'usdc',
+    slippage: 1,
+    useOneInch: false,  // Use Uniswap V3
+    fee: FeeAmount.MEDIUM
+  }
+}
+```
+
+### Automatic Detection
+
+The keeper automatically detects your configuration:
+- **Single**: Uses existing 1inch integration (`src/take.ts`)
+- **Factory**: Uses multi-DEX system (`src/take-factory.ts`) 
+- **None**: ArbTake and settlement only
+
+No manual selection needed - the bot chooses based on your config.
+
+### Enhanced Configuration Examples
+
+**Major Chain Example (1inch):**
+```typescript
+// example-avalanche-config.ts shows 1inch external takes
+const config: KeeperConfig = {
+  keeperTaker: '0x[deployed-1inch-contract]',
+  oneInchRouters: { 43114: '0x111111125421ca6dc452d289314280a0f8842a65' },
+  
+  pools: [{
+    take: {
+      liquiditySource: LiquiditySource.ONEINCH,
+      marketPriceFactor: 0.98
+    }
+  }]
+}
+```
+
+**Newer Chain Example (Factory):**  
+```typescript
+// hemi-conf-settlement.ts shows factory external takes
+const config: KeeperConfig = {
+  keeperTakerFactory: '0x[factory-address]',
+  takerContracts: { 'UniswapV3': '0x[taker-address]' },
+  universalRouterOverrides: { /* addresses */ },
+  
+  pools: [{
+    take: {
+      liquiditySource: LiquiditySource.UNISWAPV3,
+      marketPriceFactor: 0.99
+    }
+  }]
+}
+```
+
+**See `example-avalanche-config.ts`, `example-hemi-config.ts`, for complete examples.**
+
+### Detailed LP Reward Configuration
+
+The following sections provide comprehensive examples for configuring LP reward swapping:
+
+##### 1inch LP Reward Configuration
 
 Edit config.ts to include these fields:
 
@@ -347,11 +538,7 @@ pools: [
 - If `useOneInch` is `true` but `oneInchRouters` is missing a `chainId`, the script will fail.
 - Ensure the `.env` file is loaded (via `dotenv/config`) in your project.
 
-#### Configuring for Uniswap V3
-
-To enable Uniswap V3 swaps, you need fewer settings in config.ts. No .env file is required.
-
-##### Config.ts Requirements
+##### Uniswap V3 LP Reward Configuration
 
 Edit `config.ts` to include these optional fields:
 
