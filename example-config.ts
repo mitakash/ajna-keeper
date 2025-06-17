@@ -5,35 +5,61 @@ import {
   PriceOriginSource,
   RewardActionLabel,
   TokenToCollect,
+  LiquiditySource,  // ← NEW: Import for external takes
 } from './src/config-types';
 
 const config: KeeperConfig = {
   dryRun: true,
   logLevel: 'info',
-  ethRpcUrl: 'https://base-mainnet.g.alchemy.com/v2/<api-key>',
-  subgraphUrl:
-    'https://api.studio.thegraph.com/query/49479/ajna-base/version/latest',
+  ethRpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
+  subgraphUrl: 'https://api.studio.thegraph.com/query/49479/ajna-base/version/latest',
   keeperKeystore: '/home/anon/keystore-files/keeper-keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 5022,
   delayBetweenRuns: 15,
   delayBetweenActions: 1,
+  
+  // ← NEW: 1inch Router Configuration (for chains with 1inch support)
   oneInchRouters: {
-    1: '0x1111111254EEB25477B68fb85Ed929f73A960582',
-    8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',
-    43114: '0x1111111254EEB25477B68fb85Ed929f73A960582',
+    1: '0x1111111254EEB25477B68fb85Ed929f73A960582',    // Ethereum
+    8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',  // Base
+    43114: '0x1111111254EEB25477B68fb85Ed929f73A960582', // Avalanche
   },
+  
+  // ← OPTION 1: Single Contract Setup (for 1inch integration)
+  // keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts]',
+  
+  // ← OPTION 2: Factory System Setup (for Uniswap V3 and future DEXs)
+  // keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]',
+  // takerContracts: {
+  //   'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]'
+  // },
+  
   tokenAddresses: {
     avax: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE',
     usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
     weth: '0x4200000000000000000000000000000000000006',
   },
+  
+  // ← NEW: Connector tokens for 1inch optimization
   connectorTokens: [
     '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
     '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
     '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7',
     '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
   ],
+  
+  // ← ENHANCED: Universal Router configuration (for Uniswap V3 integration)
+  universalRouterOverrides: {
+    universalRouterAddress: '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD', // Base UniversalRouter
+    wethAddress: '0x4200000000000000000000000000000000000006', // WETH on Base
+    permit2Address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+    defaultFeeTier: 3000, // 0.3% fee tier
+    defaultSlippage: 0.5, // 0.5% slippage tolerance
+    poolFactoryAddress: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD', // Base pool factory
+    quoterV2Address: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a', // ← NEW: QuoterV2 for accurate pricing
+  },
+  
   ajna: {
     erc20PoolFactory: '0x214f62B5836D83f3D6c4f71F174209097B1A779C',
     erc721PoolFactory: '0xeefEC5d1Cc4bde97279d01D88eFf9e0fEe981769',
@@ -44,7 +70,7 @@ const config: KeeperConfig = {
     burnWrapper: '',
     lenderHelper: '',
   },
-  coinGeckoApiKey: '<api-key>',
+  coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY',
   pools: [
     {
       name: 'wstETH / WETH',
@@ -60,6 +86,11 @@ const config: KeeperConfig = {
       take: {
         minCollateral: 0.01,
         hpbPriceFactor: 0.9,
+        
+        // ← NEW: External Takes Example - uncomment and configure after contract deployment
+        // liquiditySource: LiquiditySource.ONEINCH,      // Use 1inch (requires keeperTaker)
+        // liquiditySource: LiquiditySource.UNISWAPV3,    // Use Uniswap V3 (requires keeperTakerFactory)
+        // marketPriceFactor: 0.98,                       // Take when auction < market * 0.98
       },
       collectBond: true,
       collectLpReward: {
@@ -83,7 +114,6 @@ const config: KeeperConfig = {
         maxIterations: 10,               // Maximum settlement iterations per auction
         checkBotIncentive: true,         // Only settle auctions this bot kicked (has bond rewards to recover), set to false if you are altruistic
       },
-
     },
     {
       name: 'WETH / USDC',
@@ -99,6 +129,10 @@ const config: KeeperConfig = {
       take: {
         minCollateral: 0.01,
         hpbPriceFactor: 0.9,
+        
+        // ← NEW: Example external take configuration for major pool
+        // liquiditySource: LiquiditySource.ONEINCH,
+        // marketPriceFactor: 0.99,  // More conservative for volatile pairs
       },
       collectBond: true,
       collectLpReward: {
@@ -151,6 +185,10 @@ const config: KeeperConfig = {
       take: {
         minCollateral: 0.07,
         hpbPriceFactor: 0.98,
+        
+        // ← NEW: Stable pair external take example
+        liquiditySource: LiquiditySource.ONEINCH,
+        marketPriceFactor: 0.98,  // Stable pairs can be more aggressive
       },
       collectBond: true,
       collectLpReward: {
@@ -162,7 +200,7 @@ const config: KeeperConfig = {
           address: '0x06d47F3fb376649c3A9Dafe069B3D6E35572219E',
           targetToken: 'usdc',
           slippage: 1,
-          useOneInch: true,
+          useOneInch: true,  // ← LP reward swapping via 1inch (no contracts needed)
         },
       },
       // Settlement with longer wait time for stable pools
