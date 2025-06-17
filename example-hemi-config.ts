@@ -3,19 +3,19 @@ import {
   RewardActionLabel,
   PriceOriginSource,
   TokenToCollect,
-  LiquiditySource
+  LiquiditySource  // ← NEW: Import for external takes
 } from './src/config-types';
 import { FeeAmount } from '@uniswap/v3-sdk';
 
 const config: KeeperConfig = {
   dryRun: false,
-  ethRpcUrl: 'https://rpc.hemi.network/rpc', //THIS CURRENTLY WORKS FOR HEMI, BUT THEY MIGHT RATE LIMIT IN THE FUTURE
-  subgraphUrl: 'https://api.goldsky.com/api/public/project_PRIVATE_ID_YOU_NEED_FROM_GOLDSKY/subgraphs/ajna-hemi/1.0.0/gn', //YOU NEED TO CHANGE THIS
-  keeperKeystore: 'FULL_PATH/keystore.json', //YOU NEED TO CHANGE THIS
+  ethRpcUrl: 'https://rpc.hemi.network/rpc', // THIS CURRENTLY WORKS FOR HEMI, BUT THEY MIGHT RATE LIMIT IN THE FUTURE
+  subgraphUrl: 'https://api.goldsky.com/api/public/project_YOUR_GOLDSKY_PROJECT_ID/subgraphs/ajna-hemi/1.0.0/gn', // YOU NEED TO CHANGE THIS
+  keeperKeystore: 'FULL_PATH/keystore.json', // YOU NEED TO CHANGE THIS
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 484490,
-  delayBetweenRuns: 2,  //IN SECONDS
-  delayBetweenActions: 31, //VERY CONSERVATIVE 31 SECONDS BETWEEN ACTIONS
+  delayBetweenRuns: 2,  // IN SECONDS
+  delayBetweenActions: 31, // VERY CONSERVATIVE 31 SECONDS BETWEEN ACTIONS
   logLevel: 'debug',
   
   tokenAddresses: {
@@ -26,14 +26,22 @@ const config: KeeperConfig = {
     usd_t4: '0x00b2fee99fe3fc9aab91d1b249c99c9ffbb1ccde', // Your USD_T4 token
   },
   
+  // ← NEW: Factory System Setup for External Takes (deploy with scripts/deploy-factory-system.ts)
+  keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]', // Factory contract address
+  takerContracts: {
+    'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]' // Individual taker contract addresses
+  }, 
+  
+  // ← ENHANCED: Universal Router configuration with QuoterV2 address
   universalRouterOverrides: {
-  universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B', // HEMI UniversalRouter based on gov proposal
-  wethAddress: '0x4200000000000000000000000000000000000006', // wrapped AVAX an intermediary token
-  permit2Address: '0xB952578f3520EE8Ea45b7914994dcf4702cEe578',
-  defaultFeeTier: 3000, // 0.3% as default for this chain
-  defaultSlippage: 0.5, // 0.5% as default slippage
-  poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
-},
+    universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B', // HEMI UniversalRouter based on gov proposal
+    wethAddress: '0x4200000000000000000000000000000000000006', // Wrapped ETH on HEMI
+    permit2Address: '0xB952578f3520EE8Ea45b7914994dcf4702cEe578',
+    defaultFeeTier: 3000, // 0.3% as default for this chain
+    defaultSlippage: 0.5, // 0.5% as default slippage
+    poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
+    quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5', // ← NEW: QuoterV2 for accurate pricing
+  },
 
   // HEMI-specific Ajna contract addresses
   ajna: {
@@ -46,7 +54,7 @@ const config: KeeperConfig = {
     burnWrapper: '',
     lenderHelper: '',
   },
-  coinGeckoApiKey: 'PRIVATE', //GET YOUR OWN COINGECKO API KEY
+  coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY', // GET YOUR OWN COINGECKO API KEY
   pools: 
   [
     {   
@@ -62,14 +70,18 @@ const config: KeeperConfig = {
       },
       take: {
         minCollateral: 0.1, // Enable arbTake when collateral >= 0.1
-        hpbPriceFactor: 0.99, // ArbTake when price < hpb * 0.99
+        hpbPriceFactor: 0.98, // ArbTake when price < hpb * 0.98
+        
+        // ← NEW: External Takes via Uniswap V3 (requires factory deployment)
+        liquiditySource: LiquiditySource.UNISWAPV3, // Use Uniswap V3 for external takes
+        marketPriceFactor: 0.99, // Take when auction price < market * 0.99
       },
       collectBond: true, // Collect liquidation bonds
       collectLpReward: {
         redeemFirst: TokenToCollect.COLLATERAL, // For kickers, redeem collateral first
         minAmountQuote: 0.001, // Minimum quote to redeem
         minAmountCollateral: 0.001, // Minimum collateral to redeem
-        // Configure both collateral to use Uniswap to get back quote_token
+        // Configure collateral to use Uniswap V3 to get back quote_token
         rewardActionCollateral: {
           action: RewardActionLabel.EXCHANGE,
           address: '0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6', // USD_T1
@@ -87,29 +99,32 @@ const config: KeeperConfig = {
         maxIterations: 10,               // Max 10 settlement iterations
         checkBotIncentive: false,         // set to false to help pool altruistically
       },
-
     },
     {
       name: 'USD_T4 / USD_T3',
       address: '0xf6d57bcebb553a0c74812386a71984f3ab3b176f',
       price: {
         source: PriceOriginSource.FIXED, // Use fixed price for simpler testing
-        value: 0.99, // Static price ratio USD_T1/USD_T2
+        value: 0.99, // Static price ratio USD_T4/USD_T3
       },
       kick: {
-        minDebt: 0.1, // Minimum debt in USD_T2 to kick
+        minDebt: 0.1, // Minimum debt in USD_T3 to kick
         priceFactor: 0.99, // Kick when NP * 0.99 > current price
       },
       take: {
         minCollateral: 0.1, // Enable arbTake when collateral >= 0.1
-        hpbPriceFactor: 0.99, // ArbTake when price < hpb * 0.99
+        hpbPriceFactor: 0.98, // ArbTake when price < hpb * 0.98
+        
+        // ← NEW: External Takes via Uniswap V3 (requires factory deployment)
+        liquiditySource: LiquiditySource.UNISWAPV3, // Use Uniswap V3 for external takes
+        marketPriceFactor: 0.99, // Take when auction price < market * 0.99
       },
       collectBond: true, // Collect liquidation bonds
       collectLpReward: {
         redeemFirst: TokenToCollect.COLLATERAL, // For kickers, redeem collateral first
         minAmountQuote: 0.001, // Minimum quote to redeem
         minAmountCollateral: 0.001, // Minimum collateral to redeem
-        // Configure both collateral to use Uniswap to get back quote_token
+        // Configure collateral to use Uniswap V3 to get back quote_token
         rewardActionCollateral: {
           action: RewardActionLabel.EXCHANGE,
           address: '0x00b2fee99fe3fc9aab91d1b249c99c9ffbb1ccde', // USD_T4
