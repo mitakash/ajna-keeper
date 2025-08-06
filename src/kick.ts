@@ -108,6 +108,7 @@ export async function* getLoansToKick({
       continue;
     }
 
+    /*
     // Only kick loans with a neutralPrice above hpb to ensure they are profitalbe.
     if (neutralPrice.lt(hpb)) {
       logger.debug(
@@ -115,6 +116,7 @@ export async function* getLoansToKick({
       );
       continue;
     }
+    */
 
     // Only kick loans with a neutralPrice above price (with some margin) to ensure they are profitable.
     const limitPrice = await getPrice(

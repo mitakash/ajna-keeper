@@ -124,6 +124,18 @@ export enum RewardActionLabel {
   EXCHANGE = 'exchange',
 }
 
+//PostAuctionDex enum for scalable DEX selection
+export enum PostAuctionDex {
+  ONEINCH = 'oneinch',
+  UNISWAP_V3 = 'uniswap_v3', 
+  SUSHISWAP = 'sushiswap',
+  // Future additions:
+  // CURVE = 'curve',
+  // IZUMI = 'izumi', 
+  // BALANCER = 'balancer',
+  // DODO = 'dodo'
+}
+
 export interface TransferReward {
   /** If set to transfer, send any collected rewards to the wallet specified by "to". */
   action: RewardActionLabel.TRANSFER;
@@ -136,7 +148,7 @@ export interface ExchangeReward {
   address: string;
   targetToken: string;
   slippage: number;
-  useOneInch?: boolean;
+  dexProvider: PostAuctionDex;
   fee?: number;
 }
 
@@ -198,6 +210,15 @@ export interface UniversalRouterOverrides {
   quoterV2Address?: string;  // NEW: QuoterV2 contract address per chain
 }
 
+// SushiSwap configuration interface
+export interface SushiswapRouterOverrides {
+  swapRouterAddress?: string;
+  quoterV2Address?: string;
+  factoryAddress?: string;
+  wethAddress?: string;
+  defaultFeeTier?: number; // Default: 500 (0.05%)
+  defaultSlippage?: number; // Default: 1.0 (1%)
+}
 
 export interface KeeperConfig {
   /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
@@ -242,6 +263,31 @@ export interface KeeperConfig {
   connectorTokens?: Array<string>;
   /** Uniswap Universal Router for Uni v3 */
   universalRouterOverrides?: UniversalRouterOverrides;
+  /** SushiSwap configuration for post-auction swaps */
+  sushiswapRouterOverrides?: SushiswapRouterOverrides;
+}
+
+// Validation function for PostAuctionDex configuration
+export function validatePostAuctionDex(dexProvider: PostAuctionDex, config: KeeperConfig): void {
+  switch (dexProvider) {
+    case PostAuctionDex.ONEINCH:
+      if (!config.oneInchRouters) {
+        throw new Error('PostAuctionDex.ONEINCH requires oneInchRouters configuration');
+      }
+      break;
+    case PostAuctionDex.UNISWAP_V3:
+      if (!config.universalRouterOverrides) {
+        throw new Error('PostAuctionDex.UNISWAP_V3 requires universalRouterOverrides configuration');
+      }
+      break;
+    case PostAuctionDex.SUSHISWAP:
+      if (!config.sushiswapRouterOverrides) {
+        throw new Error('PostAuctionDex.SUSHISWAP requires sushiswapRouterOverrides configuration');
+      }
+      break;
+    default:
+      throw new Error(`Unsupported PostAuctionDex: ${dexProvider}`);
+  }
 }
 
 export async function readConfigFile(filePath: string): Promise<KeeperConfig> {

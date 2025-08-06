@@ -43,6 +43,8 @@ While the main README covers the basic setup process, production deployments ben
 
 **Best for:** Established chains with 1inch aggregator support
 
+**IMPORTANT:** 1inch contract deployment is now **required even for LP reward swaps**.
+
 **Prerequisites:**
 ```bash
 # 1. Compile contracts
@@ -65,7 +67,7 @@ yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 **Configuration Updates:**
 ```typescript
 const config: KeeperConfig = {
-  // ADD: Deployed contract address
+  // ADD: Deployed contract address (REQUIRED for both external takes AND LP rewards)
   keeperTaker: '0x[deployed-contract-address]',
   
   // ADD: 1inch router addresses per chain
@@ -88,6 +90,14 @@ const config: KeeperConfig = {
       liquiditySource: LiquiditySource.ONEINCH,
       marketPriceFactor: 0.98, // Take when auction price < market * 0.98
       minCollateral: 0.01,     // Minimum collateral to attempt take
+    },
+    collectLpReward: {
+      rewardActionCollateral: {
+        action: RewardActionLabel.EXCHANGE,
+        targetToken: 'usdc',
+        slippage: 1,
+        dexProvider: PostAuctionDex.ONEINCH, // NEW: Use enum instead of useOneInch: true
+      }
     }
   }]
 }
@@ -138,12 +148,31 @@ const config: KeeperConfig = {
     defaultSlippage: 0.5,    // 0.5% slippage tolerance
   },
   
+  // ADD: SushiSwap configuration (optional)
+  sushiswapRouterOverrides: {
+    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',
+    quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
+    factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    defaultFeeTier: 500,
+    defaultSlippage: 10.0,
+  },
+  
   pools: [{
     take: {
       // ADD: Configure external takes  
       liquiditySource: LiquiditySource.UNISWAPV3,
       marketPriceFactor: 0.99, // Take when auction price < market * 0.99
       minCollateral: 0.01,     // Minimum collateral to attempt take
+    },
+    collectLpReward: {
+      rewardActionCollateral: {
+        action: RewardActionLabel.EXCHANGE,
+        targetToken: 'usd_t2',
+        slippage: 2,
+        dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+        fee: FeeAmount.MEDIUM,
+      }
     }
   }]
 }
@@ -158,12 +187,26 @@ const config: KeeperConfig = {
 const config: KeeperConfig = {
   // NO keeperTaker or keeperTakerFactory needed
   
+  // ADD: For LP reward swaps only (no contracts needed)
+  universalRouterOverrides: {
+    // ... Uniswap configuration for LP rewards
+  },
+  
   pools: [{
     take: {
       // ONLY arbTake configuration
       minCollateral: 0.01,
       hpbPriceFactor: 0.95, // ArbTake when price < highest bucket * 0.95
       // NO liquiditySource or marketPriceFactor
+    },
+    collectLpReward: {
+      rewardActionCollateral: {
+        action: RewardActionLabel.EXCHANGE,
+        targetToken: 'usdc',
+        slippage: 1,
+        dexProvider: PostAuctionDex.UNISWAP_V3, // LP rewards work without contracts
+        fee: FeeAmount.MEDIUM,
+      }
     }
   }]
 }
@@ -361,12 +404,12 @@ const config: KeeperConfig = {
       // ArbTake as backup
       hpbPriceFactor: 0.90,
     },
-    // LP reward swapping via 1inch (no contracts needed)
+    // LP reward swapping via 1inch (requires contracts)
     collectLpReward: {
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usdc',
-        useOneInch: true
+        dexProvider: PostAuctionDex.ONEINCH // NEW: Use enum instead of useOneInch: true
       }
     }
   }],
@@ -414,6 +457,16 @@ const config: KeeperConfig = {
     poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
   },
   
+  // SushiSwap configuration for LP rewards
+  sushiswapRouterOverrides: {
+    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',
+    quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
+    factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    defaultFeeTier: 500,
+    defaultSlippage: 10.0,
+  },
+  
   // Hemi token addresses
   tokenAddresses: {
     weth: '0x4200000000000000000000000000000000000006',
@@ -452,13 +505,13 @@ const config: KeeperConfig = {
       // ArbTake as backup
       hpbPriceFactor: 0.98,
     },
-    // LP reward swapping via Uniswap V3 (no contracts needed)
+    // LP reward swapping via SushiSwap (no contracts needed)
     collectLpReward: {
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usd_t2',
-        useOneInch: false, // Use Uniswap V3
-        fee: FeeAmount.MEDIUM
+        dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+        fee: FeeAmount.LOW
       }
     }
   }],
@@ -563,6 +616,16 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 # Solution: Add complete Universal Router configuration
 ```
 
+**LP Reward Configuration Issues:**
+```bash
+# Log: "Unsupported DEX provider: undefined"
+# Cause: Missing dexProvider enum in rewardAction
+# Solution: Replace useOneInch: true/false with dexProvider: PostAuctionDex.ONEINCH/UNISWAP_V3/SUSHISWAP
+
+# Log: "Configuration validation failed for oneinch: Missing keeperTaker"
+# Solution: Deploy 1inch contract even for LP rewards
+```
+
 **External Take Not Executing:**
 ```bash
 # Log: "No valid quote data"
@@ -586,6 +649,11 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 - Adjust `defaultSlippage` based on volatility
 - Monitor `quoterV2Address` for network-specific optimizations
 
+**SushiSwap Configuration:**
+- Use `defaultFeeTier: 500` for conservative approach
+- Set higher slippage (10%+) for volatile pairs
+- Verify factory and router addresses per chain
+
 ### Production Monitoring
 
 **Key Logs to Monitor:**
@@ -598,6 +666,9 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 
 # Detection results
 "Detection Results - Type: factory, Valid: true"
+
+# LP reward swaps
+"Successfully swapped 1.5 of 0x123... to usdc via sushiswap"
 ```
 
 **Health Check Commands:**
