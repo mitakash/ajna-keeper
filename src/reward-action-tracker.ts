@@ -6,6 +6,8 @@ import {
   RewardAction,
   RewardActionLabel,
   TransferReward,
+  PostAuctionDex,
+  validatePostAuctionDex,
 } from './config-types';
 import { DexRouter } from './dex-router';
 import { getDecimalsErc20, transferErc20 } from './erc20';
@@ -16,7 +18,7 @@ export interface TokenConfig {
   address: string;
   targetToken: string;
   slippage: number;
-  useOneInch?: boolean;
+  dexProvider: PostAuctionDex; 
   feeAmount?: FeeAmount;
 }
 
@@ -65,7 +67,7 @@ export class RewardActionTracker {
     tokenAddress: string,
     amount: BigNumber,
     targetToken: string,
-    useOneInch: boolean,
+    dexProvider: PostAuctionDex,
     slippage: number,
     feeAmount?: number
   ): Promise<{ success: boolean; error?: string }> {
@@ -85,10 +87,13 @@ export class RewardActionTracker {
         error: `No target address for ${targetToken} on chain ${chainId}`,
       };
     }
-    // Combine uniswapOverrides and universalRouterOverrides into a single object to pass to swap
-    const combinedUniswapSettings = {
-      ...this.config.uniswapOverrides,
-      ...this.config.universalRouterOverrides
+    // Combine all DEX settings into a structured object
+    const combinedSettings = {
+      uniswap: {
+        ...this.config.uniswapOverrides,
+        ...this.config.universalRouterOverrides
+      },
+      sushiswap: this.config.sushiswapRouterOverrides
     };
     const result = await this.dexRouter.swap(
       chainId,
@@ -96,10 +101,10 @@ export class RewardActionTracker {
       tokenAddress,
       targetAddress,
       address,
-      useOneInch,
+      dexProvider,
       slippage,
       feeAmount,
-      combinedUniswapSettings, 
+      combinedSettings, 
     );
     return result;
   }
@@ -148,16 +153,31 @@ export class RewardActionTracker {
               tokenConfig?.targetToken ??
               (rewardAction as ExchangeReward).targetToken ??
               'weth';
-            const useOneInch =
-              tokenConfig?.useOneInch ??
-              (rewardAction as ExchangeReward).useOneInch ??
-              false;
+            const dexProvider = tokenConfig?.dexProvider ?? (rewardAction as ExchangeReward).dexProvider;
+
             const feeAmount =
               (rewardAction as ExchangeReward).fee ?? tokenConfig?.feeAmount;
 
+	    // Validate that dexProvider is specified
+            if (!dexProvider) {
+              logger.error(`dexProvider is required for EXCHANGE action on token ${token}`);
+              this.removeToken(rewardAction, token, amountWad);
+              continue;
+            }
+
+	    // Validate the DEX configuration before attempting swap
+            try {
+              validatePostAuctionDex(dexProvider, this.config);
+            } catch (validationError) {
+              logger.error(`Configuration validation failed for ${dexProvider} on token ${token}: ${validationError}`);
+              this.removeToken(rewardAction, token, amountWad);
+              continue;
+            }
+
+
             // If not the first attempt, log that we're retrying
             if (retryCount > 0) {
-              logger.info(`Retry attempt ${retryCount + 1}/${MAX_RETRY_COUNT} for swapping ${weiToDecimaled(amountWad)} of ${token}`);
+              logger.info(`Retry attempt ${retryCount + 1}/${MAX_RETRY_COUNT} for swapping ${weiToDecimaled(amountWad)} of ${token} via ${dexProvider}`);
             }
             
             // Attempt the swap
@@ -166,7 +186,7 @@ export class RewardActionTracker {
               token,
               amountWad,
               targetToken,
-              useOneInch,
+              dexProvider,
               slippage,
               feeAmount
             );
@@ -176,7 +196,7 @@ export class RewardActionTracker {
               this.removeToken(rewardAction, token, amountWad);
               this.retryCountMap.delete(key);
               logger.info(
-                `Successfully swapped ${weiToDecimaled(amountWad)} of ${token} to ${targetToken}`
+               `Successfully swapped ${weiToDecimaled(amountWad)} of ${token} to ${targetToken} via ${dexProvider}`
               );
             } else {
               // Failure: increment retry count
@@ -184,12 +204,12 @@ export class RewardActionTracker {
               this.retryCountMap.set(key, newRetryCount);
               
               logger.error(
-                `Failed to swap ${weiToDecimaled(amountWad)} of ${token} (attempt ${newRetryCount}/${MAX_RETRY_COUNT}): ${swapResult.error}`
+               `Failed to swap ${weiToDecimaled(amountWad)} of ${token} via ${dexProvider} (attempt ${newRetryCount}/${MAX_RETRY_COUNT}): ${swapResult.error}`
               );
               
               // If we've reached max retries, remove the token
               if (newRetryCount >= MAX_RETRY_COUNT) {
-                logger.warn(`Max retry count reached for ${token} - removing from queue`);
+                logger.warn(`Max retry count reached for ${token} via ${dexProvider} - removing from queue`);
                 this.removeToken(rewardAction, token, amountWad);
                 this.retryCountMap.delete(key);
               }

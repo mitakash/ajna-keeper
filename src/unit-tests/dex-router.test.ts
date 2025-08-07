@@ -4,6 +4,7 @@ import chaiAsPromised from 'chai-as-promised';
 import { BigNumber, Contract, ethers, providers, Signer } from 'ethers';
 import sinon from 'sinon';
 import { DexRouter } from '../dex-router';
+import { PostAuctionDex } from '../config-types';
 import * as erc20 from '../erc20';
 import { MAINNET_CONFIG } from '../integration-tests/test-config';
 import { logger } from '../logging';
@@ -155,7 +156,7 @@ describe('DexRouter', () => {
         tokenIn,
         tokenOut,
         to,
-        false
+        PostAuctionDex.UNISWAP_V3
       );
       expect(result.success).to.be.false;
       expect(result.error).to.equal('Invalid parameters provided to swap');
@@ -168,7 +169,7 @@ describe('DexRouter', () => {
         undefined as any,
         tokenOut,
         to,
-        false
+        PostAuctionDex.UNISWAP_V3
       );
       expect(result.success).to.be.false;
       expect(result.error).to.equal('Invalid parameters provided to swap');
@@ -181,7 +182,7 @@ describe('DexRouter', () => {
         tokenIn,
         undefined as any,
         to,
-        false
+        PostAuctionDex.UNISWAP_V3
       );
       expect(result.success).to.be.false;
       expect(result.error).to.equal('Invalid parameters provided to swap');
@@ -194,7 +195,7 @@ describe('DexRouter', () => {
         tokenIn,
         tokenOut,
         undefined as any,
-        false
+        PostAuctionDex.UNISWAP_V3
       );
       expect(result.success).to.be.false;
       expect(result.error).to.equal('Invalid parameters provided to swap');
@@ -218,7 +219,7 @@ describe('DexRouter', () => {
         tokenIn,
         tokenOut,
         to,
-        false
+        PostAuctionDex.UNISWAP_V3
       );
 
       expect(result.success).to.be.false;
@@ -286,7 +287,7 @@ describe('DexRouter', () => {
           tokenIn,
           tokenOut,
           to,
-          true,
+          PostAuctionDex.ONEINCH,
           slippage,
           feeAmount
         );
@@ -341,7 +342,7 @@ describe('DexRouter', () => {
           tokenIn,
           tokenOut,
           to,
-          true,
+          PostAuctionDex.ONEINCH,
           slippage,
           feeAmount
         );
@@ -382,7 +383,7 @@ describe('DexRouter', () => {
           tokenIn,
           tokenOut,
           to,
-          true,
+          PostAuctionDex.ONEINCH,
           slippage,
           feeAmount
         );
@@ -429,7 +430,7 @@ describe('DexRouter', () => {
           tokenIn,
           tokenOut,
           to,
-          true,
+          PostAuctionDex.ONEINCH,
           slippage,
           feeAmount
         );

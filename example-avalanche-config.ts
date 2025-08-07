@@ -3,7 +3,8 @@ import {
   RewardActionLabel,
   PriceOriginSource,
   TokenToCollect,
-  LiquiditySource  // ← NEW: Import for external takes
+  LiquiditySource,  // Import for external takes
+  PostAuctionDex    // NEW: Import for LP reward swaps
 } from './src/config-types';
 import { FeeAmount } from '@uniswap/v3-sdk';
 
@@ -13,7 +14,7 @@ const config: KeeperConfig = {
   subgraphUrl: 'https://api.goldsky.com/api/public/YOUR_GOLDSKY_PROJECT_ID/subgraphs/ajna-avalanche/v0.1.9-rc10/gn', // GET GOLDSKY SUBGRAPH OR LOCAL SUBGRAPH
   keeperKeystore: 'FULL_PATH/keystore.json', // YOU NEED FULL PATH TO YOUR KEYSTORE
   
-  // ← NEW: 1inch Single Contract Setup for External Takes (deploy with scripts/query-1inch.ts --action deploy)
+  // 1inch Single Contract Setup for External Takes (deploy with scripts/query-1inch.ts --action deploy)
   keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts]',  // Deploy smart contract using: yarn compile && scripts/query-1inch.ts --config [config] --action deploy
   
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
@@ -22,7 +23,7 @@ const config: KeeperConfig = {
   delayBetweenActions: 61, // THIS IS IN SECONDS AND NEEDS TO BE CONSERVATIVE FOR FREE TIER OF 1INCH API KEY
   logLevel: 'debug',
   
-  // ← NEW: 1inch Router Configuration for External Takes
+  // 1inch Router Configuration for External Takes
   oneInchRouters: {
     43114: '0x111111125421ca6dc452d289314280a0f8842a65', // Avalanche
   },
@@ -46,7 +47,7 @@ const config: KeeperConfig = {
     poolFactoryAddress: '0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD',
   },
 
-  // ← NEW: 1inch connector token addresses to find the best path to destination token
+  // 1inch connector token addresses to find the best path to destination token
   connectorTokens: [
     '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
     '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
@@ -83,7 +84,7 @@ const config: KeeperConfig = {
           minCollateral: 0.07,
           hpbPriceFactor: 0.90,
 
-          // ← NEW: External Takes via 1inch (requires keeperTaker deployment)
+          // External Takes via 1inch (requires keeperTaker deployment)
           liquiditySource: LiquiditySource.ONEINCH,
           marketPriceFactor: 0.98, // Take when auction price < market * 0.98
 
@@ -98,7 +99,7 @@ const config: KeeperConfig = {
           address: "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E", // Token to swap (savUSD)
           targetToken: "usdc",                                   // Target token (USDC)
           slippage: 1,                                           // Slippage percentage (0-100)
-          useOneInch: true,                                      // Set to true for 1inch
+          dexProvider: PostAuctionDex.ONEINCH,                   // NEW: Use enum instead of useOneInch: true
         },
       },
       // Settlement configuration for stable pools - conservative settings
@@ -125,7 +126,7 @@ const config: KeeperConfig = {
         minCollateral: 0.1, // Enable arbTake when collateral >= 0.1
         hpbPriceFactor: 0.99, // ArbTake when price < hpb * 0.99
         
-        // ← OPTION: Could also use 1inch for external takes here
+        // OPTION: Could also use 1inch for external takes here
         // liquiditySource: LiquiditySource.ONEINCH,
         // marketPriceFactor: 0.98,
       },
@@ -140,7 +141,7 @@ const config: KeeperConfig = {
           address: '0x9a522edA6e9420CD15143b1610193E6a657A7dBd', // USD_T1
           targetToken: 'usd_t2', // Or keep as USD_T1 if preferred
           slippage: 2,
-          useOneInch: false, // Use Uniswap V3
+          dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
           fee: FeeAmount.MEDIUM,
         },
       },

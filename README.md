@@ -328,34 +328,91 @@ const config: KeeperConfig = {
 }
 ```
 
-### Configuring for LP Reward Swapping
+### Configuring for LP Reward Swapping (Post-Auction Swaps)
 
-LP reward swapping doesn't require contract deployment - just configuration:
+**IMPORTANT:** LP reward swapping now uses an enum-based system and **requires contract deployment even for 1inch**.
 
-#### Using 1inch for LP Rewards
+#### Using 1inch for LP Rewards (Requires Contract Deployment)
+```bash
+# REQUIRED: Deploy 1inch contract first
+yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
+```
+
 ```typescript
-collectLpReward: {
-  rewardActionCollateral: {
-    action: RewardActionLabel.EXCHANGE,
-    address: '0x[collateral-token]',
-    targetToken: 'usdc',
-    slippage: 1,
-    useOneInch: true  // Use 1inch API
-  }
+const config: KeeperConfig = {
+  // REQUIRED: Must deploy contract even for LP reward swaps
+  keeperTaker: '0x[deployed-address]',
+  oneInchRouters: {
+    43114: '0x111111125421ca6dc452d289314280a0f8842a65', // Avalanche
+  },
+  
+  pools: [{
+    collectLpReward: {
+      rewardActionCollateral: {
+        action: RewardActionLabel.EXCHANGE,
+        address: '0x[collateral-token]',
+        targetToken: 'usdc',
+        slippage: 1,
+        dexProvider: PostAuctionDex.ONEINCH,  // NEW: Use enum instead of useOneInch: true
+      }
+    }
+  }]
 }
 ```
 
-#### Using Uniswap V3 for LP Rewards  
+#### Using Uniswap V3 for LP Rewards (No Contract Deployment Needed)
 ```typescript
-collectLpReward: {
-  rewardActionCollateral: {
-    action: RewardActionLabel.EXCHANGE,
-    address: '0x[collateral-token]', 
-    targetToken: 'usdc',
-    slippage: 1,
-    useOneInch: false,  // Use Uniswap V3
-    fee: FeeAmount.MEDIUM
-  }
+const config: KeeperConfig = {
+  // Universal Router configuration (for Uniswap V3 swaps)
+  universalRouterOverrides: {
+    universalRouterAddress: '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    permit2Address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+    poolFactoryAddress: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD',
+    defaultFeeTier: 3000,
+    defaultSlippage: 0.5,
+  },
+  
+  pools: [{
+    collectLpReward: {
+      rewardActionCollateral: {
+        action: RewardActionLabel.EXCHANGE,
+        address: '0x[collateral-token]', 
+        targetToken: 'usdc',
+        slippage: 1,
+        dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+        fee: FeeAmount.MEDIUM,
+      }
+    }
+  }]
+}
+```
+
+#### Using SushiSwap for LP Rewards (No Contract Deployment Needed)
+```typescript
+const config: KeeperConfig = {
+  // SushiSwap configuration 
+  sushiswapRouterOverrides: {
+    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',
+    quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
+    factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    defaultFeeTier: 500,
+    defaultSlippage: 10.0,
+  },
+  
+  pools: [{
+    collectLpReward: {
+      rewardActionCollateral: {
+        action: RewardActionLabel.EXCHANGE,
+        address: '0x[collateral-token]', 
+        targetToken: 'usdc',
+        slippage: 10,
+        dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+        fee: FeeAmount.LOW, // 0.05% fee tier
+      }
+    }
+  }]
 }
 ```
 
@@ -411,6 +468,13 @@ The following sections provide comprehensive examples for configuring LP reward 
 
 ##### 1inch LP Reward Configuration
 
+**IMPORTANT:** 1inch LP reward swaps now require smart contract deployment.
+
+```bash
+# Deploy 1inch contract first (REQUIRED)
+yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
+```
+
 Edit config.ts to include these fields:
 
 `oneInchRouters`:
@@ -458,7 +522,7 @@ connectorTokens: [
 `pools.collectLpReward.rewardAction`:
 LP in buckets can be reedemed for quote token and/or collateral, depending on what the bucket holds at time of redemption. `redeemFirst` controls the redemption strategy, favoring either quote token (most situations) or collateral (useful in shorting pools). To defer redeeming the second token, it's `minAmount` can be set to a sufficiently high value that manually swapping tokens on an exchange becomes practical.
 
-Separate reward actions may be assigned to quote token and collateral, allowing tokens to be swapped out as desired. For pools where you want to swap rewards with 1inch, set `useOneInch: true` in the `rewardAction`.
+Separate reward actions may be assigned to quote token and collateral, allowing tokens to be swapped out as desired. For pools where you want to swap rewards with 1inch, set `dexProvider: PostAuctionDex.ONEINCH` in the `rewardAction`.
 
 - Example: Volatile-to-volatile pool, swap both tokens for stables
 
@@ -473,18 +537,18 @@ pools: [
       minAmountQuote: 0.001,             // don't redeem LP for dust amount of WETH
       minAmountCollateral: 0.005,        // ensure we're redeeming enough to cover swapping fees
       rewardActionQuote: {
-        action: "EXCHANGE",
+        action: RewardActionLabel.EXCHANGE,
         address: "0x4200000000000000000000000000000000000006", // Token to swap (WETH)
         targetToken: "DAI",                                    // Desired token
         slippage: 1,                                           // Slippage percentage (0-100)
-        useOneInch: true                                       // Set to true for 1inch
+        dexProvider: PostAuctionDex.ONEINCH                    // NEW: Use enum instead of useOneInch: true
       }
       rewardActionCollateral: {
-        action: "EXCHANGE",
+        action: RewardActionLabel.EXCHANGE,
         address: "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452", // Token to swap (wstETH)
         targetToken: "DAI",                                    // Desired token
         slippage: 1,                                           // Slippage percentage (0-100)
-        useOneInch: true                                       // Set to true for 1inch
+        dexProvider: PostAuctionDex.ONEINCH                    // NEW: Use enum instead of useOneInch: true
       },
     },
   }
@@ -508,7 +572,7 @@ pools: [
           address: "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E", // Token to swap (savUSD)
           targetToken: "usdc",                                   // Target token (USDC)
           slippage: 1,                                           // Slippage percentage (0-100)
-          useOneInch: true                                       // Set to true for 1inch
+          dexProvider: PostAuctionDex.ONEINCH                    // NEW: Use enum instead of useOneInch: true
         },
       },
   }
@@ -535,36 +599,32 @@ pools: [
 
 ##### Notes
 
-- If `useOneInch` is `true` but `oneInchRouters` is missing a `chainId`, the script will fail.
+- **Contract deployment is required** even for LP reward swaps using 1inch
+- If `dexProvider: PostAuctionDex.ONEINCH` but `keeperTaker` is missing, the script will fail.
 - Ensure the `.env` file is loaded (via `dotenv/config`) in your project.
 
 ##### Uniswap V3 LP Reward Configuration
 
 Edit `config.ts` to include these optional fields:
 
-`uniswapOverrides` (Optional):
-Customize Uniswap V3 settings. If not provided, it defaults to WETH swaps.
+`universalRouterOverrides`:
+Required for Uniswap V3 swaps. Provides addresses for Universal Router integration.
 
 - Format:
 
 ```
-uniswapOverrides: {
-  wethAddress: "weth-contract-address",
-  uniswapV3Router: "uniswap-v3-router-address"
+universalRouterOverrides: {
+  universalRouterAddress: "0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B",
+  wethAddress: "0x4200000000000000000000000000000000000006",
+  permit2Address: "0xB952578f3520EE8Ea45b7914994dcf4702cEe578",
+  poolFactoryAddress: "0x346239972d1fa486FC4a521031BC81bFB7D6e8a4",
+  defaultFeeTier: 3000,
+  defaultSlippage: 0.5,
 }
 ```
 
-- Example:
-
-```
-uniswapOverrides: {
-  wethAddress: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", // WETH on Ethereum
-  uniswapV3Router: "0xE592427A0AEce92De3Edee1F18E0157C05861564" // Uniswap V3 Router
-},
-```
-
 `tokenAddresses` (Optional):
-Useful for specifying target tokens (e.g., WETH) if not using `uniswapOverrides`.
+Useful for specifying target tokens (e.g., WETH) if not using `universalRouterOverrides`.
 
 - Example:
 
@@ -576,7 +636,7 @@ tokenAddresses: {
 ```
 
 `pools.collectLpReward.rewardAction`:
-For pools where you want to swap rewards with Uniswap V3, set `useOneInch: false` and optionally add a `fee`.
+For pools where you want to swap rewards with Uniswap V3, set `dexProvider: PostAuctionDex.UNISWAP_V3` and optionally add a `fee`.
 
 - Format:
 
@@ -593,7 +653,7 @@ For pools where you want to swap rewards with Uniswap V3, set `useOneInch: false
       address: "0xtokenAddress", // Token to swap
       targetToken: "weth",      // Target token (e.g., "weth", "usdc")
       slippage: 1,             // Slippage (ignored for Uniswap)
-      useOneInch: false,       // Set to false for Uniswap
+      dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
       fee: 3000               // Fee tier (500, 3000, 10000)
     }
   }
@@ -611,12 +671,55 @@ pools: [
       redeemFirst: "COLLATERAL",
       minAmount: 0.001,
       rewardAction: {
-        action: "EXCHANGE",
+        action: RewardActionLabel.EXCHANGE,
         address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         targetToken: "usdc",
         slippage: 1,
-        useOneInch: false,
+        dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
         fee: 3000 // 0.3% fee tier
+      }
+    }
+  }
+],
+```
+
+##### SushiSwap LP Reward Configuration
+
+For SushiSwap integration, add the `sushiswapRouterOverrides` configuration:
+
+`sushiswapRouterOverrides`:
+Required for SushiSwap swaps. Provides addresses for SushiSwap router integration.
+
+- Format:
+
+```
+sushiswapRouterOverrides: {
+  swapRouterAddress: "0x33d91116e0370970444B0281AB117e161fEbFcdD",
+  quoterV2Address: "0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C",
+  factoryAddress: "0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959",
+  wethAddress: "0x4200000000000000000000000000000000000006",
+  defaultFeeTier: 500,
+  defaultSlippage: 10.0,
+}
+```
+
+- Example:
+
+```
+pools: [
+  {
+    name: "USD_T1 / USD_T2",
+    address: "0x600ca6e0b5cf41e3e4b4242a5b170f3b02ce3da7",
+    collectLpReward: {
+      redeemFirst: "COLLATERAL",
+      minAmount: 0.001,
+      rewardAction: {
+        action: RewardActionLabel.EXCHANGE,
+        address: "0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6",
+        targetToken: "usd_t2",
+        slippage: 10,
+        dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+        fee: 500 // 0.05% fee tier
       }
     }
   }
@@ -625,9 +728,9 @@ pools: [
 
 ##### Notes
 
-- `fee` is the Uniswap V3 pool fee tier (e.g., `500` for 0.05%, `3000` for 0.3%, `10000` for 1%).
-- slippage is ignored for Uniswap swaps.
-- If `targetToken` isn’t WETH, ensure it matches `uniswapOverrides.wethAddress` or adjust the underlying logic.
+- `fee` is the fee tier (e.g., `500` for 0.05%, `3000` for 0.3%, `10000` for 1%).
+- `slippage` is respected for all DEX providers.
+- If `targetToken` isn't WETH, ensure it matches the configured WETH address.
 
 ## Testing
 

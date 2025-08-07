@@ -7,7 +7,9 @@ import { logger } from './logging';
 import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
 import { swapWithUniversalRouter } from './universal-router-module';
+import { swapWithSushiswapRouter } from './sushiswap-router-module';
 import { NonceTracker } from './nonce';
+import { PostAuctionDex } from './config-types';
 
 // TODO:
 // Why does this log errors and return failure rather than throwing exceptions?
@@ -34,6 +36,7 @@ export class DexRouter {
       : '';
   }
 
+  // All methods stay exactly the same until swap()
   public getRouter(chainId: number): string | undefined {
     return this.oneInchRouters[chainId];
   }
@@ -145,6 +148,7 @@ export class DexRouter {
     return { success: true, data: response.data.tx };
   }
 
+  // swapWithOneInch stays exactly the same (preserves NonceTracker!)
   private async swapWithOneInch(
     chainId: number,
     amount: BigNumber,
@@ -234,6 +238,7 @@ export class DexRouter {
           };
         }
 
+        // CRITICAL: Keep NonceTracker.queueTransaction exactly as-is!
         const receipt = await NonceTracker.queueTransaction(this.signer, async (nonce: number) => {
         // Create a new txWithNonce object that includes the nonce
         const txWithNonce = {
@@ -264,25 +269,70 @@ export class DexRouter {
     return { success: false, error: 'Max retries reached for 1inch swap' };
   }
 
-  public async swap(
-  chainId: number,
-  amount: BigNumber,
-  tokenIn: string,
-  tokenOut: string,
-  to: string,
-  useOneInch: boolean,
-  slippage: number = 1,
-  feeAmount: number = 3000,
-  uniswapOverrides?: { 
-    wethAddress?: string; 
-    uniswapV3Router?: string;
-    universalRouterAddress?: string;
-    permit2Address?: string;
-    poolFactoryAddress?: string;
-    defaultFeeTier?: number;
-    defaultSlippage?: number;
+  // Keep your existing swapWithSushiswap method exactly as-is
+  private async swapWithSushiswap(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    to: string,
+    slippage: number,
+    feeAmount?: number,
+    sushiswapSettings?: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      
+      if (!sushiswapSettings) {
+        return {
+          success: false,
+          error: 'SushiSwap configuration not found'
+        };
+      }
+      
+      const result = await swapWithSushiswapRouter(
+        this.signer,
+        tokenIn,
+        amount,
+        tokenOut,
+        slippage,
+        sushiswapSettings.swapRouterAddress!,
+        sushiswapSettings.quoterV2Address!,
+        feeAmount || sushiswapSettings.defaultFeeTier || 500,
+	sushiswapSettings.factoryAddress,  // From your config
+      );
+      
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        error: `SushiSwap swap failed: ${error}`
+      };
+    }
   }
-    ): Promise<{ success: boolean; error?: string }> {
+
+  // MAJOR CHANGE: Update method signature and replace boolean logic with switch/case
+  public async swap(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    to: string,
+    dexProvider: PostAuctionDex,
+    slippage: number = 1,
+    feeAmount: number = 3000,
+    combinedSettings?: { 
+      uniswap?: {
+        wethAddress?: string; 
+        uniswapV3Router?: string;
+        universalRouterAddress?: string;
+        permit2Address?: string;
+        poolFactoryAddress?: string;
+        defaultFeeTier?: number;
+        defaultSlippage?: number;
+      };
+      sushiswap?: any; // ADD: SushiSwap settings
+    }
+  ): Promise<{ success: boolean; error?: string }> {
     if (!chainId || !amount || !tokenIn || !tokenOut || !to) {
       logger.error('Invalid parameters provided to swap');
       return { success: false, error: 'Invalid parameters provided to swap' };
@@ -312,97 +362,118 @@ export class DexRouter {
       return { success: false, error: `Insufficient balance for ${tokenIn}` };
     }
 
-    
-    if (useOneInch) {
-      const oneInchRouter = this.oneInchRouters[chainId];
-      if (!oneInchRouter) {
-        logger.error(`No 1inch router defined for chainId ${chainId}`);
-        return {
-          success: false,
-          error: `No 1inch router defined for chainId ${chainId}`,
-        };
-      }
 
-      const currentAllowance = await getAllowanceOfErc20(
-        this.signer,
-        tokenIn,
-        oneInchRouter
-      );
-      logger.debug(
-        `Current allowance: ${currentAllowance.toString()}, Amount: ${adjustedAmount.toString()}`
-      );
-      if (currentAllowance.lt(adjustedAmount)) {
-        try {
-          logger.debug(
-            `Approving 1inch router ${oneInchRouter} for token: ${tokenIn}`
-          );
-          await approveErc20(
-            this.signer,
-            tokenIn,
-            oneInchRouter,
-            adjustedAmount
-          );
-          logger.info(`Approval successful for token ${tokenIn}`);
-        } catch (error) {
-          logger.error(
-            `Failed to approve token ${tokenIn} for 1inch: ${error}`
-          );
-          return { success: false, error: `Approval failed: ${error}` };
+    // ADD: Replace with switch/case enum logic
+    switch (dexProvider) {
+      case PostAuctionDex.ONEINCH:
+        // SAME: Keep exact same 1inch logic, preserves all nonce tracking!
+        const oneInchRouter = this.oneInchRouters[chainId];
+        if (!oneInchRouter) {
+          logger.error(`No 1inch router defined for chainId ${chainId}`);
+          return {
+            success: false,
+            error: `No 1inch router defined for chainId ${chainId}`,
+          };
         }
-      }
 
-      const result = await this.swapWithOneInch(
-        chainId,
-        adjustedAmount,
-        tokenIn,
-        tokenOut,
-        slippage
-      );
-      return result;
-    } else {
-        // Check if we have Universal Router settings
-     if (uniswapOverrides?.universalRouterAddress && uniswapOverrides?.permit2Address && uniswapOverrides?.poolFactoryAddress) {
-       try {
-       logger.info(`Using Universal Router for swap`);
-      // Use the Universal Router if configuration is available
-      await swapWithUniversalRouter(
-        this.signer,
-        tokenIn,
-        adjustedAmount,
-        tokenOut,
-        slippage * 100, // Convert percentage to basis points
-        uniswapOverrides.universalRouterAddress,
-        uniswapOverrides.permit2Address,
-        uniswapOverrides.defaultFeeTier || feeAmount,
-        uniswapOverrides.poolFactoryAddress
-      );
-      logger.info(
-        `Universal Router swap successful: ${adjustedAmount.toString()} ${tokenIn} -> ${tokenOut}`
-      );
-      return { success: true };
-    } catch (error) {
-      logger.error(`Universal Router swap failed for token: ${tokenIn}: ${error}`);
-      return { success: false, error: `Universal Router swap failed: ${error}` };
-    }
-  } else {
-
-      try {
-        await swapToWeth(
+        const currentAllowance = await getAllowanceOfErc20(
           this.signer,
           tokenIn,
+          oneInchRouter
+        );
+        logger.debug(
+          `Current allowance: ${currentAllowance.toString()}, Amount: ${adjustedAmount.toString()}`
+        );
+        if (currentAllowance.lt(adjustedAmount)) {
+          try {
+            logger.debug(
+              `Approving 1inch router ${oneInchRouter} for token: ${tokenIn}`
+            );
+            await approveErc20(
+              this.signer,
+              tokenIn,
+              oneInchRouter,
+              adjustedAmount
+            );
+            logger.info(`Approval successful for token ${tokenIn}`);
+          } catch (error) {
+            logger.error(
+              `Failed to approve token ${tokenIn} for 1inch: ${error}`
+            );
+            return { success: false, error: `Approval failed: ${error}` };
+          }
+        }
+
+        const result = await this.swapWithOneInch(
+          chainId,
           adjustedAmount,
+          tokenIn,
+          tokenOut,
+          slippage
+        );
+        return result;
+
+      case PostAuctionDex.UNISWAP_V3:
+        // SAME: Keep exact same Uniswap logic, just change uniswapOverrides → combinedSettings?.uniswap
+        if (combinedSettings?.uniswap?.universalRouterAddress && combinedSettings?.uniswap?.permit2Address && combinedSettings?.uniswap?.poolFactoryAddress) {
+          try {
+            logger.info(`Using Universal Router for swap`);
+            await swapWithUniversalRouter(
+              this.signer,
+              tokenIn,
+              adjustedAmount,
+              tokenOut,
+              slippage * 100, // Convert percentage to basis points
+              combinedSettings.uniswap.universalRouterAddress,
+              combinedSettings.uniswap.permit2Address,
+              combinedSettings.uniswap.defaultFeeTier || feeAmount,
+              combinedSettings.uniswap.poolFactoryAddress
+            );
+            logger.info(
+              `Universal Router swap successful: ${adjustedAmount.toString()} ${tokenIn} -> ${tokenOut}`
+            );
+            return { success: true };
+          } catch (error) {
+            logger.error(`Universal Router swap failed for token: ${tokenIn}: ${error}`);
+            return { success: false, error: `Universal Router swap failed: ${error}` };
+          }
+        } else {
+          try {
+            await swapToWeth(
+              this.signer,
+              tokenIn,
+              adjustedAmount,
+              feeAmount,
+              combinedSettings?.uniswap
+            );
+            logger.info(
+              `Uniswap V3 swap successful: ${adjustedAmount.toString()} ${tokenIn} -> ${tokenOut}`
+            );
+            return { success: true };
+          } catch (error) {
+            logger.error(`Uniswap V3 swap failed for token: ${tokenIn}: ${error}`);
+            return { success: false, error: `Uniswap swap failed: ${error}` };
+          }
+        }
+
+      case PostAuctionDex.SUSHISWAP:
+        // NEW: Add SushiSwap case
+        return await this.swapWithSushiswap(
+          chainId,
+          adjustedAmount,
+          tokenIn,
+          tokenOut,
+          to,
+          slippage,
           feeAmount,
-          uniswapOverrides
+          combinedSettings?.sushiswap
         );
-        logger.info(
-          `Uniswap V3 swap successful: ${adjustedAmount.toString()} ${tokenIn} -> ${tokenOut}`
-        );
-        return { success: true };
-      } catch (error) {
-        logger.error(`Uniswap V3 swap failed for token: ${tokenIn}: ${error}`);
-        return { success: false, error: `Uniswap swap failed: ${error}` };
-      }
+
+      default:
+        return {
+          success: false,
+          error: `Unsupported DEX provider: ${dexProvider}`
+        };
     }
   }
-}
 }

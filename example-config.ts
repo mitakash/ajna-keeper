@@ -5,7 +5,8 @@ import {
   PriceOriginSource,
   RewardActionLabel,
   TokenToCollect,
-  LiquiditySource,  // ← NEW: Import for external takes
+  LiquiditySource,  // Import for external takes
+  PostAuctionDex,   // NEW: Import for LP reward swaps
 } from './src/config-types';
 
 const config: KeeperConfig = {
@@ -19,17 +20,17 @@ const config: KeeperConfig = {
   delayBetweenRuns: 15,
   delayBetweenActions: 1,
   
-  // ← NEW: 1inch Router Configuration (for chains with 1inch support)
+  // 1inch Router Configuration (for chains with 1inch support)
   oneInchRouters: {
     1: '0x1111111254EEB25477B68fb85Ed929f73A960582',    // Ethereum
     8453: '0x1111111254EEB25477B68fb85Ed929f73A960582',  // Base
     43114: '0x1111111254EEB25477B68fb85Ed929f73A960582', // Avalanche
   },
   
-  // ← OPTION 1: Single Contract Setup (for 1inch integration)
+  // OPTION 1: Single Contract Setup (for 1inch integration)
   // keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts]',
   
-  // ← OPTION 2: Factory System Setup (for Uniswap V3 and future DEXs)
+  // OPTION 2: Factory System Setup (for Uniswap V3 and future DEXs)
   // keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]',
   // takerContracts: {
   //   'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]'
@@ -41,7 +42,7 @@ const config: KeeperConfig = {
     weth: '0x4200000000000000000000000000000000000006',
   },
   
-  // ← NEW: Connector tokens for 1inch optimization
+  // Connector tokens for 1inch optimization
   connectorTokens: [
     '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
     '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
@@ -49,7 +50,7 @@ const config: KeeperConfig = {
     '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
   ],
   
-  // ← ENHANCED: Universal Router configuration (for Uniswap V3 integration)
+  // Universal Router configuration (for Uniswap V3 integration)
   universalRouterOverrides: {
     universalRouterAddress: '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD', // Base UniversalRouter
     wethAddress: '0x4200000000000000000000000000000000000006', // WETH on Base
@@ -57,7 +58,17 @@ const config: KeeperConfig = {
     defaultFeeTier: 3000, // 0.3% fee tier
     defaultSlippage: 0.5, // 0.5% slippage tolerance
     poolFactoryAddress: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD', // Base pool factory
-    quoterV2Address: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a', // ← NEW: QuoterV2 for accurate pricing
+    quoterV2Address: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a', // QuoterV2 for accurate pricing
+  },
+  
+  // SushiSwap configuration (optional)
+  sushiswapRouterOverrides: {
+    swapRouterAddress: '0x[SUSHISWAP_ROUTER_ADDRESS]',
+    quoterV2Address: '0x[SUSHISWAP_QUOTER_ADDRESS]',
+    factoryAddress: '0x[SUSHISWAP_FACTORY_ADDRESS]',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    defaultFeeTier: 500,
+    defaultSlippage: 2.0,
   },
   
   ajna: {
@@ -87,7 +98,7 @@ const config: KeeperConfig = {
         minCollateral: 0.01,
         hpbPriceFactor: 0.9,
         
-        // ← NEW: External Takes Example - uncomment and configure after contract deployment
+        // External Takes Example - uncomment and configure after contract deployment
         // liquiditySource: LiquiditySource.ONEINCH,      // Use 1inch (requires keeperTaker)
         // liquiditySource: LiquiditySource.UNISWAPV3,    // Use Uniswap V3 (requires keeperTakerFactory)
         // marketPriceFactor: 0.98,                       // Take when auction < market * 0.98
@@ -102,7 +113,7 @@ const config: KeeperConfig = {
           address: '0xaddressOfWstETH',
           targetToken: 'weth',
           slippage: 1,
-          useOneInch: false,
+          dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
           fee: FeeAmount.LOW,
         },
       },
@@ -130,7 +141,7 @@ const config: KeeperConfig = {
         minCollateral: 0.01,
         hpbPriceFactor: 0.9,
         
-        // ← NEW: Example external take configuration for major pool
+        // Example external take configuration for major pool
         // liquiditySource: LiquiditySource.ONEINCH,
         // marketPriceFactor: 0.99,  // More conservative for volatile pairs
       },
@@ -186,7 +197,7 @@ const config: KeeperConfig = {
         minCollateral: 0.07,
         hpbPriceFactor: 0.98,
         
-        // ← NEW: Stable pair external take example
+        // Stable pair external take example
         liquiditySource: LiquiditySource.ONEINCH,
         marketPriceFactor: 0.98,  // Stable pairs can be more aggressive
       },
@@ -200,7 +211,7 @@ const config: KeeperConfig = {
           address: '0x06d47F3fb376649c3A9Dafe069B3D6E35572219E',
           targetToken: 'usdc',
           slippage: 1,
-          useOneInch: true,  // ← LP reward swapping via 1inch (no contracts needed)
+          dexProvider: PostAuctionDex.ONEINCH,  // NEW: Use enum instead of useOneInch: true
         },
       },
       // Settlement with longer wait time for stable pools
