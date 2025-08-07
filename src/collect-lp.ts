@@ -131,9 +131,12 @@ export class LpCollector {
         );
         ({ exchangeRate, deposit, collateral } = await bucket.getStatus());
       }
-      const remainingQuote = await bucket.lpToQuoteTokens(
-        rewardLp.sub(reedemed)
-      );
+      //the following is to prevent race conditions
+      const remainingLp = rewardLp.sub(reedemed);
+      if (remainingLp.lte(constants.Zero)) {
+        return reedemed; // All LP already redeemed
+      }
+      const remainingQuote = await bucket.lpToQuoteTokens(remainingLp);
       // still need to check this in case minAmountCollateral prevented withdrawal of collateral
       const quoteToWithdraw = min(remainingQuote, deposit);
       if (quoteToWithdraw.gt(decimaledToWei(minAmountQuote))) {
@@ -161,9 +164,12 @@ export class LpCollector {
         );
         ({ exchangeRate, deposit, collateral } = await bucket.getStatus());
       }
-      const remainingCollateral = await bucket.lpToCollateral(
-        rewardLp.sub(reedemed)
-      );
+      //The following is to prevent race conditions
+      const remainingLp = rewardLp.sub(reedemed);
+      if (remainingLp.lte(constants.Zero)) {
+        return reedemed; // All LP already redeemed
+      }
+      const remainingCollateral = await bucket.lpToCollateral(remainingLp);
       // still need to check this in case minAmountQuote prevented withdrawal of quote token
       const collateralToWithdraw = min(remainingCollateral, collateral);
       if (collateralToWithdraw.gt(decimaledToWei(minAmountCollateral))) {
