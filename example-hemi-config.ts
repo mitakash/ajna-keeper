@@ -4,7 +4,7 @@ import {
   PriceOriginSource,
   TokenToCollect,
   LiquiditySource,  // Import for external takes
-  PostAuctionDex    // NEW: Import for LP reward swaps
+  PostAuctionDex    // Import for LP reward swaps
 } from './src/config-types';
 import { FeeAmount } from '@uniswap/v3-sdk';
 
@@ -30,10 +30,11 @@ const config: KeeperConfig = {
   // Factory System Setup for External Takes (deploy with scripts/deploy-factory-system.ts)
   keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]', // Factory contract address
   takerContracts: {
-    'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]' // Individual taker contract addresses
+    'UniswapV3': '0x[DEPLOYED_UNISWAP_TAKER_ADDRESS]',  // Individual taker contract addresses
+    'SushiSwap': '0x[DEPLOYED_SUSHISWAP_TAKER_ADDRESS]' // SushiSwap taker contract
   }, 
   
-  // Universal Router configuration with QuoterV2 address
+  // Universal Router configuration for Uniswap V3 with QuoterV2 address
   universalRouterOverrides: {
     universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B', // HEMI UniversalRouter based on gov proposal
     wethAddress: '0x4200000000000000000000000000000000000006', // Wrapped ETH on HEMI
@@ -44,7 +45,7 @@ const config: KeeperConfig = {
     quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5', // QuoterV2 for accurate pricing
   },
 
-  // SushiSwap configuration (optional for LP reward swaps)
+  // SushiSwap configuration for both external takes and LP reward swaps
   sushiswapRouterOverrides: {
     swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD', // From production test
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',   // From production test  
@@ -85,6 +86,7 @@ const config: KeeperConfig = {
         
         // External Takes via Uniswap V3 (requires factory deployment)
         liquiditySource: LiquiditySource.UNISWAPV3, // Use Uniswap V3 for external takes
+        // liquiditySource: LiquiditySource.SUSHISWAP, // Alternative: Use SushiSwap for external takes
         marketPriceFactor: 0.99, // Take when auction price < market * 0.99
       },
       collectBond: true, // Collect liquidation bonds
@@ -98,7 +100,7 @@ const config: KeeperConfig = {
           address: '0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6', // USD_T1
           targetToken: 'usd_t2', // Or keep as USD_T1 if preferred
           slippage: 2,
-          dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+          dexProvider: PostAuctionDex.UNISWAP_V3, // Use Uniswap V3 for LP rewards
           fee: FeeAmount.MEDIUM,
         },
       },
@@ -126,8 +128,9 @@ const config: KeeperConfig = {
         minCollateral: 0.1, // Enable arbTake when collateral >= 0.1
         hpbPriceFactor: 0.98, // ArbTake when price < hpb * 0.98
         
-        // External Takes via Uniswap V3 (requires factory deployment)
-        liquiditySource: LiquiditySource.UNISWAPV3, // Use Uniswap V3 for external takes
+        // External Takes via SushiSwap (requires factory deployment)
+        liquiditySource: LiquiditySource.SUSHISWAP, // Use SushiSwap for external takes
+        // liquiditySource: LiquiditySource.UNISWAPV3, // Alternative: Use Uniswap V3 for external takes
         marketPriceFactor: 0.99, // Take when auction price < market * 0.99
       },
       collectBond: true, // Collect liquidation bonds
@@ -141,7 +144,7 @@ const config: KeeperConfig = {
           address: '0x00b2fee99fe3fc9aab91d1b249c99c9ffbb1ccde', // USD_T4
           targetToken: 'usd_t3', // Or keep as USD_T3 if preferred
           slippage: 10, // Higher slippage for SushiSwap
-          dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+          dexProvider: PostAuctionDex.SUSHISWAP, // Use SushiSwap for LP rewards
           fee: FeeAmount.LOW, // 0.05% fee tier
         },
       },
@@ -152,6 +155,55 @@ const config: KeeperConfig = {
         maxBucketDepth: 50,              // Process 50 buckets per settlement call
         maxIterations: 10,               // Max 10 settlement iterations
         checkBotIncentive: true,         // Only settle if bot address has rewards to claim
+      },
+    },
+    {
+      name: 'Example Mixed DEX Pool',
+      address: '0x[example-pool-address]',
+      price: {
+        source: PriceOriginSource.FIXED,
+        value: 1.0,
+      },
+      kick: {
+        minDebt: 0.1,
+        priceFactor: 0.99,
+      },
+      take: {
+        minCollateral: 0.1,
+        hpbPriceFactor: 0.97,
+        
+        // Example: Use Uniswap V3 for external takes (typically lower slippage)
+        liquiditySource: LiquiditySource.UNISWAPV3,
+        marketPriceFactor: 0.99,
+      },
+      collectBond: true,
+      collectLpReward: {
+        redeemFirst: TokenToCollect.QUOTE,
+        minAmountQuote: 0.001,
+        minAmountCollateral: 0.001,
+        rewardActionQuote: {
+          action: RewardActionLabel.EXCHANGE,
+          address: '0x[quote-token-address]',
+          targetToken: 'weth',
+          slippage: 1,
+          dexProvider: PostAuctionDex.UNISWAP_V3, // Use Uniswap V3 for quote rewards
+          fee: FeeAmount.MEDIUM,
+        },
+        rewardActionCollateral: {
+          action: RewardActionLabel.EXCHANGE,
+          address: '0x[collateral-token-address]',
+          targetToken: 'weth',
+          slippage: 10,
+          dexProvider: PostAuctionDex.SUSHISWAP, // Use SushiSwap for collateral rewards (higher slippage tolerance)
+          fee: FeeAmount.LOW,
+        },
+      },
+      settlement: {
+        enabled: true,
+        minAuctionAge: 18000,
+        maxBucketDepth: 50,
+        maxIterations: 10,
+        checkBotIncentive: true,
       },
     },
   ]

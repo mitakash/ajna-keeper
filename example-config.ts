@@ -6,14 +6,14 @@ import {
   RewardActionLabel,
   TokenToCollect,
   LiquiditySource,  // Import for external takes
-  PostAuctionDex,   // NEW: Import for LP reward swaps
+  PostAuctionDex,   // Import for LP reward swaps
 } from './src/config-types';
 
 const config: KeeperConfig = {
   dryRun: true,
   logLevel: 'info',
   ethRpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
-  subgraphUrl: 'https://api.studio.thegraph.com/query/49479/ajna-base/version/latest',
+  subgraphUrl: 'https://api.studio.thegraph.com/query/example_49479/ajna-base/version/latest_example',
   keeperKeystore: '/home/anon/keystore-files/keeper-keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 5022,
@@ -30,10 +30,11 @@ const config: KeeperConfig = {
   // OPTION 1: Single Contract Setup (for 1inch integration)
   // keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts]',
   
-  // OPTION 2: Factory System Setup (for Uniswap V3 and future DEXs)
+  // OPTION 2: Factory System Setup (for Uniswap V3 and SushiSwap)
   // keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]',
   // takerContracts: {
-  //   'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]'
+  //   'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]',
+  //   'SushiSwap': '0x[DEPLOYED_TAKER_ADDRESS]'
   // },
   
   tokenAddresses: {
@@ -61,14 +62,14 @@ const config: KeeperConfig = {
     quoterV2Address: '0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a', // QuoterV2 for accurate pricing
   },
   
-  // SushiSwap configuration (optional)
+  // SushiSwap configuration (for SushiSwap V3 integration)
   sushiswapRouterOverrides: {
-    swapRouterAddress: '0x[SUSHISWAP_ROUTER_ADDRESS]',
-    quoterV2Address: '0x[SUSHISWAP_QUOTER_ADDRESS]',
-    factoryAddress: '0x[SUSHISWAP_FACTORY_ADDRESS]',
+    swapRouterAddress: '0x[SUSHISWAP_ROUTER_ADDRESS]',    // SushiSwap V3 Router
+    quoterV2Address: '0x[SUSHISWAP_QUOTER_ADDRESS]',       // SushiSwap QuoterV2
+    factoryAddress: '0x[SUSHISWAP_FACTORY_ADDRESS]',       // SushiSwap V3 Factory
     wethAddress: '0x4200000000000000000000000000000000000006',
-    defaultFeeTier: 500,
-    defaultSlippage: 2.0,
+    defaultFeeTier: 500,    // 0.05% fee tier (SushiSwap typically lower fees)
+    defaultSlippage: 2.0,   // 2% slippage tolerance (conservative for SushiSwap)
   },
   
   ajna: {
@@ -101,6 +102,7 @@ const config: KeeperConfig = {
         // External Takes Example - uncomment and configure after contract deployment
         // liquiditySource: LiquiditySource.ONEINCH,      // Use 1inch (requires keeperTaker)
         // liquiditySource: LiquiditySource.UNISWAPV3,    // Use Uniswap V3 (requires keeperTakerFactory)
+        // liquiditySource: LiquiditySource.SUSHISWAP,    // Use SushiSwap (requires keeperTakerFactory)
         // marketPriceFactor: 0.98,                       // Take when auction < market * 0.98
       },
       collectBond: true,
@@ -113,17 +115,17 @@ const config: KeeperConfig = {
           address: '0xaddressOfWstETH',
           targetToken: 'weth',
           slippage: 1,
-          dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+          dexProvider: PostAuctionDex.UNISWAP_V3, // Options: ONEINCH, UNISWAP_V3, SUSHISWAP
           fee: FeeAmount.LOW,
         },
       },
       // Settlement configuration - handles completed auctions and bad debt
       settlement: {
         enabled: true,                    // Enable automatic settlement
-        minAuctionAge: 18000,             // Wait 5 hours before settling (18000 seconds), Ajna auction price is at market price after 6 hours
+        minAuctionAge: 18000,             // Wait 5 hours before settling (18000 seconds)
         maxBucketDepth: 50,              // Process up to 50 buckets per settlement call
         maxIterations: 10,               // Maximum settlement iterations per auction
-        checkBotIncentive: true,         // Only settle auctions this bot kicked (has bond rewards to recover), set to false if you are altruistic
+        checkBotIncentive: true,         // Only settle auctions this bot kicked (has bond rewards)
       },
     },
     {
@@ -142,7 +144,8 @@ const config: KeeperConfig = {
         hpbPriceFactor: 0.9,
         
         // Example external take configuration for major pool
-        // liquiditySource: LiquiditySource.ONEINCH,
+        // liquiditySource: LiquiditySource.ONEINCH,     // 1inch for best pricing
+        // liquiditySource: LiquiditySource.SUSHISWAP,   // SushiSwap for lower fees
         // marketPriceFactor: 0.99,  // More conservative for volatile pairs
       },
       collectBond: true,
@@ -197,8 +200,9 @@ const config: KeeperConfig = {
         minCollateral: 0.07,
         hpbPriceFactor: 0.98,
         
-        // Stable pair external take example
-        liquiditySource: LiquiditySource.ONEINCH,
+        // Stable pair external take example - multiple options
+        liquiditySource: LiquiditySource.ONEINCH,        // 1inch for aggregation
+        // liquiditySource: LiquiditySource.SUSHISWAP,   // SushiSwap for direct routing
         marketPriceFactor: 0.98,  // Stable pairs can be more aggressive
       },
       collectBond: true,
@@ -211,16 +215,57 @@ const config: KeeperConfig = {
           address: '0x06d47F3fb376649c3A9Dafe069B3D6E35572219E',
           targetToken: 'usdc',
           slippage: 1,
-          dexProvider: PostAuctionDex.ONEINCH,  // NEW: Use enum instead of useOneInch: true
+          dexProvider: PostAuctionDex.ONEINCH,  // Options: ONEINCH, UNISWAP_V3, SUSHISWAP
         },
       },
       // Settlement with longer wait time for stable pools
       settlement: {
         enabled: true,
-        minAuctionAge: 18000,             // Wait 5 hours for stable pools (18000 seconds)
+        minAuctionAge: 18000,             // Wait 5 hours for stable pools
         maxBucketDepth: 100,             // Process more buckets for stable pools
         maxIterations: 5,                // Fewer iterations expected for stable pools
-        checkBotIncentive: false,        // Settle ANY auction (even if this bot didn't kick it) for pool health
+        checkBotIncentive: false,        // Settle ANY auction for pool health
+      },
+    },
+    {
+      name: 'Example SushiSwap Pool',
+      address: '0x[example-pool-address]',
+      price: {
+        source: PriceOriginSource.FIXED,
+        value: 1.0,
+      },
+      kick: {
+        minDebt: 0.1,
+        priceFactor: 0.99,
+      },
+      take: {
+        minCollateral: 0.1,
+        hpbPriceFactor: 0.95,
+        
+        // SushiSwap external take configuration
+        liquiditySource: LiquiditySource.SUSHISWAP,
+        marketPriceFactor: 0.99,  // Take when auction < market * 0.99
+      },
+      collectBond: true,
+      collectLpReward: {
+        redeemFirst: TokenToCollect.COLLATERAL,
+        minAmountQuote: 0.001,
+        minAmountCollateral: 0.001,
+        rewardActionCollateral: {
+          action: RewardActionLabel.EXCHANGE,
+          address: '0x[collateral-token-address]',
+          targetToken: 'usdc',
+          slippage: 10,  // Higher slippage for SushiSwap
+          dexProvider: PostAuctionDex.SUSHISWAP,
+          fee: FeeAmount.LOW, // 0.05% fee tier
+        },
+      },
+      settlement: {
+        enabled: true,
+        minAuctionAge: 18000,
+        maxBucketDepth: 50,
+        maxIterations: 10,
+        checkBotIncentive: true,
       },
     },
   ],

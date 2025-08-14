@@ -1,6 +1,6 @@
 # Production Setup Guide
 
-This guide covers the recommended approach for running the Ajna keeper in production environments, based on real-world deployment experience on Avalanche and Hemi networks.
+This guide covers the recommended approach for running the Ajna keeper in production environments, based on real-world deployment experience on Avalanche, Hemi, and other networks.
 
 ## Overview: Production vs Development Setup
 
@@ -9,14 +9,14 @@ While the main README covers the basic setup process, production deployments ben
 **Recommended Production Stack:**
 - **RPC Provider**: Alchemy or QuickNode (hosted)
 - **Subgraph**: BuiltByMom/Ajna-subgraph deployed on Goldsky (hosted)
-- **DEX Integration**: 1inch API or Uniswap Universal Router
+- **DEX Integration**: 1inch API, Uniswap V3 Universal Router, or SushiSwap V3 Router
 - **Monitoring**: Goldsky subgraph monitoring + custom logging
 
 ## Step 1: RPC Provider Setup
 
 ### Option A: Alchemy (Recommended)
 1. Create account at [alchemy.com](https://alchemy.com)
-2. Create a new app for your target network (Avalanche, Base, Arbitrum, etc.)
+2. Create a new app for your target network (Avalanche, Base, Arbitrum, Hemi, etc.)
 3. Navigate to Apps > Networks tab
 4. Copy the HTTPS URL (format: `https://[network].g.alchemy.com/v2/[api-key]`)
 
@@ -33,11 +33,12 @@ While the main README covers the basic setup process, production deployments ben
 
 ### Decision Matrix: Which Approach to Use?
 
-| Chain Type | 1inch Available? | Recommended Approach | Deployment Script |
-|------------|------------------|---------------------|-------------------|
-| **Major Chains**<br/>(Ethereum, Avalanche, Base, Arbitrum) | ✅ Yes | **1inch Single Contract** | `scripts/query-1inch.ts` |
-| **Newer Chains**<br/>(Hemi, emerging L2s) | ❌ No | **Factory System (Uniswap V3)** | `scripts/deploy-factory-system.ts` |
-| **Testing/Basic** | N/A | **No External Takes** | Skip deployment |
+| Chain Type | 1inch Available? | Uniswap V3? | SushiSwap V3? | Recommended Approach | Deployment Script |
+|------------|------------------|-------------|---------------|---------------------|-------------------|
+| **Major Chains**<br/>(Ethereum, Avalanche, Base, Arbitrum) | ✅ Yes | ✅ Yes | ✅ Yes | **1inch Single Contract** | `scripts/query-1inch.ts` |
+| **Emerging L2s**<br/>(Hemi, Scroll, etc.) | ❌ No | ✅ Yes | ✅ Yes | **Factory System (Uniswap V3 + SushiSwap)** | `scripts/deploy-factory-system.ts` |
+| **Uniswap-only Chains** | ❌ No | ✅ Yes | ❌ No | **Factory System (Uniswap V3 Only)** | `scripts/deploy-factory-system.ts` |
+| **Testing/Basic** | N/A | N/A | N/A | **No External Takes** | Skip deployment |
 
 ### Option A: 1inch Single Contract Deployment
 
@@ -47,7 +48,7 @@ While the main README covers the basic setup process, production deployments ben
 
 **Prerequisites:**
 ```bash
-# 1. Compile contracts
+# 1. Compile contracts first
 yarn compile
 
 # 2. Verify 1inch router addresses for your chain
@@ -96,7 +97,7 @@ const config: KeeperConfig = {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usdc',
         slippage: 1,
-        dexProvider: PostAuctionDex.ONEINCH, // NEW: Use enum instead of useOneInch: true
+        dexProvider: PostAuctionDex.ONEINCH, // Use enum
       }
     }
   }]
@@ -105,26 +106,28 @@ const config: KeeperConfig = {
 
 ### Option B: Factory System Deployment (Multi-DEX)
 
-**Best for:** Newer chains without 1inch, future DEX flexibility
+**Best for:** Newer chains without 1inch, chains with multiple DEX options
 
 **Prerequisites:**
 ```bash
-# 1. Compile contracts
+# 1. Compile contracts first
 yarn compile
 
-# 2. Verify Universal Router addresses for your chain
-# Check: https://docs.uniswap.org/contracts/v3/reference/deployments
+# 2. Verify Universal Router and SushiSwap addresses for your chain
+# Uniswap V3: https://docs.uniswap.org/contracts/v3/reference/deployments
+# SushiSwap: Check official documentation or block explorers
 ```
 
 **Deployment Steps:**
 ```bash
-# Deploy factory + Uniswap V3 taker system  
+# Deploy factory + Uniswap V3 + SushiSwap taker system  
 yarn ts-node scripts/deploy-factory-system.ts your-config.ts
 
 # Expected output:
 # ✓ AjnaKeeperTakerFactory deployed to: 0x[factory-address]
-# ✓ UniswapV3KeeperTaker deployed to: 0x[taker-address]  
-# ✓ Factory configured with UniswapV3 taker
+# ✓ UniswapV3KeeperTaker deployed to: 0x[uniswap-taker-address]
+# ✓ SushiSwapKeeperTaker deployed to: 0x[sushiswap-taker-address]
+# ✓ Factory configured with UniswapV3 and SushiSwap takers
 # ✓ All verification checks passed
 ```
 
@@ -134,10 +137,11 @@ const config: KeeperConfig = {
   // ADD: Factory system addresses
   keeperTakerFactory: '0x[factory-address]',
   takerContracts: {
-    'UniswapV3': '0x[taker-address]'
+    'UniswapV3': '0x[uniswap-taker-address]',
+    'SushiSwap': '0x[sushiswap-taker-address]'
   },
   
-  // ADD: Universal Router configuration  
+  // ADD: Universal Router configuration for Uniswap V3
   universalRouterOverrides: {
     universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B',
     wethAddress: '0x4200000000000000000000000000000000000006',
@@ -148,20 +152,20 @@ const config: KeeperConfig = {
     defaultSlippage: 0.5,    // 0.5% slippage tolerance
   },
   
-  // ADD: SushiSwap configuration (optional)
+  // ADD: SushiSwap configuration
   sushiswapRouterOverrides: {
     swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
     factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
     wethAddress: '0x4200000000000000000000000000000000000006',
-    defaultFeeTier: 500,
-    defaultSlippage: 10.0,
+    defaultFeeTier: 500,     // 0.05% fee tier
+    defaultSlippage: 10.0,   // 10% slippage tolerance
   },
   
   pools: [{
     take: {
-      // ADD: Configure external takes  
-      liquiditySource: LiquiditySource.UNISWAPV3,
+      // ADD: Configure external takes - choose your preferred DEX
+      liquiditySource: LiquiditySource.SUSHISWAP, // or UNISWAPV3
       marketPriceFactor: 0.99, // Take when auction price < market * 0.99
       minCollateral: 0.01,     // Minimum collateral to attempt take
     },
@@ -170,7 +174,7 @@ const config: KeeperConfig = {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usd_t2',
         slippage: 2,
-        dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+        dexProvider: PostAuctionDex.SUSHISWAP, // or UNISWAP_V3
         fee: FeeAmount.MEDIUM,
       }
     }
@@ -187,9 +191,12 @@ const config: KeeperConfig = {
 const config: KeeperConfig = {
   // NO keeperTaker or keeperTakerFactory needed
   
-  // ADD: For LP reward swaps only (no contracts needed)
+  // ADD: For LP reward swaps only (no contracts needed for Uniswap V3/SushiSwap)
   universalRouterOverrides: {
     // ... Uniswap configuration for LP rewards
+  },
+  sushiswapRouterOverrides: {
+    // ... SushiSwap configuration for LP rewards
   },
   
   pools: [{
@@ -204,7 +211,7 @@ const config: KeeperConfig = {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usdc',
         slippage: 1,
-        dexProvider: PostAuctionDex.UNISWAP_V3, // LP rewards work without contracts
+        dexProvider: PostAuctionDex.SUSHISWAP, // LP rewards work without contracts
         fee: FeeAmount.MEDIUM,
       }
     }
@@ -262,7 +269,7 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
    git checkout develop  # Latest network configurations
    npm install
    
-   # Configure for your network (e.g., avalanche, base, arbitrum)
+   # Configure for your network (e.g., avalanche, base, arbitrum, hemi)
    npm run prepare:[network]
    npm run build
    
@@ -278,6 +285,8 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 
 ## Step 3: Known Good Contract Addresses
 
+### Ajna Deployment Addresses
+
 [Ajna Deployment Addresses with Bridge Addresses](https://faqs.ajna.finance/info/deployment-addresses-and-bridges)
 
 ### Uniswap Universal Router Addresses
@@ -291,6 +300,16 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 | Base | `0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD` | [Uniswap Gov](https://gov.uniswap.org/t/official-uniswap-v3-deployments-list/24323) |
 | Arbitrum | `0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD` | [Uniswap Gov](https://gov.uniswap.org/t/official-uniswap-v3-deployments-list/24323) |
 | Hemi | `0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B` | [Uniswap Gov](https://gov.uniswap.org/t/official-uniswap-v3-deployments-list/24323) |
+
+### SushiSwap V3 Router Addresses
+
+**Production Verified Addresses:**
+
+| Network | Swap Router | QuoterV2 | Factory | Notes |
+|---------|-------------|----------|---------|-------|
+| Hemi | `0x33d91116e0370970444B0281AB117e161fEbFcdD` | `0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C` | `0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959` | Production Tested |
+| Base | `0x[verify-on-deployment]` | `0x[verify-on-deployment]` | `0x[verify-on-deployment]` | Check SushiSwap docs |
+| Avalanche | `0x[verify-on-deployment]` | `0x[verify-on-deployment]` | `0x[verify-on-deployment]` | Check SushiSwap docs |
 
 ### 1inch Router Addresses
 
@@ -310,6 +329,14 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 - Paid tiers: Higher limits available
 - Get API key at [portal.1inch.dev](https://portal.1inch.dev/)
 
+**SushiSwap:**
+- No API rate limits (direct contract interaction)
+- May have RPC rate limits depending on provider
+
+**Uniswap V3:**
+- No API rate limits (direct contract interaction)
+- May have RPC rate limits depending on provider
+
 **Goldsky:**
 - 50 requests/second (generous for subgraph queries)
 - Free tier available
@@ -325,15 +352,13 @@ The keeper is configured with conservative timing to respect rate limits:
 ```typescript
 {
   delayBetweenRuns: 15,        // 15 seconds between bot cycles
-  delayBetweenActions: 61,     // 61 seconds between individual actions
+  delayBetweenActions: 61,     // 61 seconds between individual actions (for 1inch)
 }
 ```
 
 **For faster operation:** Upgrade to paid API tiers. The bot timing can be reduced with higher-tier service plans.
 
 ## Step 5: Chain-Specific Configuration Examples
-
-**See `example-avalanche-config.ts`, `example-hemi-config.ts`, for complete examples.**
 
 ### Avalanche Production Config Snippet
 
@@ -344,19 +369,18 @@ const config: KeeperConfig = {
   logLevel: 'debug',
   ethRpcUrl: 'https://avax-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
   subgraphUrl: 'https://api.goldsky.com/api/public/project_[id]/subgraphs/ajna-avalanche/1.0.0/gn',
-  multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11', //This is generally same on most chains
-  multicallBlock: 11907934,  //This will vary depending on what chain you are on
-  delayBetweenRuns: 2, //minimum to quickly get through all loops
-  delayBetweenActions: 31, //free tier 1inch api key limits to 100K call per month, possibly increase
+  multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
+  multicallBlock: 11907934,
+  delayBetweenRuns: 2,
+  delayBetweenActions: 31,
   
-  // 1inch configuration
   // 1inch Single Contract Setup
-  keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts in /scripts directory]',
+  keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts]',
   oneInchRouters: {
     43114: '0x111111125421ca6dc452d289314280a0f8842a65',
   },
   
-  // Universal Router configuration
+  // Universal Router configuration (for LP rewards)
   universalRouterOverrides: {
     universalRouterAddress: '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD',
     wethAddress: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', // WAVAX
@@ -409,14 +433,14 @@ const config: KeeperConfig = {
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usdc',
-        dexProvider: PostAuctionDex.ONEINCH // NEW: Use enum instead of useOneInch: true
+        dexProvider: PostAuctionDex.ONEINCH
       }
     }
   }],
   coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY',
-  // ... pool configurations
 };
 ```
+
 **Deployment Commands:**
 ```bash
 # 1. Deploy 1inch connector
@@ -439,15 +463,16 @@ const config: KeeperConfig = {
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 484490,
   delayBetweenRuns: 2,
-  delayBetweenActions: 31, // this could be lower, set high for 1inch free tier API, no 1inch API on Hemi
+  delayBetweenActions: 31,
 
   // Factory System Setup
-  keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts in /scripts directory]',
+  keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]',
   takerContracts: {
-    'UniswapV3': '0x[DEPLOYED_TAKER_ADDRESS]'
+    'UniswapV3': '0x[DEPLOYED_UNISWAP_TAKER_ADDRESS]',
+    'SushiSwap': '0x[DEPLOYED_SUSHISWAP_TAKER_ADDRESS]'
   },
   
-  // Universal Router configuration for Hemi
+  // Universal Router configuration for Uniswap V3
   universalRouterOverrides: {
     universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B',
     wethAddress: '0x4200000000000000000000000000000000000006',
@@ -455,11 +480,12 @@ const config: KeeperConfig = {
     defaultFeeTier: 3000,
     defaultSlippage: 0.5,
     poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
+    quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5',
   },
   
-  // SushiSwap configuration for LP rewards
+  // SushiSwap configuration
   sushiswapRouterOverrides: {
-    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',
+    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD', //address for Hemi Chain
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
     factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
     wethAddress: '0x4200000000000000000000000000000000000006',
@@ -470,7 +496,10 @@ const config: KeeperConfig = {
   // Hemi token addresses
   tokenAddresses: {
     weth: '0x4200000000000000000000000000000000000006',
-    // ... other token addresses
+    usd_t1: '0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6',
+    usd_t2: '0x91e1a2966408d434cfc1c0790df4a1ce08dc73d8',
+    usd_t3: '0x9f60ec2c81308c753e84467e2526c7d8fc05cd0d',
+    usd_t4: '0x00b2fee99fe3fc9aab91d1b249c99c9ffbb1ccde',
   },
   
   // Hemi Ajna contract addresses
@@ -498,8 +527,8 @@ const config: KeeperConfig = {
       checkBotIncentive: true,
     },
     take: {
-      // External take via Uniswap V3
-      liquiditySource: LiquiditySource.UNISWAPV3,
+      // External take via SushiSwap
+      liquiditySource: LiquiditySource.SUSHISWAP,
       marketPriceFactor: 0.99,
       minCollateral: 0.1,
       // ArbTake as backup
@@ -510,16 +539,16 @@ const config: KeeperConfig = {
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         targetToken: 'usd_t2',
-        dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+        dexProvider: PostAuctionDex.SUSHISWAP,
         fee: FeeAmount.LOW
       }
     }
   }],
 
   coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY',
-  // ... pool configurations
 };
 ```
+
 **Deployment Commands:**
 ```bash
 # 1. Deploy factory system
@@ -592,8 +621,8 @@ yarn ts-node scripts/query-1inch.ts --config config.ts --action deploy
 
 **Factory Deployment Failures:**
 ```bash
-# Error: "Missing universalRouterOverrides"  
-# Solution: Add complete Universal Router config to config.ts
+# Error: "Missing universalRouterOverrides or sushiswapRouterOverrides"  
+# Solution: Add complete router configs to config.ts
 
 # Error: "Network mismatch"
 # Solution: Ensure RPC URL matches the intended network
@@ -614,13 +643,16 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 
 # Log: "universalRouterOverrides required when liquiditySource is UNISWAPV3"
 # Solution: Add complete Universal Router configuration
+
+# Log: "sushiswapRouterOverrides required when liquiditySource is SUSHISWAP"
+# Solution: Add complete SushiSwap configuration
 ```
 
 **LP Reward Configuration Issues:**
 ```bash
 # Log: "Unsupported DEX provider: undefined"
 # Cause: Missing dexProvider enum in rewardAction
-# Solution: Replace useOneInch: true/false with dexProvider: PostAuctionDex.ONEINCH/UNISWAP_V3/SUSHISWAP
+# Solution: Replace old boolean logic with dexProvider: PostAuctionDex.ONEINCH/UNISWAP_V3/SUSHISWAP
 
 # Log: "Configuration validation failed for oneinch: Missing keeperTaker"
 # Solution: Deploy 1inch contract even for LP rewards
@@ -691,12 +723,12 @@ rm yarn.lock
 yarn install
 yarn compile
 ```
-## Why this happens:
+
+**Why this happens:**
 This is typically caused by:
 - Different Node.js versions having different native module compatibility
 - Package version conflicts between development and production environments  
 - Lock file inconsistencies when multiple people contribute to the repo
-
 
 ### Subgraph Not Syncing
 1. Check Goldsky deployment status
@@ -745,4 +777,27 @@ Settlement incomplete for def67890 after 10 iterations: Partial settlement after
 
 This indicates the auction needs more settlement iterations or has complex debt distribution.
 
-This production setup guide reflects real-world deployment experience and should significantly reduce setup time and common issues when running the Ajna keeper in production environments.
+### DEX-Specific Issues
+
+**SushiSwap Quote Provider Issues:**
+```bash
+# Log: "SushiSwap quote failed: INSUFFICIENT_LIQUIDITY"
+# Solution: Check if pool exists for the token pair and fee tier
+
+# Log: "SushiSwap quoter reverted"
+# Solution: Verify quoterV2Address and factory addresses
+
+# Log: "No SushiSwap pool for tokenA/tokenB with fee 500"
+# Solution: Try different fee tier (3000) or verify token addresses
+```
+
+**Multi-DEX Factory Issues:**
+```bash
+# Log: "Factory: Unsupported liquidity source: 3"
+# Solution: Ensure takerContracts includes 'SushiSwap' entry
+
+# Log: "Factory: Missing required SushiSwap configuration"
+# Solution: Add complete sushiswapRouterOverrides to config
+```
+
+This production setup guide reflects real-world deployment experience across multiple networks and DEX integrations, significantly reducing setup time and common issues when running the Ajna keeper in production environments.
