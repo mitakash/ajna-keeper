@@ -8,11 +8,13 @@ import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuar
 import { IERC20Pool, PoolDeployer } from "../AjnaInterfaces.sol";
 import { IERC20 } from "../OneInchInterfaces.sol";
 import { IAjnaKeeperTaker } from "../interfaces/IAjnaKeeperTaker.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice SushiSwap V3 implementation for Ajna keeper takes using SushiSwap Router
 /// @dev Follows the same pattern as UniswapV3KeeperTaker for consistency
 // AUDIT FIX: Inherit from ReentrancyGuard for security
 contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
+    using SafeERC20 for IERC20;
     /// @notice Configuration for SushiSwap swaps
     struct SushiSwapDetails {
         address swapRouter;         // SushiSwap router contract address
@@ -89,9 +91,9 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
             deadline: deadline
         }));
 
-        // Approve the pool to spend this contract's quote token
+        // FIXED: Safe approval for pool to spend quote token
         uint256 approvalAmount = _ceilWmul(maxAmount, auctionPrice) / pool.quoteTokenScale();
-        IERC20(pool.quoteTokenAddress()).approve(address(pool), approvalAmount);
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), approvalAmount);
 
         // Invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
@@ -160,8 +162,8 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
 
         IERC20 tokenInContract = IERC20(tokenIn);
         
-        // Approve SushiSwap router to spend collateral token
-        tokenInContract.approve(details.swapRouter, amountIn);
+        // FIXED: Safe approval for SushiSwap router to spend collateral token
+        _safeApproveWithReset(tokenInContract, details.swapRouter, amountIn);
 
         // Calculate minimum amount out with slippage
         uint256 amountOutMin = (amountIn * (10000 - details.slippageBps)) / 10000;
@@ -199,7 +201,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     function _recoverToken(IERC20 token) private {
         uint256 balance = token.balanceOf(address(this));
         if (balance > 0) {
-            token.transfer(owner, balance);
+            token.safeTransfer(owner, balance);
         }
     }
 
@@ -211,6 +213,24 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     /// @dev Multiplies two WADs and rounds up to the nearest decimal
     function _ceilWmul(uint256 x, uint256 y) internal pure returns (uint256) {
         return (x * y + 1e18 - 1) / 1e18;
+    }
+
+    /// @dev FIXED: Safe approval that handles non-zero to non-zero allowance issue
+    /// @param token The ERC20 token to approve
+    /// @param spender The address to approve
+    /// @param amount The amount to approve
+    function _safeApproveWithReset(IERC20 token, address spender, uint256 amount) private {
+        uint256 currentAllowance = token.allowance(address(this), spender);
+        
+        if (currentAllowance != 0) {
+            // Reset to zero first if there's existing allowance
+            token.safeApprove(spender, 0);
+        }
+        
+        // Now approve the new amount
+        if (amount != 0) {
+            token.safeApprove(spender, amount);
+        }
     }
 
     // New modifier that allows both owner and authorized factory
