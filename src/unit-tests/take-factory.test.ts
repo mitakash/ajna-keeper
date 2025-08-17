@@ -56,7 +56,7 @@ describe('Take Factory', () => {
 
       const config = {
         dryRun: false,
-        subgraphUrl: 'https://api.goldsky.com/api/public/project_test/subgraphs/ajna-hemi/1.0.0/gn',
+        subgraphUrl: 'http://localhost:8000/subgraphs/name/ajna-test',
         delayBetweenActions: 1000,
         // Missing keeperTakerFactory and universalRouterOverrides (testing graceful degradation)
       };
@@ -109,7 +109,7 @@ describe('Take Factory', () => {
       // Real Hemi config structure
       const config = {
         dryRun: true, // Use dryRun to avoid actual transactions
-        subgraphUrl: 'https://api.goldsky.com/api/public/project_test/subgraphs/ajna-hemi/1.0.0/gn',
+        subgraphUrl: 'http://localhost:8000/subgraphs/name/ajna-test',
         delayBetweenActions: 35,
         keeperTakerFactory: '0xB6006B9e9696a0A097D4990964D5bDa6E940ba0D',
         takerContracts: {
