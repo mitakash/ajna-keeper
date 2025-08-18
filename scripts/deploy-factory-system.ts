@@ -16,6 +16,7 @@ import { readConfigFile, KeeperConfig } from '../src/config-types';
  * - Fixed deployment order (factory → taker with factory authorization)
  * - Interactive password input (same as main bot)
  * - Comprehensive validation and error handling
+ * - Manual gas limits for problematic networks
  */
 
 interface DeploymentAddresses {
@@ -24,6 +25,22 @@ interface DeploymentAddresses {
   sushiTaker?: string;
   // Future: curveTaker, etc.
 }
+
+// Gas configuration for different networks
+const GAS_CONFIGS: { [chainId: number]: { gasLimit: string; gasPrice?: string } } = {
+  43111: { // Hemi Mainnet - Reasonable settings for large contract deployment
+    gasLimit: '6000000', // 6M gas limit (reasonable for Hemi)
+    gasPrice: '100000000', // 0.1 gwei (much cheaper for Hemi)
+  },
+  43114: { // Avalanche
+    gasLimit: '6000000',
+    gasPrice: '30000000000', // 30 gwei
+  },
+  1: { // Ethereum Mainnet
+    gasLimit: '6000000',
+  },
+  // Add more networks as needed
+};
 
 async function getKeystorePassword(): Promise<string> {
   // Same approach as main bot - just prompt directly
@@ -53,6 +70,15 @@ async function detectChainInfo(config: KeeperConfig): Promise<{ chainId: number;
     chainId: network.chainId,
     name: chainNames[network.chainId] || `Chain ${network.chainId}`
   };
+}
+
+function getGasConfig(chainId: number) {
+  const config = GAS_CONFIGS[chainId];
+  if (!config) {
+    console.log(`⚠️  No gas config for chain ${chainId}, using default settings`);
+    return { gasLimit: '5000000' }; // Default 5M gas
+  }
+  return config;
 }
 
 async function validateConfig(config: KeeperConfig): Promise<void> {
@@ -107,9 +133,10 @@ async function validateConfig(config: KeeperConfig): Promise<void> {
 
 async function deployFactory(
   deployer: ethers.Wallet,
-  ajnaPoolFactory: string
+  ajnaPoolFactory: string,
+  chainId: number
 ): Promise<string> {
-  console.log('\n Step 1: Deploying AjnaKeeperTakerFactory...');
+  console.log('\n📦 Step 1: Deploying AjnaKeeperTakerFactory...');
   
   const factoryArtifact = require(path.join(__dirname, '..', 'artifacts', 'contracts', 'factories', 'AjnaKeeperTakerFactory.sol', 'AjnaKeeperTakerFactory.json'));
   const AjnaKeeperTakerFactory = new ethers.ContractFactory(
@@ -118,21 +145,65 @@ async function deployFactory(
     deployer
   );
   
-  const factory = await AjnaKeeperTakerFactory.deploy(ajnaPoolFactory);
-  console.log(' Factory deployment tx:', factory.deployTransaction.hash);
+  // Get gas configuration for this chain
+  const gasConfig = getGasConfig(chainId);
+  console.log(`⛽ Using gas config: limit=${gasConfig.gasLimit}${gasConfig.gasPrice ? `, price=${gasConfig.gasPrice}` : ''}`);
   
-  await factory.deployed();
-  console.log('AjnaKeeperTakerFactory deployed to:', factory.address);
+  // Prepare deployment options with manual gas settings
+  const deployOptions: any = {
+    gasLimit: gasConfig.gasLimit,
+  };
   
-  return factory.address;
+  if (gasConfig.gasPrice) {
+    deployOptions.gasPrice = gasConfig.gasPrice;
+  }
+  
+  console.log('🚀 Deploying with manual gas settings...');
+  
+  try {
+    const factory = await AjnaKeeperTakerFactory.deploy(ajnaPoolFactory, deployOptions);
+    console.log('✅ Factory deployment tx:', factory.deployTransaction.hash);
+    
+    console.log('⏳ Waiting for deployment confirmation...');
+    await factory.deployed();
+    console.log('🎉 AjnaKeeperTakerFactory deployed to:', factory.address);
+    
+    return factory.address;
+  } catch (error: any) {
+    console.log('❌ Factory deployment failed with manual gas settings');
+    
+    // Try with higher gas limit as fallback
+    if (error.message?.includes('gas')) {
+      console.log('🔄 Retrying with higher gas limit...');
+      const higherGasLimit = (parseInt(gasConfig.gasLimit) * 1.5).toString();
+      
+      const retryOptions = {
+        ...deployOptions,
+        gasLimit: higherGasLimit,
+      };
+      
+      console.log(`⛽ Retry gas limit: ${higherGasLimit}`);
+      
+      const factory = await AjnaKeeperTakerFactory.deploy(ajnaPoolFactory, retryOptions);
+      console.log('✅ Factory deployment tx (retry):', factory.deployTransaction.hash);
+      
+      await factory.deployed();
+      console.log('🎉 AjnaKeeperTakerFactory deployed to:', factory.address);
+      
+      return factory.address;
+    }
+    
+    throw error;
+  }
 }
 
 async function deployUniswapTaker(
   deployer: ethers.Wallet,
   ajnaPoolFactory: string,
-  factoryAddress: string
+  factoryAddress: string,
+  chainId: number
 ): Promise<string> {
-  console.log('\n Step 2: Deploying UniswapV3KeeperTaker...');
+  console.log('\n📦 Step 2: Deploying UniswapV3KeeperTaker...');
   
   const takerArtifact = require(path.join(__dirname, '..', 'artifacts', 'contracts', 'takers', 'UniswapV3KeeperTaker.sol', 'UniswapV3KeeperTaker.json'));
   const UniswapV3KeeperTaker = new ethers.ContractFactory(
@@ -141,15 +212,26 @@ async function deployUniswapTaker(
     deployer
   );
   
+  // Get gas configuration
+  const gasConfig = getGasConfig(chainId);
+  const deployOptions: any = {
+    gasLimit: gasConfig.gasLimit,
+  };
+  
+  if (gasConfig.gasPrice) {
+    deployOptions.gasPrice = gasConfig.gasPrice;
+  }
+  
   // Correct deployment order with factory authorization
   const taker = await UniswapV3KeeperTaker.deploy(
     ajnaPoolFactory,    // Ajna pool factory
-    factoryAddress      // Authorized factory (CRITICAL FIX)
+    factoryAddress,     // Authorized factory (CRITICAL FIX)
+    deployOptions
   );
-  console.log(' UniswapV3 taker deployment tx:', taker.deployTransaction.hash);
+  console.log('✅ UniswapV3 taker deployment tx:', taker.deployTransaction.hash);
   
   await taker.deployed();
-  console.log(' UniswapV3KeeperTaker deployed to:', taker.address);
+  console.log('🎉 UniswapV3KeeperTaker deployed to:', taker.address);
   
   return taker.address;
 }
@@ -157,9 +239,10 @@ async function deployUniswapTaker(
 async function deploySushiSwapTaker(
   deployer: ethers.Wallet,
   ajnaPoolFactory: string,
-  factoryAddress: string
+  factoryAddress: string,
+  chainId: number
 ): Promise<string> {
-  console.log('\n Step 2b: Deploying SushiSwapKeeperTaker...');
+  console.log('\n📦 Step 2b: Deploying SushiSwapKeeperTaker...');
   
   const takerArtifactPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'takers', 'SushiSwapKeeperTaker.sol', 'SushiSwapKeeperTaker.json');
   const takerArtifact = require(takerArtifactPath);
@@ -169,15 +252,26 @@ async function deploySushiSwapTaker(
     deployer
   );
   
+  // Get gas configuration
+  const gasConfig = getGasConfig(chainId);
+  const deployOptions: any = {
+    gasLimit: gasConfig.gasLimit,
+  };
+  
+  if (gasConfig.gasPrice) {
+    deployOptions.gasPrice = gasConfig.gasPrice;
+  }
+  
   // Deploy with factory authorization
   const taker = await SushiSwapKeeperTaker.deploy(
     ajnaPoolFactory,    // Ajna pool factory
-    factoryAddress      // Authorized factory
+    factoryAddress,     // Authorized factory
+    deployOptions
   );
-  console.log(' SushiSwap taker deployment tx:', taker.deployTransaction.hash);
+  console.log('✅ SushiSwap taker deployment tx:', taker.deployTransaction.hash);
   
   await taker.deployed();
-  console.log(' SushiSwapKeeperTaker deployed to:', taker.address);
+  console.log('🎉 SushiSwapKeeperTaker deployed to:', taker.address);
   
   return taker.address;
 }
@@ -187,7 +281,7 @@ async function configureFactory(
   factoryAddress: string,
   addresses: DeploymentAddresses
 ): Promise<void> {
-  console.log('\n Step 3: Configuring factory with takers...');
+  console.log('\n⚙️  Step 3: Configuring factory with takers...');
   
   const factoryArtifact = require(path.join(__dirname, '..', 'artifacts', 'contracts', 'factories', 'AjnaKeeperTakerFactory.sol', 'AjnaKeeperTakerFactory.json'));
   const factory = new ethers.Contract(factoryAddress, factoryArtifact.abi, deployer);
@@ -195,17 +289,17 @@ async function configureFactory(
   // Register UniswapV3 taker (LiquiditySource.UNISWAPV3 = 2)
   if (addresses.uniswapTaker) {
     const setUniTakerTx = await factory.setTaker(2, addresses.uniswapTaker);
-    console.log(' UniswapV3 configuration tx:', setUniTakerTx.hash);
+    console.log('✅ UniswapV3 configuration tx:', setUniTakerTx.hash);
     await setUniTakerTx.wait();
-    console.log(' Factory configured with UniswapV3 taker');
+    console.log('🎉 Factory configured with UniswapV3 taker');
   }
   
   // Register SushiSwap taker (LiquiditySource.SUSHISWAP = 3)
   if (addresses.sushiTaker) {
     const setSushiTakerTx = await factory.setTaker(3, addresses.sushiTaker);
-    console.log(' SushiSwap configuration tx:', setSushiTakerTx.hash);
+    console.log('✅ SushiSwap configuration tx:', setSushiTakerTx.hash);
     await setSushiTakerTx.wait();
-    console.log(' Factory configured with SushiSwap taker');
+    console.log('🎉 Factory configured with SushiSwap taker');
   }
   
 }
@@ -214,7 +308,7 @@ async function verifyDeployment(
   deployer: ethers.Wallet,
   addresses: DeploymentAddresses
 ): Promise<void> {
-  console.log('\n Step 4: Verifying deployment...');
+  console.log('\n🔍 Step 4: Verifying deployment...');
   
   if (!addresses.factory) {
     throw new Error('Factory address is missing from deployment');
@@ -228,7 +322,7 @@ async function verifyDeployment(
   const registeredTaker = await factory.takerContracts(2);
   const factoryOwner = await factory.owner();
   
-  console.log(' Verification Results:');
+  console.log('📋 Verification Results:');
   console.log(`- Factory Owner: ${factoryOwner}`);
   console.log(`- Expected Owner: ${deployer.address}`);
   console.log(`- UniswapV3 Configured: ${hasUniswapTaker}`);
@@ -249,19 +343,19 @@ async function verifyDeployment(
     
     // Validation checks
     if (!hasUniswapTaker || registeredTaker !== addresses.uniswapTaker) {
-      throw new Error(' Factory configuration verification failed');
+      throw new Error('❌ Factory configuration verification failed');
     }
     
     if (authorizedFactory !== addresses.factory) {
-      throw new Error(' Taker authorization verification failed');
+      throw new Error('❌ Taker authorization verification failed');
     }
     
     if (takerOwner !== deployer.address || factoryOwner !== deployer.address) {
-      throw new Error(' Owner verification failed');
+      throw new Error('❌ Owner verification failed');
     }
   }
   
-  console.log(' All verification checks passed');
+  console.log('✅ All verification checks passed');
 }
 
 function generateConfigUpdate(
@@ -269,9 +363,9 @@ function generateConfigUpdate(
   configPath: string,
   chainName: string
 ): void {
-  console.log('\n DEPLOYMENT COMPLETE!');
-  console.log('\n Update your configuration file:');
-  console.log(` File: ${configPath}`);
+  console.log('\n🎉 DEPLOYMENT COMPLETE!');
+  console.log('\n📝 Update your configuration file:');
+  console.log(`📁 File: ${configPath}`);
   console.log('\n```typescript');
   console.log('// ADD/UPDATE these lines in your config:');
   
@@ -291,22 +385,22 @@ function generateConfigUpdate(
   }
   console.log('```');
   
-  console.log('\n Deployed Contract Addresses:');
+  console.log('\n📋 Deployed Contract Addresses:');
   if (addresses.factory) {
-    console.log(` AjnaKeeperTakerFactory: ${addresses.factory}`);
+    console.log(`🏭 AjnaKeeperTakerFactory: ${addresses.factory}`);
   }
   if (addresses.uniswapTaker) {
-    console.log(` UniswapV3KeeperTaker: ${addresses.uniswapTaker}`);
+    console.log(`🦄 UniswapV3KeeperTaker: ${addresses.uniswapTaker}`);
   }
   if (addresses.sushiTaker) {
-  console.log(` SushiSwapKeeperTaker: ${addresses.sushiTaker}`);
+    console.log(`🍣 SushiSwapKeeperTaker: ${addresses.sushiTaker}`);
   }
   
-  console.log('\n Next Steps:');
+  console.log('\n🚀 Next Steps:');
   console.log('1. Update your config file with the addresses above');
   console.log('2. Test with: yarn start --config your-config-file.ts');
   console.log('3. Expected result: "Type: factory, Valid: true"');
-  console.log(`4. Factory system ready for ${chainName}! `);
+  console.log(`4. Factory system ready for ${chainName}! 🎊`);
 }
 
 async function main() {
@@ -318,41 +412,47 @@ async function main() {
     console.error('\n Prerequisites:');
     console.error('1. Compile contracts: yarn compile');
     console.error('2. Have your keystore.json file ready');
+    console.error('3. Ensure sufficient ETH balance (recommended: >0.01 ETH)');
     process.exit(1);
   }
   
   const configPath = args[0];
   
   try {
-    console.log(' Universal Factory System Deployment');
+    console.log('🚀 Universal Factory System Deployment');
     console.log('=====================================');
     
     // Step 1: Load and validate configuration
-    console.log(` Loading configuration from: ${configPath}`);
+    console.log(`📖 Loading configuration from: ${configPath}`);
     const config = await readConfigFile(configPath);
     await validateConfig(config);
     
     // Step 2: Detect chain information
     const chainInfo = await detectChainInfo(config);
-    console.log(` Target Network: ${chainInfo.name} (Chain ID: ${chainInfo.chainId})`);
+    console.log(`🌐 Target Network: ${chainInfo.name} (Chain ID: ${chainInfo.chainId})`);
     
     // Step 3: Load wallet from keystore
-    console.log('\n Loading wallet from keystore...');
+    console.log('\n🔐 Loading wallet from keystore...');
     const keystoreJson = readFileSync(config.keeperKeystore, 'utf8');
     const pswd = await getKeystorePassword();
     
     const wallet = await ethers.Wallet.fromEncryptedJson(keystoreJson, pswd);
-    console.log(' Loaded wallet:', wallet.address);
+    console.log('👤 Loaded wallet:', wallet.address);
     
     // Step 4: Connect to network
     const provider = new ethers.providers.JsonRpcProvider(config.ethRpcUrl);
     const deployer = wallet.connect(provider);
     
     const balance = await deployer.getBalance();
-    console.log(' Account balance:', ethers.utils.formatEther(balance), 'ETH');
+    console.log('💰 Account balance:', ethers.utils.formatEther(balance), 'ETH');
     
-    if (balance.lt(ethers.utils.parseEther('0.01'))) {
-      console.warn(' Low balance detected. You may need more ETH for deployment.');
+    // Balance check for Hemi - much lower gas costs
+    const minRequiredBalance = ethers.utils.parseEther('0.0005'); // 0.0005 ETH minimum for Hemi
+    if (balance.lt(minRequiredBalance)) {
+      console.warn('⚠️  WARNING: Low balance detected!');
+      console.warn('💡 You may need more ETH for deployment');
+    } else {
+      console.log('✅ Balance sufficient for Hemi deployment');
     }
     
     // Step 5: Verify network matches
@@ -361,7 +461,7 @@ async function main() {
       throw new Error(`Network mismatch! Config suggests ${chainInfo.chainId}, connected to ${networkCheck.chainId}`);
     }
     
-    console.log('\n Deployment Configuration:');
+    console.log('\n📋 Deployment Configuration:');
     console.log(`- Network: ${chainInfo.name} (${chainInfo.chainId})`);
     console.log(`- Ajna Pool Factory: ${config.ajna.erc20PoolFactory}`);
     console.log(`- Deployer: ${deployer.address}`);
@@ -369,24 +469,26 @@ async function main() {
     // Step 6: Execute deployment (CORRECT ORDER)
     const addresses: DeploymentAddresses = {};
     
-    //  Deploy factory FIRST
-    addresses.factory = await deployFactory(deployer, config.ajna.erc20PoolFactory);
+    // Deploy factory FIRST
+    addresses.factory = await deployFactory(deployer, config.ajna.erc20PoolFactory, chainInfo.chainId);
     
     // Deploy Uniswap V3 taker if configured
     if (config.universalRouterOverrides) {
       addresses.uniswapTaker = await deployUniswapTaker(
         deployer,
         config.ajna.erc20PoolFactory,
-        addresses.factory  // Pass factory address for authorization
+        addresses.factory,  // Pass factory address for authorization
+        chainInfo.chainId
       );
     }
     
-    // NEW: Deploy SushiSwap taker if configured
+    // Deploy SushiSwap taker if configured
     if (config.sushiswapRouterOverrides) {
       addresses.sushiTaker = await deploySushiSwapTaker(
         deployer,
         config.ajna.erc20PoolFactory,
-        addresses.factory
+        addresses.factory,
+        chainInfo.chainId
       );
     }
 
@@ -403,21 +505,26 @@ async function main() {
     generateConfigUpdate(addresses, configPath, chainInfo.name);
     
   } catch (error: any) {
-    console.error('\n Deployment failed:', error.message);
+    console.error('\n💥 Deployment failed:', error.message);
     
     // Provide helpful troubleshooting tips
     if (error.message?.includes('insufficient funds')) {
-      console.log('\n Tip: Make sure your wallet has enough ETH for deployment');
+      console.log('\n💡 Tip: Add more ETH to your wallet for deployment');
+      console.log('💰 Recommended: 0.01+ ETH for large contract deployments');
     } else if (error.message?.includes('nonce')) {
-      console.log('\n Tip: Try again - might be a nonce issue');
+      console.log('\n💡 Tip: Try again - might be a nonce issue');
+      console.log('🔄 Or wait a few seconds and retry');
     } else if (error.message?.includes('gas')) {
-      console.log('\n Tip: Try increasing gas limit or gas price');
+      console.log('\n💡 Tip: Gas issues detected');
+      console.log('⛽ The script now uses manual gas limits');
+      console.log('💰 You may need more ETH for the deployment');
+      console.log('🔄 Try adding more ETH and retrying');
     } else if (error.message?.includes('Contract artifacts not found')) {
-      console.log('\n Tip: Compile contracts first: yarn compile');
+      console.log('\n💡 Tip: Compile contracts first: yarn compile');
     } else if (error.message?.includes('Cannot find module')) {
-      console.log('\n Tip: Make sure contracts are compiled: yarn compile');
+      console.log('\n💡 Tip: Make sure contracts are compiled: yarn compile');
     } else if (error.message?.includes('incorrect password')) {
-      console.log('\n Tip: Check your keystore password and try again');
+      console.log('\n💡 Tip: Check your keystore password and try again');
     }
     
     process.exit(1);

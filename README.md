@@ -816,3 +816,8 @@ yarn integration-tests
 ## Disclaimer
 
 User assumes all risk of data presented and transactions placed by this keeper; see license for more details.
+
+## Deepwiki (You can ask an AI about this Github repo, indexed weekly)
+[https://deepwiki.com/mitakash/ajna-keeper](https://deepwiki.com/mitakash/ajna-keeper)
+
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/mitakash/ajna-keeper)
