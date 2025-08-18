@@ -3,9 +3,14 @@ pragma solidity 0.8.28;
 
 import { IERC20Pool, IERC20Taker, PoolDeployer } from "./AjnaInterfaces.sol";
 import { IAggregationExecutor, IERC20, IGenericRouter, SwapDescription } from "./OneInchInterfaces.sol";
+// SECURITY FIX: Add SafeERC20 import
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Allows a keeper to take auctions using external liquidity sources.
 contract AjnaKeeperTaker is IERC20Taker {
+    // SECURITY FIX: Add SafeERC20 using statement
+    using SafeERC20 for IERC20;
+    
     /// @notice Identifies the source of liquidity to use for the swap.
     enum LiquiditySource {
         None, // (do not use)
@@ -59,7 +64,10 @@ contract AjnaKeeperTaker is IERC20Taker {
     /// @notice Owner may call to recover legitimate ERC20 tokens sent to this contract.
     function recover(IERC20 token) public onlyOwner {
         uint256 balance = token.balanceOf(address(this));
-        token.transfer(owner, balance);
+        // SECURITY FIX: Use safeTransfer instead of transfer to handle non-standard tokens (like USDT)
+        if (balance > 0) {
+            token.safeTransfer(owner, balance);
+        }
     }
 
     /// @notice Called by keeper to invoke `Pool.take`, passing `IERC20Taker` callback data.
@@ -88,9 +96,9 @@ contract AjnaKeeperTaker is IERC20Taker {
             })
         );
 
-        // approve the pool to spend this contract's quote token
+        // SECURITY FIX: Use safe approve with reset pattern to prevent "non-zero to non-zero allowance" error
         uint256 approvalAmount = _ceilWmul(maxAmount, auctionPrice) / pool.quoteTokenScale(); // convert WAD to token precision
-        IERC20(pool.quoteTokenAddress()).approve(address(pool), approvalAmount);
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), approvalAmount);
 
         // invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
@@ -135,8 +143,8 @@ contract AjnaKeeperTaker is IERC20Taker {
         bytes memory swapData,
         uint256 actualCollateralAmount
     ) private {
-        // approve the router to spend this contract's collateral
-        swapDescription.srcToken.approve(address(swapRouter), actualCollateralAmount);
+        // SECURITY FIX: Use safe approve with reset pattern to prevent "non-zero to non-zero allowance" error
+        _safeApproveWithReset(swapDescription.srcToken, address(swapRouter), actualCollateralAmount);
 
         // scale the return amount to the actual amount
         if (swapDescription.amount != actualCollateralAmount) {
@@ -185,6 +193,29 @@ contract AjnaKeeperTaker is IERC20Taker {
     /// @dev multiplies two WADs and rounds up to the nearest decimal
     function _ceilWmul(uint256 x, uint256 y) internal pure returns (uint256) {
         return (x * y + 1e18 - 1) / 1e18;
+    }
+
+    /// @dev SECURITY FIX: Safe approval that handles non-zero to non-zero allowance issue
+    /// @notice This function prevents "SafeERC20: approve from non-zero to non-zero allowance" errors
+    /// by resetting allowance to zero before setting new amount, which is the industry standard pattern
+    /// used by Compound, Aave, Uniswap V3, and other major DeFi protocols.
+    /// @param token The ERC20 token to approve
+    /// @param spender The address to approve  
+    /// @param amount The amount to approve
+    function _safeApproveWithReset(IERC20 token, address spender, uint256 amount) private {
+        uint256 currentAllowance = token.allowance(address(this), spender);
+        
+        if (currentAllowance != 0) {
+            // Reset to zero first if there's existing allowance
+            // This satisfies SafeERC20's requirement for non-zero to zero approval
+            token.safeApprove(spender, 0);
+        }
+        
+        // Now approve the new amount
+        // This satisfies SafeERC20's requirement for zero to non-zero approval  
+        if (amount != 0) {
+            token.safeApprove(spender, amount);
+        }
     }
 
     modifier onlyOwner() {

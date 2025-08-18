@@ -4,10 +4,12 @@ pragma solidity 0.8.28;
 import { IERC20Pool, PoolDeployer } from "../AjnaInterfaces.sol";
 import { IERC20 } from "../OneInchInterfaces.sol";
 import { IAjnaKeeperTaker } from "../interfaces/IAjnaKeeperTaker.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /// @notice Factory contract that routes take requests to appropriate taker implementations
 /// @dev Maintains backward compatibility while enabling multi-DEX support
 contract AjnaKeeperTakerFactory {
+    using SafeERC20 for IERC20; 
     /// @dev Hash used for all ERC20 pools, used for pool validation
     bytes32 public constant ERC20_NON_SUBSET_HASH = keccak256("ERC20_NON_SUBSET_HASH");
     /// @dev Actor allowed to take auctions using this factory
@@ -156,6 +158,15 @@ contract AjnaKeeperTakerFactory {
     /// @return hasConfiguration True if a taker is configured for this source
     function hasConfiguredTaker(IAjnaKeeperTaker.LiquiditySource source) external view returns (bool hasConfiguration) {
         return takerContracts[source] != address(0);
+    }
+
+    /// @notice Owner may call to recover ERC20 tokens sent directly to this factory contract  
+    /// @param token The ERC20 token to recover from the factory
+    function recoverToken(IERC20 token) external onlyOwner {
+        uint256 balance = token.balanceOf(address(this));
+        if (balance > 0) {
+            token.safeTransfer(owner, balance);
+         }   
     }
 
     /// @dev Validates that the pool is from our Ajna deployment

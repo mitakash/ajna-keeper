@@ -21,7 +21,8 @@ import { readConfigFile, KeeperConfig } from '../src/config-types';
 interface DeploymentAddresses {
   factory?: string;
   uniswapTaker?: string;
-  // Future: sushiTaker, curveTaker, etc.
+  sushiTaker?: string;
+  // Future: curveTaker, etc.
 }
 
 async function getKeystorePassword(): Promise<string> {
@@ -153,22 +154,60 @@ async function deployUniswapTaker(
   return taker.address;
 }
 
+async function deploySushiSwapTaker(
+  deployer: ethers.Wallet,
+  ajnaPoolFactory: string,
+  factoryAddress: string
+): Promise<string> {
+  console.log('\n Step 2b: Deploying SushiSwapKeeperTaker...');
+  
+  const takerArtifactPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'takers', 'SushiSwapKeeperTaker.sol', 'SushiSwapKeeperTaker.json');
+  const takerArtifact = require(takerArtifactPath);
+  const SushiSwapKeeperTaker = new ethers.ContractFactory(
+    takerArtifact.abi,
+    takerArtifact.bytecode,
+    deployer
+  );
+  
+  // Deploy with factory authorization
+  const taker = await SushiSwapKeeperTaker.deploy(
+    ajnaPoolFactory,    // Ajna pool factory
+    factoryAddress      // Authorized factory
+  );
+  console.log(' SushiSwap taker deployment tx:', taker.deployTransaction.hash);
+  
+  await taker.deployed();
+  console.log(' SushiSwapKeeperTaker deployed to:', taker.address);
+  
+  return taker.address;
+}
+
 async function configureFactory(
   deployer: ethers.Wallet,
   factoryAddress: string,
-  uniswapTakerAddress: string
+  addresses: DeploymentAddresses
 ): Promise<void> {
   console.log('\n Step 3: Configuring factory with takers...');
   
   const factoryArtifact = require(path.join(__dirname, '..', 'artifacts', 'contracts', 'factories', 'AjnaKeeperTakerFactory.sol', 'AjnaKeeperTakerFactory.json'));
   const factory = new ethers.Contract(factoryAddress, factoryArtifact.abi, deployer);
-  
+ 
   // Register UniswapV3 taker (LiquiditySource.UNISWAPV3 = 2)
-  const setTakerTx = await factory.setTaker(2, uniswapTakerAddress);
-  console.log(' Configuration tx:', setTakerTx.hash);
+  if (addresses.uniswapTaker) {
+    const setUniTakerTx = await factory.setTaker(2, addresses.uniswapTaker);
+    console.log(' UniswapV3 configuration tx:', setUniTakerTx.hash);
+    await setUniTakerTx.wait();
+    console.log(' Factory configured with UniswapV3 taker');
+  }
   
-  await setTakerTx.wait();
-  console.log(' Factory configured with UniswapV3 taker');
+  // Register SushiSwap taker (LiquiditySource.SUSHISWAP = 3)
+  if (addresses.sushiTaker) {
+    const setSushiTakerTx = await factory.setTaker(3, addresses.sushiTaker);
+    console.log(' SushiSwap configuration tx:', setSushiTakerTx.hash);
+    await setSushiTakerTx.wait();
+    console.log(' Factory configured with SushiSwap taker');
+  }
+  
 }
 
 async function verifyDeployment(
@@ -240,9 +279,14 @@ function generateConfigUpdate(
     console.log(`keeperTakerFactory: '${addresses.factory}',`);
   }
   
-  if (addresses.uniswapTaker) {
+  if (addresses.uniswapTaker || addresses.sushiTaker) {
     console.log('takerContracts: {');
-    console.log(`  'UniswapV3': '${addresses.uniswapTaker}'`);
+    if (addresses.uniswapTaker) {
+      console.log(`  'UniswapV3': '${addresses.uniswapTaker}',`);
+    }
+    if (addresses.sushiTaker) {
+      console.log(`  'SushiSwap': '${addresses.sushiTaker}'`);
+    }
     console.log('},');
   }
   console.log('```');
@@ -253,6 +297,9 @@ function generateConfigUpdate(
   }
   if (addresses.uniswapTaker) {
     console.log(` UniswapV3KeeperTaker: ${addresses.uniswapTaker}`);
+  }
+  if (addresses.sushiTaker) {
+  console.log(` SushiSwapKeeperTaker: ${addresses.sushiTaker}`);
   }
   
   console.log('\n Next Steps:');
@@ -325,18 +372,29 @@ async function main() {
     //  Deploy factory FIRST
     addresses.factory = await deployFactory(deployer, config.ajna.erc20PoolFactory);
     
-    //  Deploy taker with factory authorization
-    addresses.uniswapTaker = await deployUniswapTaker(
-      deployer,
-      config.ajna.erc20PoolFactory,
-      addresses.factory  // Pass factory address for authorization
-    );
-    
-    // Step 7: Configure factory
-    if (!addresses.factory || !addresses.uniswapTaker) {
-      throw new Error('Missing factory or taker address for configuration');
+    // Deploy Uniswap V3 taker if configured
+    if (config.universalRouterOverrides) {
+      addresses.uniswapTaker = await deployUniswapTaker(
+        deployer,
+        config.ajna.erc20PoolFactory,
+        addresses.factory  // Pass factory address for authorization
+      );
     }
-    await configureFactory(deployer, addresses.factory, addresses.uniswapTaker);
+    
+    // NEW: Deploy SushiSwap taker if configured
+    if (config.sushiswapRouterOverrides) {
+      addresses.sushiTaker = await deploySushiSwapTaker(
+        deployer,
+        config.ajna.erc20PoolFactory,
+        addresses.factory
+      );
+    }
+
+    // Step 7: Configure factory
+    if (!addresses.factory) {
+      throw new Error('Missing factory address for configuration');
+    }
+    await configureFactory(deployer, addresses.factory, addresses);
     
     // Step 8: Verify everything works
     await verifyDeployment(deployer, addresses);

@@ -49,13 +49,13 @@ The production guide covers the recommended approach using hosted services:
 - Hosted RPC setup (Alchemy/QuickNode) vs local nodes
 - Hosted subgraph deployment (BuiltByMom fork + Goldsky) vs local Graph Node  
 - Verified contract addresses for major chains (Avalanche, Hemi, Base, Arbitrum)
+- Multiple DEX integration options (1inch, Uniswap V3, SushiSwap)
 - API rate limits and service tier recommendations
 - Real-world configuration examples
 - Production monitoring and troubleshooting
 - See `example-avalanche-config.ts` and `example-hemi-config.ts` for chain-specific examples.
 
 *The production approach is more reliable and easier to maintain than running everything locally.*
-
 
 ### Create a new config file
 
@@ -136,11 +136,10 @@ For each desired chain:
 
 Starts a liquidation when a loan's threshold price exceeds the lowest utilized price in the pool by a configurable percentage.
 
-
 ### Take
 
 When auction price drops a configurable percentage below a DEX price, swaps collateral for quote token using a DEX or DEX aggregator, repaying debt and earning profit for the taker.
-This usually requires contract deployment for either 1inch or individual DEX's like Uniswap. Please see contract deployment section below.
+This usually requires contract deployment for either 1inch or individual DEX's like Uniswap V3 or SushiSwap. Please see contract deployment section below.
 
 ### Arbtake
 
@@ -196,11 +195,19 @@ See `example-config.ts` for reference.
 
 If the price source only has quote token priced in collateral, you may add `"invert": true` to `price` config to invert the configured price.
 
-### Dex Router
+### DEX Integration
+
+The keeper supports three DEX integration approaches for external takes and LP reward swapping:
+
+| DEX Integration | External Takes | LP Rewards | Contract Required | Best For |
+|-----------------|----------------|------------|-------------------|----------|
+| **1inch** | ✅ | ✅ | Yes (Single) | Major chains (Ethereum, Avalanche, Base, Arbitrum) |
+| **Uniswap V3** | ✅ | ✅ | Yes (Factory) | All chains with Uniswap V3 |
+| **SushiSwap** | ✅ | ✅ | Yes (Factory) | Chains with SushiSwap V3 |
 
 #### Configuring for 1inch
 
-To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts.  Also be sure to set `delayBetweenActions` to 1 second or greater to avoid 1inch API rate limiting.
+To enable 1inch swaps, you need to set up environment variables and add specific fields to config.ts. Also be sure to set `delayBetweenActions` to 1 second or greater to avoid 1inch API rate limiting.
 
 ##### Environment Variables
 
@@ -235,10 +242,10 @@ yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 # keeperTaker: '0x[deployed-address]'
 ```
 
-**Option B: Factory System (Newer Chains)**  
-- For chains without 1inch (Hemi, emerging L2s)
-- Multi-DEX factory pattern supporting Uniswap V3 + future DEXs
-- Direct Uniswap V3 integration via Universal Router
+**Option B: Factory System (Multi-DEX Chains)**  
+- For chains with Uniswap V3 and/or SushiSwap V3
+- Multi-DEX factory pattern supporting multiple DEXs
+- Direct DEX integration via router contracts
 
 ```bash
 # Compile contracts first  
@@ -249,19 +256,19 @@ yarn ts-node scripts/deploy-factory-system.ts your-config.ts
 
 # Update your config with deployed addresses:
 # keeperTakerFactory: '0x[factory-address]'
-# takerContracts: { 'UniswapV3': '0x[taker-address]' }
+# takerContracts: { 'UniswapV3': '0x[taker-address]', 'SushiSwap': '0x[taker-address]' }
 ```
 
 **Option C: No External Takes**
 - Skip contract deployment
 - Use arbTake and settlement only
-- Still supports LP reward swapping (no contracts needed)
+- Still supports LP reward swapping (no contracts needed for LP rewards)
 
-> **Note**: LP reward swapping works on both approaches without additional contracts.
+> **Note**: LP reward swapping works with all approaches and doesn't require contracts for Uniswap V3 or SushiSwap (only 1inch requires contracts for LP rewards).
 
 ---
 
-## Dex Router Configuration:
+## DEX Router Configuration:
 
 ### Configuring for External Takes
 
@@ -328,9 +335,42 @@ const config: KeeperConfig = {
 }
 ```
 
+#### SushiSwap Integration (Factory System)
+
+**Contract Deployment:**
+```bash  
+yarn ts-node scripts/deploy-factory-system.ts your-config.ts
+```
+
+**Config.ts Setup:**
+```typescript
+const config: KeeperConfig = {
+  // Required for SushiSwap external takes
+  keeperTakerFactory: '0x[factory-address]',
+  takerContracts: {
+    'SushiSwap': '0x[taker-address]'
+  },
+  sushiswapRouterOverrides: {
+    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',  //addresses for Hemi Chain
+    quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
+    factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
+    wethAddress: '0x4200000000000000000000000000000000000006',
+    defaultFeeTier: 500,
+    defaultSlippage: 10.0,
+  },
+  
+  pools: [{
+    take: {
+      liquiditySource: LiquiditySource.SUSHISWAP,
+      marketPriceFactor: 0.99, // Take when auction < market * 0.99
+    }
+  }]
+}
+```
+
 ### Configuring for LP Reward Swapping (Post-Auction Swaps)
 
-**IMPORTANT:** LP reward swapping now uses an enum-based system and **requires contract deployment even for 1inch**.
+**IMPORTANT:** LP reward swapping now uses an enum-based system. Only 1inch requires contract deployment for LP rewards.
 
 #### Using 1inch for LP Rewards (Requires Contract Deployment)
 ```bash
@@ -340,7 +380,7 @@ yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 
 ```typescript
 const config: KeeperConfig = {
-  // REQUIRED: Must deploy contract even for LP reward swaps
+  // REQUIRED: Must deploy contract for 1inch LP reward swaps
   keeperTaker: '0x[deployed-address]',
   oneInchRouters: {
     43114: '0x111111125421ca6dc452d289314280a0f8842a65', // Avalanche
@@ -353,7 +393,7 @@ const config: KeeperConfig = {
         address: '0x[collateral-token]',
         targetToken: 'usdc',
         slippage: 1,
-        dexProvider: PostAuctionDex.ONEINCH,  // NEW: Use enum instead of useOneInch: true
+        dexProvider: PostAuctionDex.ONEINCH,  // Use enum
       }
     }
   }]
@@ -380,7 +420,7 @@ const config: KeeperConfig = {
         address: '0x[collateral-token]', 
         targetToken: 'usdc',
         slippage: 1,
-        dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+        dexProvider: PostAuctionDex.UNISWAP_V3, // Use enum
         fee: FeeAmount.MEDIUM,
       }
     }
@@ -393,7 +433,7 @@ const config: KeeperConfig = {
 const config: KeeperConfig = {
   // SushiSwap configuration 
   sushiswapRouterOverrides: {
-    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD',
+    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD', //addresses for Hemi Chain
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
     factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
     wethAddress: '0x4200000000000000000000000000000000000006',
@@ -408,7 +448,7 @@ const config: KeeperConfig = {
         address: '0x[collateral-token]', 
         targetToken: 'usdc',
         slippage: 10,
-        dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+        dexProvider: PostAuctionDex.SUSHISWAP, // SushiSwap option
         fee: FeeAmount.LOW, // 0.05% fee tier
       }
     }
@@ -443,17 +483,21 @@ const config: KeeperConfig = {
 }
 ```
 
-**Newer Chain Example (Factory):**  
+**Multi-DEX Chain Example (Factory):**  
 ```typescript
-// hemi-conf-settlement.ts shows factory external takes
+// hemi-config.ts shows factory external takes
 const config: KeeperConfig = {
   keeperTakerFactory: '0x[factory-address]',
-  takerContracts: { 'UniswapV3': '0x[taker-address]' },
+  takerContracts: { 
+    'UniswapV3': '0x[taker-address]',
+    'SushiSwap': '0x[taker-address]'
+  },
   universalRouterOverrides: { /* addresses */ },
+  sushiswapRouterOverrides: { /* addresses */ },
   
   pools: [{
     take: {
-      liquiditySource: LiquiditySource.UNISWAPV3,
+      liquiditySource: LiquiditySource.SUSHISWAP, // or UNISWAPV3
       marketPriceFactor: 0.99
     }
   }]
@@ -541,14 +585,14 @@ pools: [
         address: "0x4200000000000000000000000000000000000006", // Token to swap (WETH)
         targetToken: "DAI",                                    // Desired token
         slippage: 1,                                           // Slippage percentage (0-100)
-        dexProvider: PostAuctionDex.ONEINCH                    // NEW: Use enum instead of useOneInch: true
+        dexProvider: PostAuctionDex.ONEINCH                    // Use enum
       }
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         address: "0xc1CBa3fCea344f92D9239c08C0568f6F2F0ee452", // Token to swap (wstETH)
         targetToken: "DAI",                                    // Desired token
         slippage: 1,                                           // Slippage percentage (0-100)
-        dexProvider: PostAuctionDex.ONEINCH                    // NEW: Use enum instead of useOneInch: true
+        dexProvider: PostAuctionDex.ONEINCH                    // Use enum
       },
     },
   }
@@ -572,7 +616,7 @@ pools: [
           address: "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E", // Token to swap (savUSD)
           targetToken: "usdc",                                   // Target token (USDC)
           slippage: 1,                                           // Slippage percentage (0-100)
-          dexProvider: PostAuctionDex.ONEINCH                    // NEW: Use enum instead of useOneInch: true
+          dexProvider: PostAuctionDex.ONEINCH                    // Use enum
         },
       },
   }
@@ -599,7 +643,7 @@ pools: [
 
 ##### Notes
 
-- **Contract deployment is required** even for LP reward swaps using 1inch
+- **Contract deployment is required** for 1inch LP reward swaps
 - If `dexProvider: PostAuctionDex.ONEINCH` but `keeperTaker` is missing, the script will fail.
 - Ensure the `.env` file is loaded (via `dotenv/config`) in your project.
 
@@ -653,7 +697,7 @@ For pools where you want to swap rewards with Uniswap V3, set `dexProvider: Post
       address: "0xtokenAddress", // Token to swap
       targetToken: "weth",      // Target token (e.g., "weth", "usdc")
       slippage: 1,             // Slippage (ignored for Uniswap)
-      dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+      dexProvider: PostAuctionDex.UNISWAP_V3, // Use enum
       fee: 3000               // Fee tier (500, 3000, 10000)
     }
   }
@@ -675,7 +719,7 @@ pools: [
         address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         targetToken: "usdc",
         slippage: 1,
-        dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+        dexProvider: PostAuctionDex.UNISWAP_V3, // Use enum
         fee: 3000 // 0.3% fee tier
       }
     }
@@ -718,7 +762,7 @@ pools: [
         address: "0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6",
         targetToken: "usd_t2",
         slippage: 10,
-        dexProvider: PostAuctionDex.SUSHISWAP, // NEW: SushiSwap option
+        dexProvider: PostAuctionDex.SUSHISWAP, // SushiSwap option
         fee: 500 // 0.05% fee tier
       }
     }

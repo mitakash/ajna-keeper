@@ -1,5 +1,5 @@
 // src/take-factory.ts
-// PHASE 3: Official Uniswap V3 quotes using QuoterV2 contract (the CORRECT approach)
+// Official Uniswap V3 quotes using QuoterV2 contract (the CORRECT approach)
 
 import { Signer, FungiblePool } from '@ajna-finance/sdk';
 import subgraph from './subgraph';
@@ -11,8 +11,9 @@ import { BigNumber, ethers } from 'ethers';
 import { getDecimalsErc20 } from './erc20';
 import { NonceTracker } from './nonce';
 import { AjnaKeeperTakerFactory__factory } from '../typechain-types';
-// PHASE 3: Import the Uniswap V3 quote provider (FIXED PATH)
+// Import the Uniswap V3 quote provider (FIXED PATH)
 import { UniswapV3QuoteProvider } from './dex-providers/uniswap-quote-provider';
+import { SushiSwapQuoteProvider } from './dex-providers/sushiswap-quote-provider';
 
 interface FactoryTakeParams {
   signer: Signer;
@@ -26,6 +27,7 @@ interface FactoryTakeParams {
     | 'keeperTakerFactory'
     | 'takerContracts'
     | 'universalRouterOverrides'
+    | 'sushiswapRouterOverrides'
   >;
 }
 
@@ -168,7 +170,7 @@ async function checkIfTakeableFactory(
   price: number,
   collateral: BigNumber,
   poolConfig: RequireFields<PoolConfig, 'take'>,
-  config: Pick<FactoryTakeParams['config'], 'universalRouterOverrides'>,
+  config: Pick<FactoryTakeParams['config'], 'universalRouterOverrides' | 'sushiswapRouterOverrides' >,
   signer: Signer
 ): Promise<boolean> {
   
@@ -185,8 +187,12 @@ async function checkIfTakeableFactory(
     if (poolConfig.take.liquiditySource === LiquiditySource.UNISWAPV3) {
       return await checkUniswapV3Quote(pool, price, collateral, poolConfig, config, signer);
     }
-    
+    if (poolConfig.take.liquiditySource === LiquiditySource.SUSHISWAP) {
+      return await checkSushiSwapQuote(pool, price, collateral, poolConfig, config, signer);
+    }
+
     // Future: Add other DEX sources here
+
     logger.debug(`Factory: Unsupported liquidity source: ${poolConfig.take.liquiditySource}`);
     return false;
 
@@ -305,6 +311,102 @@ async function checkUniswapV3Quote(
   }
 }
 
+
+/**
+ * Check SushiSwap V3 profitability using official QuoterV2 contract
+ */
+async function checkSushiSwapQuote(
+  pool: FungiblePool,
+  auctionPrice: number,
+  collateral: BigNumber,
+  poolConfig: RequireFields<PoolConfig, 'take'>,
+  config: Pick<FactoryTakeParams['config'], 'sushiswapRouterOverrides'>,
+  signer: Signer
+): Promise<boolean> {
+  
+  if (!config.sushiswapRouterOverrides) {
+    logger.debug(`Factory: No sushiswapRouterOverrides configured for pool ${pool.name}`);
+    return false;
+  }
+
+  const sushiConfig = config.sushiswapRouterOverrides;
+  
+  // Validate required configuration
+  if (!sushiConfig.swapRouterAddress || !sushiConfig.factoryAddress || !sushiConfig.wethAddress) {
+    logger.debug(`Factory: Missing required SushiSwap configuration for pool ${pool.name}`);
+    return false;
+  }
+
+  try {
+    // Create SushiSwap quote provider
+    const quoteProvider = new SushiSwapQuoteProvider(signer, {
+      swapRouterAddress: sushiConfig.swapRouterAddress,
+      quoterV2Address: sushiConfig.quoterV2Address,
+      factoryAddress: sushiConfig.factoryAddress,
+      defaultFeeTier: sushiConfig.defaultFeeTier || 500,
+      wethAddress: sushiConfig.wethAddress,
+    });
+
+    // Check if the quote provider is available
+    const initialized = await quoteProvider.initialize();
+    if (!initialized) {
+      logger.debug(`Factory: SushiSwap quote provider not available for pool ${pool.name}`);
+      return false;
+    }
+
+    // Get token decimals for proper formatting
+    const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
+    const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+
+    // Get official quote from SushiSwap QuoterV2 contract
+    logger.debug(`Factory: Getting SushiSwap quote for ${ethers.utils.formatUnits(collateral, collateralDecimals)} collateral in pool ${pool.name}`);
+    
+    const quoteResult = await quoteProvider.getQuote(
+      collateral,
+      pool.collateralAddress,
+      pool.quoteAddress,
+      sushiConfig.defaultFeeTier
+    );
+
+    if (!quoteResult.success || !quoteResult.dstAmount) {
+      logger.debug(`Factory: Failed to get SushiSwap quote for pool ${pool.name}: ${quoteResult.error}`);
+      return false;
+    }
+
+    // Calculate actual market price from the official quote
+    const collateralAmount = Number(ethers.utils.formatUnits(collateral, collateralDecimals));
+    const quoteAmount = Number(ethers.utils.formatUnits(quoteResult.dstAmount, quoteDecimals));
+
+    if (collateralAmount <= 0 || quoteAmount <= 0) {
+      logger.debug(`Factory: Invalid amounts - collateral: ${collateralAmount}, quote: ${quoteAmount} for pool ${pool.name}`);
+      return false;
+    }
+
+    // Market price = quoteAmount / collateralAmount (quote tokens per collateral token)
+    const marketPrice = quoteAmount / collateralAmount;
+    
+    const marketPriceFactor = poolConfig.take.marketPriceFactor;
+    if (!marketPriceFactor) {
+      logger.debug(`Factory: No marketPriceFactor configured for pool ${pool.name}`);
+      return false;
+    }
+
+    // Calculate the maximum price we're willing to pay (including slippage/profit margin)
+    const takeablePrice = marketPrice * marketPriceFactor;
+    
+    const profitable = auctionPrice <= takeablePrice;
+    
+    logger.debug(`SushiSwap price check: pool=${pool.name}, auction=${auctionPrice.toFixed(4)}, market=${marketPrice.toFixed(4)}, takeable=${takeablePrice.toFixed(4)}, profitable=${profitable}`);
+
+    return profitable;
+
+  } catch (error) {
+    logger.error(`Factory: Error getting SushiSwap quote for pool ${pool.name}: ${error}`);
+    return false;
+  }
+}
+
+
 /**
  * ArbTake check (same logic as existing, copied to avoid dependencies)
  */
@@ -366,7 +468,7 @@ async function takeLiquidationFactory({
   poolConfig: RequireFields<PoolConfig, 'take'>;
   signer: Signer;
   liquidation: LiquidationToTake;
-  config: Pick<FactoryTakeParams['config'], 'dryRun' | 'keeperTakerFactory' | 'universalRouterOverrides'>;
+  config: Pick<FactoryTakeParams['config'], 'dryRun' | 'keeperTakerFactory' | 'universalRouterOverrides' | 'sushiswapRouterOverrides' >;
 }) {
   
   const { borrower } = liquidation;
@@ -392,6 +494,14 @@ async function takeLiquidationFactory({
       liquidation,
       config,
     });
+  } else if (poolConfig.take.liquiditySource === LiquiditySource.SUSHISWAP) {
+  await takeWithSushiSwapFactory({
+    pool,
+    poolConfig,
+    signer,
+    liquidation,
+    config,
+  });
   } else {
     logger.error(`Factory: Unsupported liquidity source: ${poolConfig.take.liquiditySource}`);
   }
@@ -459,6 +569,70 @@ async function takeWithUniswapV3Factory({
     logger.error(`Factory: Failed to Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
   }
 }
+
+/**
+ * Execute SushiSwap take via factory
+ */
+async function takeWithSushiSwapFactory({
+  pool,
+  poolConfig,
+  signer,
+  liquidation,
+  config,
+}: {
+  pool: FungiblePool;
+  poolConfig: RequireFields<PoolConfig, 'take'>;
+  signer: Signer;
+  liquidation: LiquidationToTake;
+  config: Pick<FactoryTakeParams['config'], 'keeperTakerFactory' | 'sushiswapRouterOverrides'>;
+}) {
+  
+  const factory = AjnaKeeperTakerFactory__factory.connect(config.keeperTakerFactory!, signer);
+
+  if (!config.sushiswapRouterOverrides) {
+    logger.error('Factory: sushiswapRouterOverrides required for SushiSwap takes');
+    return;
+  }
+
+  // Prepare SushiSwap swap details
+  const swapDetails = {
+    universalRouter: config.sushiswapRouterOverrides.swapRouterAddress!,
+    permit2: '0x0000000000000000000000000000000000000000', // SushiSwap doesn't use permit2
+    targetToken: pool.quoteAddress,
+    feeTier: config.sushiswapRouterOverrides.defaultFeeTier || 500,
+    slippageBps: Math.floor((config.sushiswapRouterOverrides.defaultSlippage || 2.0) * 100),
+    deadline: Math.floor(Date.now() / 1000) + 1800,
+  };
+
+  const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
+    ['uint24', 'uint256', 'uint256'],  // ← 3 parameters
+    [swapDetails.feeTier, swapDetails.slippageBps, swapDetails.deadline]
+  );
+
+  try {
+    logger.debug(`Factory: Sending SushiSwap Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
+    
+    await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+      const tx = await factory.takeWithAtomicSwap(
+        pool.poolAddress,
+        liquidation.borrower,
+        liquidation.auctionPrice,
+        liquidation.collateral,
+        Number(poolConfig.take.liquiditySource), // LiquiditySource.SUSHISWAP = 3
+        swapDetails.universalRouter,
+        encodedSwapDetails,
+        { nonce: nonce.toString() }
+      );
+      return await tx.wait();
+    });
+
+    logger.info(`Factory SushiSwap Take successful - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
+    
+  } catch (error) {
+    logger.error(`Factory: Failed to SushiSwap Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
+  }
+}
+
 
 /**
  * ArbTake using existing logic (same as original)

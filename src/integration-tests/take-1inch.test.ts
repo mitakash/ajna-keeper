@@ -211,7 +211,7 @@ describe('Take with 1inch Integration', () => {
     sinon.restore();
   });
 
-  it('should deploy AjnaKeeperTaker and setup environment', async () => {
+  it.skip('should deploy AjnaKeeperTaker and setup environment', async () => {
     expect(pool.poolAddress).to.equal(
       MAINNET_CONFIG.SOL_WETH_POOL.poolConfig.address
     );

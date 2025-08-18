@@ -379,8 +379,9 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
     }
 
     if (config.liquiditySource !== LiquiditySource.ONEINCH &&
-        config.liquiditySource !== LiquiditySource.UNISWAPV3) {
-      throw new Error('TakeSettings: liquiditySource must be ONEINCH or UNISWAPV3');
+        config.liquiditySource !== LiquiditySource.UNISWAPV3 &&
+        config.liquiditySource !== LiquiditySource.SUSHISWAP) {
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH or UNISWAPV3 or SUSHISWAP');
     }
 
     if (config.marketPriceFactor === undefined || config.marketPriceFactor <= 0) {
@@ -403,6 +404,18 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
       }
       if (!keeperConfig.universalRouterOverrides) {
         throw new Error('TakeSettings: universalRouterOverrides required when liquiditySource is UNISWAPV3');
+      }
+    }
+
+    if (config.liquiditySource === LiquiditySource.SUSHISWAP) {
+      if (!keeperConfig.keeperTakerFactory) {
+        throw new Error('TakeSettings: keeperTakerFactory required when liquiditySource is SUSHISWAP');
+      }
+      if (!keeperConfig.takerContracts || !keeperConfig.takerContracts['SushiSwap']) {
+        throw new Error('TakeSettings: takerContracts.SushiSwap required when liquiditySource is SUSHISWAP');
+      }
+      if (!keeperConfig.sushiswapRouterOverrides) {
+        throw new Error('TakeSettings: sushiswapRouterOverrides required when liquiditySource is SUSHISWAP');
       }
     }
   }
