@@ -46,7 +46,6 @@ export async function handleTakes({
   logger.debug(`Detection Results - Type: ${deploymentType}, Valid: ${validation.valid}`);
   if (!validation.valid) {
     logger.error(`Configuration errors: ${validation.errors.join(', ')}`);
-    return;
   }
 
   // Route based on deployment type
@@ -82,12 +81,117 @@ export async function handleTakes({
       break;
 
     case 'none':
-      // No external DEX available - this shouldn't happen if take is configured
-      logger.warn(`Take configured but no DEX integration available for pool ${pool.name}`);
+      // FIXED: External DEX unavailable, but arbTake should still work!
+      logger.warn(`External DEX integration unavailable for pool ${pool.name} - checking arbTake only`);
+      await handleArbTakeOnly({
+        signer,
+        pool,
+        poolConfig,
+        config,
+      });
       break;
   }
 }
 
+/**
+ * FIXED: Handle arbTake-only scenarios when external DEX infrastructure is missing
+ * This ensures arbTake can run independently of external take infrastructure
+ */
+async function handleArbTakeOnly({
+  signer,
+  pool,
+  poolConfig,
+  config,
+}: HandleTakeParams) {
+  logger.debug(`ArbTake-only handler starting for pool: ${pool.name}`);
+
+  // Check if arbTake is even configured
+  if (!poolConfig.take.minCollateral || !poolConfig.take.hpbPriceFactor) {
+    logger.debug(`ArbTake not configured for pool: ${pool.name} (missing minCollateral or hpbPriceFactor)`);
+    return;
+  }
+
+  for await (const liquidation of getLiquidationsForArbTakeOnly({
+    pool,
+    poolConfig,
+    signer,
+    config,
+  })) {
+    if (liquidation.isArbTakeable) {
+      await arbTakeLiquidation({
+        pool,
+        poolConfig,
+        signer,
+        liquidation,
+        config: { dryRun: config.dryRun },
+      });
+      await delay(config.delayBetweenActions);
+    }
+  }
+}
+
+/**
+ * FIXED: Get liquidations for arbTake-only processing
+ * Simplified version that only checks arbTake eligibility
+ */
+async function* getLiquidationsForArbTakeOnly({
+  pool,
+  poolConfig,
+  signer,
+  config,
+}: Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer' | 'config'>): AsyncGenerator<LiquidationToTake> {
+  
+  const {
+    pool: { hpb, hpbIndex, liquidationAuctions },
+  } = await subgraph.getLiquidations(
+    config.subgraphUrl,
+    pool.poolAddress,
+    poolConfig.take.minCollateral ?? 0
+  );
+
+  for (const auction of liquidationAuctions) {
+    const { borrower } = auction;
+    const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
+    const price = Number(weiToDecimaled(liquidationStatus.price));
+    const collateral = liquidationStatus.collateral;
+
+    let isArbTakeable = false;
+    let arbHpbIndex = 0;
+
+    // ONLY check arbTake (no external take checks)
+    if (poolConfig.take.minCollateral && poolConfig.take.hpbPriceFactor) {
+      const minDeposit = poolConfig.take.minCollateral / hpb;
+      const arbTakeCheck = await checkIfArbTakeable(
+        pool,
+        price,
+        collateral,
+        poolConfig,
+        config.subgraphUrl,
+        minDeposit.toString(),
+        signer
+      );
+      isArbTakeable = arbTakeCheck.isArbTakeable;
+      arbHpbIndex = arbTakeCheck.hpbIndex;
+    }
+
+    if (isArbTakeable) {
+      logger.debug(`Found liquidation for arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`);
+
+      yield {
+        borrower,
+        hpbIndex: arbHpbIndex,
+        collateral,
+        auctionPrice: liquidationStatus.price,
+        isTakeable: false, // No external takes in this path
+        isArbTakeable,
+      };
+    } else {
+      logger.debug(
+        `ArbTake not profitable - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
+      );
+    }
+  }
+}
 
 export async function handleTakesWith1inch({
   signer,

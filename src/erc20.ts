@@ -1,5 +1,5 @@
 import { Signer, SignerOrProvider } from '@ajna-finance/sdk';
-import { BigNumber, Contract } from 'ethers';
+import { BigNumber, Contract, ethers } from 'ethers';
 import Erc20Abi from './abis/erc20.abi.json';
 import { NonceTracker } from './nonce';
 import { TransactionResponse } from '@ethersproject/abstract-provider';
@@ -75,3 +75,50 @@ export async function transferErc20(
   });
 }
 
+
+/**
+ * Convert from WAD (18 decimals) to token's native decimals
+ * Use: When passing Ajna amounts to external DEXs
+ * Example: convertWadToTokenDecimals(collateral, 6) for USDC
+ */
+export function convertWadToTokenDecimals(
+  wadAmount: BigNumber,
+  tokenDecimals: number
+): BigNumber {
+  if (tokenDecimals === 18) {
+    return wadAmount; // No conversion needed
+  }
+
+  if (tokenDecimals < 18) {
+    // Scale down: divide by 10^(18 - tokenDecimals)
+    const divisor = ethers.BigNumber.from(10).pow(18 - tokenDecimals);
+    return wadAmount.div(divisor);
+  } else {
+    // Scale up: multiply by 10^(tokenDecimals - 18)
+    const multiplier = ethers.BigNumber.from(10).pow(tokenDecimals - 18);
+    return wadAmount.mul(multiplier);
+  }
+}
+
+/**
+ * Convert from token's native decimals to WAD (18 decimals)
+ * Use: When passing DEX results back to Ajna
+ */
+export function convertTokenDecimalsToWad(
+  tokenAmount: BigNumber,
+  tokenDecimals: number
+): BigNumber {
+  if (tokenDecimals === 18) {
+    return tokenAmount; // No conversion needed
+  }
+
+  if (tokenDecimals < 18) {
+    // Scale up: multiply by 10^(18 - tokenDecimals)
+    const multiplier = ethers.BigNumber.from(10).pow(18 - tokenDecimals);
+    return tokenAmount.mul(multiplier);
+  } else {
+    // Scale down: divide by 10^(tokenDecimals - 18)
+    const divisor = ethers.BigNumber.from(10).pow(tokenDecimals - 18);
+    return tokenAmount.div(divisor);
+  }
+}

@@ -129,7 +129,7 @@ export async function* getLoansToKick({
       limitPrice
     ) {
       logger.debug(
-        `Not kicking loan since (NP * Factor < Price). pool: ${pool.name}, borrower: ${borrower}, NP: ${neutralPrice}, Price: ${limitPrice}`
+        `Not kicking loan since (NP * Factor < Price). pool: ${pool.name}, borrower: ${borrower}, NP: ${weiToDecimaled(neutralPrice)}, Price: ${limitPrice}`
       );
       continue;
     }

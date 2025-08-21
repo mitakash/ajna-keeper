@@ -8,12 +8,14 @@ import { KeeperConfig, LiquiditySource, PoolConfig } from './config-types';
 import { logger } from './logging';
 import { liquidationArbTake } from './transactions';
 import { BigNumber, ethers } from 'ethers';
-import { getDecimalsErc20 } from './erc20';
 import { NonceTracker } from './nonce';
 import { AjnaKeeperTakerFactory__factory } from '../typechain-types';
 // Import the Uniswap V3 quote provider (FIXED PATH)
 import { UniswapV3QuoteProvider } from './dex-providers/uniswap-quote-provider';
 import { SushiSwapQuoteProvider } from './dex-providers/sushiswap-quote-provider';
+import { convertWadToTokenDecimals, getDecimalsErc20 } from './erc20';
+// FIXED: Import quoteTokenScale function
+import { quoteTokenScale } from '@ajna-finance/sdk/dist/contracts/pool';
 
 interface FactoryTakeParams {
   signer: Signer;
@@ -251,12 +253,14 @@ async function checkUniswapV3Quote(
     // Get token decimals for proper formatting
     const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
     const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
-
+    
+    const collateralInTokenDecimals = convertWadToTokenDecimals(collateral, collateralDecimals);
+    
     // PHASE 3: Get OFFICIAL quote from Uniswap V3 QuoterV2 contract
-    logger.debug(`Factory: Getting official Uniswap V3 quote for ${ethers.utils.formatUnits(collateral, collateralDecimals)} collateral in pool ${pool.name}`);
+    logger.debug(`Factory: Getting official Uniswap V3 quote for ${ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals)} collateral in pool ${pool.name}`);
     
     const quoteResult = await quoteProvider.getQuote(
-      collateral,
+      collateralInTokenDecimals,
       pool.collateralAddress,
       pool.quoteAddress,
       routerConfig.defaultFeeTier
@@ -268,7 +272,7 @@ async function checkUniswapV3Quote(
     }
 
     // PHASE 3: Calculate actual market price from the OFFICIAL quote
-    const collateralAmount = Number(ethers.utils.formatUnits(collateral, collateralDecimals));
+    const collateralAmount = Number(ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals));
     const quoteAmount = Number(ethers.utils.formatUnits(quoteResult.dstAmount, quoteDecimals));
 
     if (collateralAmount <= 0 || quoteAmount <= 0) {
@@ -290,17 +294,6 @@ async function checkUniswapV3Quote(
     
     const profitable = auctionPrice <= takeablePrice;
     
-    // PHASE 3: Enhanced logging with OFFICIAL Uniswap market data
-    //logger.info(
-    //  `Factory: OFFICIAL Uniswap V3 QuoterV2 price check for pool ${pool.name}:\n` +
-    //  `  QuoterV2: ${quoterAddress}\n` +
-    //  `  Collateral: ${collateralAmount.toFixed(6)} (${pool.collateralAddress})\n` +
-    //  `  Quote Out: ${quoteAmount.toFixed(6)} (${pool.quoteAddress})\n` +
-    //  `  Official Price: ${officialMarketPrice.toFixed(6)} (from QuoterV2 contract)\n` +
-    //  `  Takeable Price: ${takeablePrice.toFixed(6)} (official * ${marketPriceFactor})\n` +
-    //  `  Auction Price: ${auctionPrice.toFixed(6)}\n` +
-    //  `  Profitable: ${profitable ? '✅ YES' : '❌ NO'}`
-    //);
     logger.debug(`Price check: pool=${pool.name}, auction=${auctionPrice.toFixed(4)}, market=${officialMarketPrice.toFixed(4)}, takeable=${takeablePrice.toFixed(4)}, profitable=${profitable}`);
 
     return profitable;
@@ -357,12 +350,16 @@ async function checkSushiSwapQuote(
     // Get token decimals for proper formatting
     const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
     const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+    const collateralInTokenDecimals = convertWadToTokenDecimals(collateral, collateralDecimals);
+
 
     // Get official quote from SushiSwap QuoterV2 contract
-    logger.debug(`Factory: Getting SushiSwap quote for ${ethers.utils.formatUnits(collateral, collateralDecimals)} collateral in pool ${pool.name}`);
+    logger.debug(`Factory: Getting SushiSwap quote for ${ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals)} collateral in pool ${pool.name}`);
     
+   
+
     const quoteResult = await quoteProvider.getQuote(
-      collateral,
+      collateralInTokenDecimals,
       pool.collateralAddress,
       pool.quoteAddress,
       sushiConfig.defaultFeeTier
@@ -374,7 +371,7 @@ async function checkSushiSwapQuote(
     }
 
     // Calculate actual market price from the official quote
-    const collateralAmount = Number(ethers.utils.formatUnits(collateral, collateralDecimals));
+    const collateralAmount = Number(ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals)); 
     const quoteAmount = Number(ethers.utils.formatUnits(quoteResult.dstAmount, quoteDecimals));
 
     if (collateralAmount <= 0 || quoteAmount <= 0) {
@@ -573,6 +570,7 @@ async function takeWithUniswapV3Factory({
 /**
  * Execute SushiSwap take via factory
  */
+
 async function takeWithSushiSwapFactory({
   pool,
   poolConfig,
@@ -594,19 +592,56 @@ async function takeWithSushiSwapFactory({
     return;
   }
 
-  // Prepare SushiSwap swap details
+  // FIXED: Calculate Ajna-aware minimum output using liquidation debt requirements
+  // This replaces the broken slippage-based calculation
+  
+  // Step 1: Calculate liquidation debt in WAD (18 decimals)
+  // This is the amount of quote tokens needed to repay the liquidation
+  // Because Ajna is overcollateralized this liquidationDebt is an overestimate of Debt
+  // The Ajna Liquidation contract will collect correct amount of quote tokens or revert tx
+  const liquidationDebtWAD = liquidation.collateral
+    .mul(liquidation.auctionPrice)
+    .div(ethers.constants.WeiPerEther); // Convert from WAD × WAD to WAD
+  
+  // Step 2: Convert WAD to quote token decimals using Ajna's scaling function
+  // This is the same pattern used in 1inch: liquidationDebt / pool.quoteTokenScale()
+  // FIXED: Use imported quoteTokenScale function with pool.contract
+  const quoteTokenScaleValue = await quoteTokenScale(pool.contract);
+  const requiredQuoteTokensInTokenDecimals = liquidationDebtWAD.div(quoteTokenScaleValue);
+  
+  // Step 3:  Subtract some slippage
+  // This accounts for minor slippage ensures we have enough to satisfy liquidation
+  //we are basically let the market liquidity return as much quote token as possible
+  //Ajna Liquidation contract will ensure enough quote token is returned or it will revert tx
+  const safetyMarginPercent = 99.9; 
+  const safetyMarginBps = Math.floor(safetyMarginPercent * 100);
+  const amountOutMinimum = requiredQuoteTokensInTokenDecimals
+    .mul(10000 - safetyMarginBps)  // SUBTRACT FOR SLIPPAGE TOLERANCE
+    .div(10000);
+
+  logger.debug(
+    `Factory: Ajna liquidation calculation for pool ${pool.name}:\n` +
+    `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
+    `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
+    `  Liquidation Debt (WAD): ${liquidationDebtWAD.toString()}\n` +
+    `  Quote Token Scale: ${quoteTokenScaleValue.toString()}\n` +
+    `  Required Quote Tokens: ${requiredQuoteTokensInTokenDecimals.toString()}\n` +
+    `  Amount Out Minimum (+${safetyMarginPercent}%): ${amountOutMinimum.toString()}`
+  );
+
+  // FIXED: Prepare SushiSwap swap details with calculated minimum
   const swapDetails = {
-    universalRouter: config.sushiswapRouterOverrides.swapRouterAddress!,
-    permit2: '0x0000000000000000000000000000000000000000', // SushiSwap doesn't use permit2
+    swapRouter: config.sushiswapRouterOverrides.swapRouterAddress!,
     targetToken: pool.quoteAddress,
     feeTier: config.sushiswapRouterOverrides.defaultFeeTier || 500,
-    slippageBps: Math.floor((config.sushiswapRouterOverrides.defaultSlippage || 2.0) * 100),
+    amountOutMinimum: amountOutMinimum,  // ← FIXED: Real minimum instead of slippageBps
     deadline: Math.floor(Date.now() / 1000) + 1800,
   };
 
+  // FIXED: Encode with new parameter structure
   const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
-    ['uint24', 'uint256', 'uint256'],  // ← 3 parameters
-    [swapDetails.feeTier, swapDetails.slippageBps, swapDetails.deadline]
+    ['uint24', 'uint256', 'uint256'], // feeTier, amountOutMinimum, deadline  
+    [swapDetails.feeTier, swapDetails.amountOutMinimum, swapDetails.deadline]
   );
 
   try {
@@ -619,7 +654,7 @@ async function takeWithSushiSwapFactory({
         liquidation.auctionPrice,
         liquidation.collateral,
         Number(poolConfig.take.liquiditySource), // LiquiditySource.SUSHISWAP = 3
-        swapDetails.universalRouter,
+        swapDetails.swapRouter,
         encodedSwapDetails,
         { nonce: nonce.toString() }
       );
@@ -632,7 +667,6 @@ async function takeWithSushiSwapFactory({
     logger.error(`Factory: Failed to SushiSwap Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
   }
 }
-
 
 /**
  * ArbTake using existing logic (same as original)
