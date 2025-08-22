@@ -556,7 +556,6 @@ async function takeWithUniswapV3Factory({
     `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
     `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
     `  Liquidation Debt (WAD): ${liquidationDebtWAD.toString()}\n` +
-    `  Quote Token Scale: ${quoteTokenScaleValue.toString()}\n` +
     `  Required Quote Tokens: ${requiredQuoteTokensInTokenDecimals.toString()}\n` +
     `  Amount Out Minimum (+${safetyMarginPercent}%): ${amountOutMinimum.toString()}`
   );
@@ -663,7 +662,6 @@ async function takeWithSushiSwapFactory({
     `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
     `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
     `  Liquidation Debt (WAD): ${liquidationDebtWAD.toString()}\n` +
-    `  Quote Token Scale: ${quoteTokenScaleValue.toString()}\n` +
     `  Required Quote Tokens: ${requiredQuoteTokensInTokenDecimals.toString()}\n` +
     `  Amount Out Minimum (+${safetyMarginPercent}%): ${amountOutMinimum.toString()}`
   );
