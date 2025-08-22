@@ -103,6 +103,9 @@ contract AjnaKeeperTaker is IERC20Taker {
         // invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
 
+        // SECURITY FIX: Reset allowance to prevent future misuse
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
+
         recover(IERC20(pool.quoteTokenAddress())); // send excess quote token (profit) to owner
     }
 

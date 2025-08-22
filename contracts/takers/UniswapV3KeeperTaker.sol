@@ -85,6 +85,9 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         // Invoke take
         pool.take(borrowerAddress, maxAmount, address(this), data);
         
+        // SECURITY FIX: Reset allowance to prevent future misuse
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
+
         // Send profit to owner
         _recoverToken(IERC20(pool.quoteTokenAddress()));
     }

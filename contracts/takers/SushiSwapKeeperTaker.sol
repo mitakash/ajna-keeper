@@ -99,6 +99,9 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         // Invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
         
+        // SECURITY FIX: Reset allowance to prevent future misuse
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
+
         // AUDIT FIX: Emit event for monitoring
         emit TakeExecuted(
             address(pool),
