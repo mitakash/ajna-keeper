@@ -504,8 +504,10 @@ async function takeLiquidationFactory({
   }
 }
 
+
 /**
  * Execute Uniswap V3 take via factory
+ * FIXED: Now uses same liquidation debt calculation pattern as working SushiSwap code
  */
 async function takeWithUniswapV3Factory({
   pool,
@@ -520,7 +522,7 @@ async function takeWithUniswapV3Factory({
   liquidation: LiquidationToTake;
   config: Pick<FactoryTakeParams['config'], 'keeperTakerFactory' | 'universalRouterOverrides'>;
 }) {
-  
+
   const factory = AjnaKeeperTakerFactory__factory.connect(config.keeperTakerFactory!, signer);
 
   if (!config.universalRouterOverrides) {
@@ -528,24 +530,65 @@ async function takeWithUniswapV3Factory({
     return;
   }
 
-  // Prepare Uniswap V3 swap details
+  // FIXED: Calculate Ajna-aware minimum output using liquidation debt requirements
+  // This replaces the broken slippage-based calculation and mirrors SushiSwap success
+
+  // Step 1: Calculate liquidation debt in WAD (18 decimals)
+  // This is the amount of quote tokens needed to repay the liquidation
+  const liquidationDebtWAD = liquidation.collateral
+    .mul(liquidation.auctionPrice)
+    .div(ethers.constants.WeiPerEther); // Convert from WAD × WAD to WAD
+
+  // Step 2: Convert WAD to quote token decimals using Ajna's scaling function
+  // This is the same pattern used in SushiSwap: liquidationDebt / pool.quoteTokenScale()
+  // FIXED: Use imported quoteTokenScale function with pool.contract
+  const quoteTokenScaleValue = await quoteTokenScale(pool.contract);
+  const requiredQuoteTokensInTokenDecimals = liquidationDebtWAD.div(quoteTokenScaleValue);
+
+  // Step 3: Apply conservative safety margin (same as SushiSwap)
+  // This accounts for minor slippage and ensures we have enough to satisfy liquidation
+  const safetyMarginPercent = 99.9;
+  const safetyMarginBps = Math.floor(safetyMarginPercent * 100);
+  const amountOutMinimum = requiredQuoteTokensInTokenDecimals
+    .mul(10000 - safetyMarginBps)  // SUBTRACT FOR SLIPPAGE TOLERANCE
+    .div(10000);
+
+  logger.debug(
+    `Factory: Ajna liquidation calculation for Uniswap V3 pool ${pool.name}:\n` +
+    `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
+    `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
+    `  Liquidation Debt (WAD): ${liquidationDebtWAD.toString()}\n` +
+    `  Quote Token Scale: ${quoteTokenScaleValue.toString()}\n` +
+    `  Required Quote Tokens: ${requiredQuoteTokensInTokenDecimals.toString()}\n` +
+    `  Amount Out Minimum (+${safetyMarginPercent}%): ${amountOutMinimum.toString()}`
+  );
+
+  // FIXED: Prepare Uniswap V3 swap details with calculated minimum (mirrors SushiSwap structure)
   const swapDetails = {
     universalRouter: config.universalRouterOverrides.universalRouterAddress!,
     permit2: config.universalRouterOverrides.permit2Address!,
     targetToken: pool.quoteAddress,
     feeTier: config.universalRouterOverrides.defaultFeeTier || 3000,
-    slippageBps: Math.floor((config.universalRouterOverrides.defaultSlippage || 0.5) * 100),
+    amountOutMinimum: amountOutMinimum,  // ← FIXED: Real minimum instead of slippageBps
     deadline: Math.floor(Date.now() / 1000) + 1800,
   };
 
+  // FIXED: Encode struct like SushiSwap pattern
   const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
-    ['(address,address,address,uint24,uint256,uint256)'],
-    [Object.values(swapDetails)]
+    ['(address,address,address,uint24,uint256,uint256)'], // UniswapV3SwapDetails struct
+    [[
+      swapDetails.universalRouter,
+      swapDetails.permit2,
+      swapDetails.targetToken,
+      swapDetails.feeTier,
+      swapDetails.amountOutMinimum,
+      swapDetails.deadline
+    ]]
   );
 
   try {
-    logger.debug(`Factory: Sending Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
-    
+    logger.debug(`Factory: Sending Uniswap V3 Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
+
     await NonceTracker.queueTransaction(signer, async (nonce: number) => {
       const tx = await factory.takeWithAtomicSwap(
         pool.poolAddress,
@@ -560,10 +603,10 @@ async function takeWithUniswapV3Factory({
       return await tx.wait();
     });
 
-    logger.info(`Factory Take successful - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
-    
+    logger.info(`Factory Uniswap V3 Take successful - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
+
   } catch (error) {
-    logger.error(`Factory: Failed to Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
+    logger.error(`Factory: Failed to Uniswap V3 Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
   }
 }
 

@@ -34,7 +34,7 @@ const GAS_CONFIGS: { [chainId: number]: { gasLimit: string; gasPrice?: string } 
   },
   43114: { // Avalanche
     gasLimit: '6000000',
-    gasPrice: '30000000000', // 30 gwei
+    gasPrice: '1000000000', // 1 gwei
   },
   1: { // Ethereum Mainnet
     gasLimit: '6000000',
