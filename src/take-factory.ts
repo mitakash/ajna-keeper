@@ -539,11 +539,9 @@ async function takeWithUniswapV3Factory({
     .mul(liquidation.auctionPrice)
     .div(ethers.constants.WeiPerEther); // Convert from WAD × WAD to WAD
 
-  // Step 2: Convert WAD to quote token decimals using Ajna's scaling function
-  // This is the same pattern used in SushiSwap: liquidationDebt / pool.quoteTokenScale()
-  // FIXED: Use imported quoteTokenScale function with pool.contract
-  const quoteTokenScaleValue = await quoteTokenScale(pool.contract);
-  const requiredQuoteTokensInTokenDecimals = liquidationDebtWAD.div(quoteTokenScaleValue);
+  // Step 2: FIXED - Use actual token decimals instead of Ajna's scale
+  const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+  const requiredQuoteTokensInTokenDecimals = convertWadToTokenDecimals(liquidationDebtWAD, quoteDecimals);
 
   // Step 3: Apply conservative safety margin (same as SushiSwap)
   // This accounts for minor slippage and ensures we have enough to satisfy liquidation
@@ -646,11 +644,9 @@ async function takeWithSushiSwapFactory({
     .mul(liquidation.auctionPrice)
     .div(ethers.constants.WeiPerEther); // Convert from WAD × WAD to WAD
   
-  // Step 2: Convert WAD to quote token decimals using Ajna's scaling function
-  // This is the same pattern used in 1inch: liquidationDebt / pool.quoteTokenScale()
-  // FIXED: Use imported quoteTokenScale function with pool.contract
-  const quoteTokenScaleValue = await quoteTokenScale(pool.contract);
-  const requiredQuoteTokensInTokenDecimals = liquidationDebtWAD.div(quoteTokenScaleValue);
+  // Step 2: FIXED - Use actual token decimals instead of Ajna's scale
+  const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+  const requiredQuoteTokensInTokenDecimals = convertWadToTokenDecimals(liquidationDebtWAD, quoteDecimals);
   
   // Step 3:  Subtract some slippage
   // This accounts for minor slippage ensures we have enough to satisfy liquidation
