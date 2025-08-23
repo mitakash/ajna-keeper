@@ -504,10 +504,9 @@ async function takeLiquidationFactory({
   }
 }
 
-
 /**
- * Execute Uniswap V3 take via factory
- * FIXED: Now uses same liquidation debt calculation pattern as working SushiSwap code
+ * FIXED: Execute Uniswap V3 take via factory
+ * Now follows 1inch pattern - sends WAD amounts to smart contract
  */
 async function takeWithUniswapV3Factory({
   pool,
@@ -530,47 +529,30 @@ async function takeWithUniswapV3Factory({
     return;
   }
 
-  // FIXED: Calculate Ajna-aware minimum output using liquidation debt requirements
-  // This replaces the broken slippage-based calculation and mirrors SushiSwap success
-
-  // Step 1: Calculate liquidation debt in WAD (18 decimals)
-  // This is the amount of quote tokens needed to repay the liquidation
-  const liquidationDebtWAD = liquidation.collateral
-    .mul(liquidation.auctionPrice)
-    .div(ethers.constants.WeiPerEther); // Convert from WAD × WAD to WAD
-
-  // Step 2: FIXED - Use actual token decimals instead of Ajna's scale
-  const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
-  const requiredQuoteTokensInTokenDecimals = convertWadToTokenDecimals(liquidationDebtWAD, quoteDecimals);
-
-  // Step 3: Apply conservative safety margin (same as SushiSwap)
-  // This accounts for minor slippage and ensures we have enough to satisfy liquidation
-  const safetyMarginPercent = 99.9;
-  const safetyMarginBps = Math.floor(safetyMarginPercent * 100);
-  const amountOutMinimum = requiredQuoteTokensInTokenDecimals
-    .mul(10000 - safetyMarginBps)  // SUBTRACT FOR SLIPPAGE TOLERANCE
-    .div(10000);
+  // FIXED: Use minimal amountOutMinimum instead of complex decimal calculations
+  // Let Ajna's liquidation contract enforce the actual minimum requirements
+  // This follows the 1inch pattern where smart contracts handle decimal conversion
+  const minimalAmountOut = BigNumber.from(1); // 1 wei - trust Ajna liquidation contract
 
   logger.debug(
-    `Factory: Ajna liquidation calculation for Uniswap V3 pool ${pool.name}:\n` +
+    `Factory: Using WAD amounts for Uniswap V3 pool ${pool.name}:\n` +
     `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
     `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
-    `  Liquidation Debt (WAD): ${liquidationDebtWAD.toString()}\n` +
-    `  Required Quote Tokens: ${requiredQuoteTokensInTokenDecimals.toString()}\n` +
-    `  Amount Out Minimum (+${safetyMarginPercent}%): ${amountOutMinimum.toString()}`
+    `  Minimal Amount Out: ${minimalAmountOut.toString()} (let Ajna enforce)`
   );
 
-  // FIXED: Prepare Uniswap V3 swap details with calculated minimum (mirrors SushiSwap structure)
+  // FIXED: Prepare Uniswap V3 swap details with minimal output requirement
+  // Smart contract will handle WAD → token decimal conversion using Ajna's scale functions
   const swapDetails = {
     universalRouter: config.universalRouterOverrides.universalRouterAddress!,
     permit2: config.universalRouterOverrides.permit2Address!,
     targetToken: pool.quoteAddress,
     feeTier: config.universalRouterOverrides.defaultFeeTier || 3000,
-    amountOutMinimum: amountOutMinimum,  // ← FIXED: Real minimum instead of slippageBps
+    amountOutMinimum: minimalAmountOut, // FIXED: Minimal amount, not pre-calculated
     deadline: Math.floor(Date.now() / 1000) + 1800,
   };
 
-  // FIXED: Encode struct like SushiSwap pattern
+  // FIXED: Encode struct exactly like SushiSwap pattern
   const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
     ['(address,address,address,uint24,uint256,uint256)'], // UniswapV3SwapDetails struct
     [[
@@ -587,11 +569,12 @@ async function takeWithUniswapV3Factory({
     logger.debug(`Factory: Sending Uniswap V3 Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
 
     await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+      // FIXED: Send WAD amounts directly - no decimal pre-conversion
       const tx = await factory.takeWithAtomicSwap(
         pool.poolAddress,
         liquidation.borrower,
-        liquidation.auctionPrice,
-        liquidation.collateral,
+        liquidation.auctionPrice,  // WAD amount
+        liquidation.collateral,    // WAD amount
         Number(poolConfig.take.liquiditySource), // LiquiditySource.UNISWAPV3 = 2
         swapDetails.universalRouter,
         encodedSwapDetails,
@@ -607,10 +590,17 @@ async function takeWithUniswapV3Factory({
   }
 }
 
+
+
+
 /**
  * Execute SushiSwap take via factory
  */
 
+/**
+ * FIXED: Execute SushiSwap take via factory  
+ * Now follows 1inch pattern - sends WAD amounts to smart contract
+ */
 async function takeWithSushiSwapFactory({
   pool,
   poolConfig,
@@ -632,50 +622,29 @@ async function takeWithSushiSwapFactory({
     return;
   }
 
-  // FIXED: Calculate Ajna-aware minimum output using liquidation debt requirements
-  // This replaces the broken slippage-based calculation
-  
-  // Step 1: Calculate liquidation debt in WAD (18 decimals)
-  // This is the amount of quote tokens needed to repay the liquidation
-  // Because Ajna is overcollateralized this liquidationDebt is an overestimate of Debt
-  // The Ajna Liquidation contract will collect correct amount of quote tokens or revert tx
-  const liquidationDebtWAD = liquidation.collateral
-    .mul(liquidation.auctionPrice)
-    .div(ethers.constants.WeiPerEther); // Convert from WAD × WAD to WAD
-  
-  // Step 2: FIXED - Use actual token decimals instead of Ajna's scale
-  const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
-  const requiredQuoteTokensInTokenDecimals = convertWadToTokenDecimals(liquidationDebtWAD, quoteDecimals);
-  
-  // Step 3:  Subtract some slippage
-  // This accounts for minor slippage ensures we have enough to satisfy liquidation
-  //we are basically let the market liquidity return as much quote token as possible
-  //Ajna Liquidation contract will ensure enough quote token is returned or it will revert tx
-  const safetyMarginPercent = 99.9; 
-  const safetyMarginBps = Math.floor(safetyMarginPercent * 100);
-  const amountOutMinimum = requiredQuoteTokensInTokenDecimals
-    .mul(10000 - safetyMarginBps)  // SUBTRACT FOR SLIPPAGE TOLERANCE
-    .div(10000);
+  // FIXED: Use minimal amountOutMinimum instead of complex decimal calculations
+  // Let Ajna's liquidation contract enforce the actual minimum requirements  
+  // This mirrors the working 1inch implementation pattern
+  const minimalAmountOut = BigNumber.from(1); // 1 wei - trust Ajna liquidation contract
 
   logger.debug(
-    `Factory: Ajna liquidation calculation for pool ${pool.name}:\n` +
+    `Factory: Using WAD amounts for SushiSwap pool ${pool.name}:\n` +
     `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
     `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
-    `  Liquidation Debt (WAD): ${liquidationDebtWAD.toString()}\n` +
-    `  Required Quote Tokens: ${requiredQuoteTokensInTokenDecimals.toString()}\n` +
-    `  Amount Out Minimum (+${safetyMarginPercent}%): ${amountOutMinimum.toString()}`
+    `  Minimal Amount Out: ${minimalAmountOut.toString()} (let Ajna enforce)`
   );
 
-  // FIXED: Prepare SushiSwap swap details with calculated minimum
+  // FIXED: Prepare SushiSwap swap details with minimal output requirement
+  // Smart contract will handle WAD → token decimal conversion using Ajna's scale functions
   const swapDetails = {
     swapRouter: config.sushiswapRouterOverrides.swapRouterAddress!,
     targetToken: pool.quoteAddress,
     feeTier: config.sushiswapRouterOverrides.defaultFeeTier || 500,
-    amountOutMinimum: amountOutMinimum,  // ← FIXED: Real minimum instead of slippageBps
+    amountOutMinimum: minimalAmountOut, // FIXED: Minimal amount, not pre-calculated
     deadline: Math.floor(Date.now() / 1000) + 1800,
   };
 
-  // FIXED: Encode with new parameter structure
+  // FIXED: Encode with new parameter structure (no change needed here)
   const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
     ['uint24', 'uint256', 'uint256'], // feeTier, amountOutMinimum, deadline  
     [swapDetails.feeTier, swapDetails.amountOutMinimum, swapDetails.deadline]
@@ -685,11 +654,12 @@ async function takeWithSushiSwapFactory({
     logger.debug(`Factory: Sending SushiSwap Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
     
     await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+      // FIXED: Send WAD amounts directly - no decimal pre-conversion
       const tx = await factory.takeWithAtomicSwap(
         pool.poolAddress,
         liquidation.borrower,
-        liquidation.auctionPrice,
-        liquidation.collateral,
+        liquidation.auctionPrice,  // WAD amount
+        liquidation.collateral,    // WAD amount  
         Number(poolConfig.take.liquiditySource), // LiquiditySource.SUSHISWAP = 3
         swapDetails.swapRouter,
         encodedSwapDetails,
@@ -704,6 +674,7 @@ async function takeWithSushiSwapFactory({
     logger.error(`Factory: Failed to SushiSwap Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
   }
 }
+
 
 /**
  * ArbTake using existing logic (same as original)
