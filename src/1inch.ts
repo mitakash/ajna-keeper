@@ -12,7 +12,7 @@ export interface SwapCalldata {
   encodedCalls: string;
 }
 
-function decodeSwapCalldata(apiResponse: any): SwapCalldata {
+export function decodeSwapCalldata(apiResponse: any): SwapCalldata {
   console.log('API response:', apiResponse);
   const routerInterface = new ethers.utils.Interface(genericRouterABI);
   const decoded = routerInterface.decodeFunctionData('swap', apiResponse.data)
@@ -23,7 +23,7 @@ function decodeSwapCalldata(apiResponse: any): SwapCalldata {
   };
 }
 
-function convertSwapApiResponseToDetails(
+export function convertSwapApiResponseToDetails(
   apiResponse: any,
 ): AjnaKeeperTaker.OneInchSwapDetailsStruct {
   const swapCalldata: SwapCalldata = decodeSwapCalldata(apiResponse);

@@ -12,6 +12,7 @@ import { DexRouter } from '../src/dex-router';
 import { getProviderAndSigner } from '../src/utils';
 import { convertSwapApiResponseToDetailsBytes } from '../src/1inch';
 import { AjnaKeeperTaker__factory } from '../typechain-types';
+import { getDecimalsErc20 } from '../src/erc20';
 
 const PATH_TO_COMPILER_OUTPUT = 'artifacts/contracts/AjnaKeeperTaker.sol/AjnaKeeperTaker.json';
 
@@ -78,7 +79,9 @@ async function main() {
     oneInchRouters: config?.oneInchRouters ?? {},
     connectorTokens: config?.connectorTokens ?? [],
   });
-  const amount = ethers.utils.parseEther(argv.amount!!.toString());
+  //const amount = ethers.utils.parseEther(argv.amount!!.toString());
+  const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
+  const amount = ethers.utils.parseUnits(argv.amount!!.toString(), collateralDecimals);
 
   if (argv.action === 'approve' && pool && dexRouter) {
     // 1inch API will error out if approval not run before calling API
@@ -100,6 +103,24 @@ async function main() {
     }
 
   } else if (argv.action === 'quote' && pool && dexRouter) {
+    // Access the underlying contract directly since SDK doesn't expose scale methods
+    const poolContract = new ethers.Contract(
+      pool.poolAddress,
+      [
+        'function collateralScale() external view returns (uint256)',
+        'function quoteTokenScale() external view returns (uint256)'
+      ],
+      signer
+    );
+  
+    const collateralScale = await poolContract.collateralScale();
+    const quoteScale = await poolContract.quoteTokenScale();
+  
+    console.log('Pool collateral scale:', collateralScale.toString());
+    console.log('Expected for USDC (6 decimals):', '10^12 =', Math.pow(10, 12).toString());
+    console.log('Pool quote scale:', quoteScale.toString());
+    console.log('Expected for savUSD (18 decimals):', '10^18 =', Math.pow(10, 18).toString());
+
     const quote = await dexRouter.getQuoteFromOneInch(
       chainId,
       amount,

@@ -9,13 +9,15 @@ import { IERC20Pool, PoolDeployer } from "../AjnaInterfaces.sol";
 import { IERC20 } from "../OneInchInterfaces.sol";
 import { IAjnaKeeperTaker } from "../interfaces/IAjnaKeeperTaker.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice SushiSwap V3 implementation for Ajna keeper takes using SushiSwap Router
 /// @dev FIXED: Now mirrors 1inch pattern for decimal handling and pre-calculated minimums
 // AUDIT FIX: Inherit from ReentrancyGuard for security
 contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     using SafeERC20 for IERC20;
-    
+    using Math for uint256;
+      
     /// @notice FIXED: Configuration for SushiSwap swaps with pre-calculated minimum (mirrors 1inch)
     struct SushiSwapDetails {
         address swapRouter;         // SushiSwap router contract address
@@ -93,7 +95,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         }));
 
         // FIXED: Safe approval using Ajna's scaling (same as 1inch pattern)
-        uint256 approvalAmount = _ceilWmul(maxAmount, auctionPrice) / pool.quoteTokenScale();
+        uint256 approvalAmount = Math.ceilDiv(_ceilWmul(maxAmount, auctionPrice), pool.quoteTokenScale());
         _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), approvalAmount);
 
         // Invoke the take
@@ -127,7 +129,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         SushiSwapDetails memory details = abi.decode(data, (SushiSwapDetails));
         
         // FIXED: Convert WAD to token precision using Ajna scaling (same as 1inch)
-        uint256 collateralAmount = collateralAmountWad / pool.collateralScale();
+        uint256 collateralAmount = Math.ceilDiv(collateralAmountWad, pool.collateralScale());
         
         // Execute SushiSwap swap
         _swapWithSushiSwap(
