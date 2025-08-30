@@ -111,7 +111,7 @@ contract AjnaKeeperTaker is IERC20Taker {
 
     /// @dev Called by `Pool` to allow a taker to externally swap collateral for quote token.
     /// @param data Determines where external liquidity should be sourced to swap collateral for quote token.
-    function atomicSwapCallback(uint256 collateralAmountWad, uint256, bytes calldata data) external override {
+    function atomicSwapCallback(uint256 collateral, uint256, bytes calldata data) external override {
         SwapData memory swapData = abi.decode(data, (SwapData));
 
         // Ensure msg.sender is a valid Ajna pool and matches the pool in the data
@@ -126,7 +126,7 @@ contract AjnaKeeperTaker is IERC20Taker {
                 details.aggregationExecutor,
                 details.swapDescription,
                 details.opaqueData,
-                collateralAmountWad / pool.collateralScale() // convert WAD to token precision
+                collateral, //Already in token precision from Ajna
             );
         } else {
             revert UnsupportedLiquiditySource();
