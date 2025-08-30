@@ -126,7 +126,7 @@ contract AjnaKeeperTaker is IERC20Taker {
                 details.aggregationExecutor,
                 details.swapDescription,
                 details.opaqueData,
-                collateral, //Already in token precision from Ajna
+                collateral //Already in token precision from Ajna
             );
         } else {
             revert UnsupportedLiquiditySource();
