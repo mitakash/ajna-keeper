@@ -151,7 +151,7 @@ contract AjnaKeeperTaker is IERC20Taker {
 
         // scale the return amount to the actual amount
         if (swapDescription.amount != actualCollateralAmount) {
-            swapDescription.minReturnAmount = 1;
+            swapDescription.minReturnAmount = actualCollateralAmount * swapDescription.minReturnAmount / swapDescription.amount;
             swapDescription.amount = actualCollateralAmount;
         }
 
