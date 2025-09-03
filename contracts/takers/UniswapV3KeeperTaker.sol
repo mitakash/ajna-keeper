@@ -37,11 +37,6 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     /// @dev Factory contract that can also call functions
     address public immutable authorizedFactory;
 
-    // SIMPLIFIED DEBUG EVENTS - Avoid stack too deep
-    event DebugInfo(string operation, bool success, uint256 value);
-    event DebugAddress(string operation, address addr);
-    event DebugFailure(string operation, string reason);
-    
     // Production events
     event TakeExecuted(address indexed pool, address indexed borrower, uint256 collateralAmount, uint256 quoteAmount, LiquiditySource source, address indexed caller);
     event SwapExecuted(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
@@ -79,18 +74,14 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         require(details.universalRouter == swapRouter, "Router mismatch");
         require(details.targetToken == pool.quoteTokenAddress(), "Invalid target");
         
-        emit DebugInfo("takeWithAtomicSwap_started", true, maxAmount);
         
         // FIXED: Re-encode for callback (like SushiSwap)
         bytes memory data = abi.encode(details);
 
         // FIXED: Simple approval like 1inch WITH MATH.CEILDIV
         uint256 approvalAmount = Math.ceilDiv(_ceilWmul(maxAmount, auctionPrice), pool.quoteTokenScale());
-        emit DebugInfo("approval_calculated", true, approvalAmount);
         
         _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), approvalAmount);
-
-        emit TakeExecuted(address(pool), borrowerAddress, maxAmount, approvalAmount, source, msg.sender);
 
         // Invoke take
         pool.take(borrowerAddress, maxAmount, address(this), data);
@@ -103,23 +94,17 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     }
 
     /// @notice Called by Pool to swap collateral for quote tokens
-    function atomicSwapCallback(uint256 collateralAmountWad, uint256, bytes calldata data) external override nonReentrant {
+    function atomicSwapCallback(uint256 collateral, uint256, bytes calldata data) external override nonReentrant {
         IERC20Pool pool = IERC20Pool(msg.sender);
         if (!_validatePool(pool)) revert InvalidPool();
 
-        emit DebugInfo("atomicSwapCallback_started", true, collateralAmountWad);
 
         // FIXED: Simple decode like 1inch
         UniswapV3SwapDetails memory details = abi.decode(data, (UniswapV3SwapDetails));
         
-        // FIXED: Simple conversion like 1inch/SushiSwap WITH MATH.CEILDIV
-        uint256 collateralAmount = Math.ceilDiv(collateralAmountWad, pool.collateralScale());
         
-        emit DebugInfo("collateral_converted", true, collateralAmount);
-        emit DebugAddress("collateral_token", pool.collateralAddress());
-        
-        // Execute swap
-        _swapWithUniswapV3(pool.collateralAddress(), details.targetToken, collateralAmount, details);
+        // Execute swap, the collateral amount is already in native tokens from Ajna Core contract
+        _swapWithUniswapV3(pool.collateralAddress(), details.targetToken, collateral, details);
     }
 
     /// @inheritdoc IAjnaKeeperTaker
@@ -140,39 +125,27 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
 
     /// @dev SIMPLIFIED: Essential debugging without stack depth issues
     function _swapWithUniswapV3(address tokenIn, address tokenOut, uint256 amountIn, UniswapV3SwapDetails memory details) private {
-        emit DebugInfo("swap_started", true, amountIn);
-        emit DebugAddress("token_in", tokenIn);
         
         if (amountIn == 0) {
-            emit DebugFailure("swap_failed", "amountIn_zero");
             revert SwapFailed();
         }
 
-        // Check balance
-        uint256 balance = IERC20(tokenIn).balanceOf(address(this));
-        emit DebugInfo("token_balance", balance >= amountIn, balance);
-        
         // Step 1: Approve Permit2
-        emit DebugInfo("permit2_approval_start", true, amountIn);
         _safeApproveWithReset(IERC20(tokenIn), details.permit2, amountIn);
         
         // Step 2: Permit2 -> Universal Router approval
-        emit DebugInfo("permit2_router_approval_start", true, 0);
         bytes memory permit2Data = abi.encodeWithSignature(
             "approve(address,address,uint160,uint48)",
             tokenIn, details.universalRouter, amountIn, uint48(details.deadline)
         );
         
         (bool permit2Success,) = details.permit2.call(permit2Data);
-        emit DebugInfo("permit2_approval_result", permit2Success, 0);
         
         if (!permit2Success) {
-            emit DebugFailure("permit2_failed", "approval_rejected");
             revert SwapFailed();
         }
 
         // Step 3: Build Universal Router call
-        emit DebugInfo("router_call_start", true, details.feeTier);
         
         bytes memory path = abi.encodePacked(tokenIn, details.feeTier, tokenOut);
         bytes memory commands = abi.encodePacked(V3_SWAP_EXACT_IN);
@@ -186,14 +159,11 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         
         // Step 4: Execute swap
         (bool swapSuccess,) = details.universalRouter.call(swapData);
-        emit DebugInfo("router_call_result", swapSuccess, 0);
         
         if (!swapSuccess) {
-            emit DebugFailure("router_failed", "execution_reverted");
             revert SwapFailed();
         }
         
-        emit SwapExecuted(tokenIn, tokenOut, amountIn, details.amountOutMinimum);
     }
 
     function _recoverToken(IERC20 token) private {

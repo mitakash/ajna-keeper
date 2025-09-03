@@ -104,15 +104,6 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         // SECURITY FIX: Reset allowance to prevent future misuse
         _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
 
-        // AUDIT FIX: Emit event for monitoring
-        emit TakeExecuted(
-            address(pool),
-            borrowerAddress,
-            maxAmount,
-            approvalAmount,
-            source,
-            msg.sender
-        );
         
         // Send excess quote token (profit) to owner
         _recoverToken(IERC20(pool.quoteTokenAddress()));
@@ -120,7 +111,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
 
     /// @notice Called by Pool to swap collateral for quote tokens during liquidation
     // AUDIT FIX: Add nonReentrant modifier for security
-    function atomicSwapCallback(uint256 collateralAmountWad, uint256, bytes calldata data) external override nonReentrant {
+    function atomicSwapCallback(uint256 collateral, uint256, bytes calldata data) external override nonReentrant {
         // Ensure msg.sender is a valid Ajna pool
         IERC20Pool pool = IERC20Pool(msg.sender);
         if (!_validatePool(pool)) revert InvalidPool();
@@ -128,14 +119,11 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         // Decode swap configuration
         SushiSwapDetails memory details = abi.decode(data, (SushiSwapDetails));
         
-        // FIXED: Convert WAD to token precision using Ajna scaling (same as 1inch)
-        uint256 collateralAmount = Math.ceilDiv(collateralAmountWad, pool.collateralScale());
-        
         // Execute SushiSwap swap
         _swapWithSushiSwap(
             pool.collateralAddress(),
             details.targetToken,
-            collateralAmount,
+            collateral, //this is already in native token amount that Ajna Core Knows
             details
         );
     }
@@ -200,8 +188,6 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         uint256 amountOut = abi.decode(result, (uint256));
         require(amountOut >= amountOutMin, "Insufficient output amount");
         
-        // AUDIT FIX: Emit swap event for monitoring
-        emit SwapExecuted(tokenIn, tokenOut, amountIn, amountOut);
     }
 
     /// @dev Recovers token balance to owner
