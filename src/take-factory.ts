@@ -535,7 +535,7 @@ async function takeWithUniswapV3Factory({
   const minimalAmountOut = BigNumber.from(1); // 1 wei - trust Ajna liquidation contract
 
   logger.debug(
-    `Factory: Using WAD amounts for Uniswap V3 pool ${pool.name}:\n` +
+    `Factory: Executing Uniswap V3 take for pool ${pool.name}:\n` +
     `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
     `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
     `  Minimal Amount Out: ${minimalAmountOut.toString()} (let Ajna enforce)`

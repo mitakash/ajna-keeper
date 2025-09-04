@@ -81,9 +81,10 @@ export async function handleTakes({
       break;
 
     case 'none':
-      // FIXED: External DEX unavailable, but arbTake should still work!
+      // External DEX unavailable, but arbTake should still work!
+      // Use the existing 1inch handler since it already supports arbTake fallback
       logger.warn(`External DEX integration unavailable for pool ${pool.name} - checking arbTake only`);
-      await handleArbTakeOnly({
+      await handleTakesWith1inch({
         signer,
         pool,
         poolConfig,
@@ -93,105 +94,20 @@ export async function handleTakes({
   }
 }
 
-/**
- * FIXED: Handle arbTake-only scenarios when external DEX infrastructure is missing
- * This ensures arbTake can run independently of external take infrastructure
- */
-async function handleArbTakeOnly({
-  signer,
-  pool,
-  poolConfig,
-  config,
-}: HandleTakeParams) {
-  logger.debug(`ArbTake-only handler starting for pool: ${pool.name}`);
-
-  // Check if arbTake is even configured
-  if (!poolConfig.take.minCollateral || !poolConfig.take.hpbPriceFactor) {
-    logger.debug(`ArbTake not configured for pool: ${pool.name} (missing minCollateral or hpbPriceFactor)`);
-    return;
-  }
-
-  for await (const liquidation of getLiquidationsForArbTakeOnly({
-    pool,
-    poolConfig,
-    signer,
-    config,
-  })) {
-    if (liquidation.isArbTakeable) {
-      await arbTakeLiquidation({
-        pool,
-        poolConfig,
-        signer,
-        liquidation,
-        config: { dryRun: config.dryRun },
-      });
-      await delay(config.delayBetweenActions);
-    }
-  }
-}
 
 /**
- * FIXED: Get liquidations for arbTake-only processing
- * Simplified version that only checks arbTake eligibility
+ * Handle liquidations for all scenarios: 1inch external takes, factory takes, and arbTake-only
+ * 
+ * Despite the name, this function handles multiple take strategies:
+ * - External takes via 1inch (when keeperTaker contract is available)
+ * - External takes via factory system (when keeperTakerFactory + takerContracts available) 
+ * - ArbTake-only (when no external DEX contracts deployed)
+ * - LP reward collection and settlement (works in all scenarios)
+ * 
+ * The function automatically skips external takes when they're not profitable or possible,
+ * and falls back to arbTake when configured. This provides a unified interface for
+ * all liquidation scenarios while maintaining backward compatibility.
  */
-async function* getLiquidationsForArbTakeOnly({
-  pool,
-  poolConfig,
-  signer,
-  config,
-}: Pick<HandleTakeParams, 'pool' | 'poolConfig' | 'signer' | 'config'>): AsyncGenerator<LiquidationToTake> {
-  
-  const {
-    pool: { hpb, hpbIndex, liquidationAuctions },
-  } = await subgraph.getLiquidations(
-    config.subgraphUrl,
-    pool.poolAddress,
-    poolConfig.take.minCollateral ?? 0
-  );
-
-  for (const auction of liquidationAuctions) {
-    const { borrower } = auction;
-    const liquidationStatus = await pool.getLiquidation(borrower).getStatus();
-    const price = Number(weiToDecimaled(liquidationStatus.price));
-    const collateral = liquidationStatus.collateral;
-
-    let isArbTakeable = false;
-    let arbHpbIndex = 0;
-
-    // ONLY check arbTake (no external take checks)
-    if (poolConfig.take.minCollateral && poolConfig.take.hpbPriceFactor) {
-      const minDeposit = poolConfig.take.minCollateral / hpb;
-      const arbTakeCheck = await checkIfArbTakeable(
-        pool,
-        price,
-        collateral,
-        poolConfig,
-        config.subgraphUrl,
-        minDeposit.toString(),
-        signer
-      );
-      isArbTakeable = arbTakeCheck.isArbTakeable;
-      arbHpbIndex = arbTakeCheck.hpbIndex;
-    }
-
-    if (isArbTakeable) {
-      logger.debug(`Found liquidation for arbTake - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`);
-
-      yield {
-        borrower,
-        hpbIndex: arbHpbIndex,
-        collateral,
-        auctionPrice: liquidationStatus.price,
-        isTakeable: false, // No external takes in this path
-        isArbTakeable,
-      };
-    } else {
-      logger.debug(
-        `ArbTake not profitable - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`
-      );
-    }
-  }
-}
 
 export async function handleTakesWith1inch({
   signer,
