@@ -149,13 +149,13 @@ export async function swapWithSushiswapRouter(
       sqrtPriceLimitX96: 0 // No price limit
     };
     
-    logger.info('SushiSwap swap parameters:');
-    logger.info(`   tokenIn: ${swapParams.tokenIn}`);
-    logger.info(`   tokenOut: ${swapParams.tokenOut}`);
-    logger.info(`   fee: ${swapParams.fee}`);
-    logger.info(`   amountIn: ${weiToDecimaled(swapParams.amountIn, tokenToSwap.decimals)}`);
-    logger.info(`   amountOutMinimum: ${weiToDecimaled(swapParams.amountOutMinimum, targetToken.decimals)}`);
-    logger.info(`   deadline: ${new Date(swapParams.deadline * 1000).toLocaleString()}`);
+    logger.debug('SushiSwap swap parameters:');
+    logger.debug(`   tokenIn: ${swapParams.tokenIn}`);
+    logger.debug(`   tokenOut: ${swapParams.tokenOut}`);
+    logger.debug(`   fee: ${swapParams.fee}`);
+    logger.debug(`   amountIn: ${weiToDecimaled(swapParams.amountIn, tokenToSwap.decimals)}`);
+    logger.debug(`   amountOutMinimum: ${weiToDecimaled(swapParams.amountOutMinimum, targetToken.decimals)}`);
+    logger.debug(`   deadline: ${new Date(swapParams.deadline * 1000).toLocaleString()}`);
 
     // PRODUCTION PATTERN: Gas price and execution logic from working test
     const gasPrice = await provider.getGasPrice();
