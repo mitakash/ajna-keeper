@@ -4,6 +4,7 @@
 
 import { ethers, BigNumber, Signer } from 'ethers';
 import { logger } from '../logging';
+import { getDecimalsErc20 } from '../erc20';
 
 // SushiSwap V3 QuoterV2 ABI with CORRECT field order (from production testing)
 const SUSHI_QUOTER_ABI = [
@@ -215,7 +216,11 @@ export class SushiSwapQuoteProvider {
         return { success: false, error: 'Zero output from SushiSwap quoter' };
       }
 
-      logger.debug(`SushiSwap quote success: ${ethers.utils.formatUnits(amountIn, 18)} in -> ${ethers.utils.formatUnits(amountOut, 18)} out`);
+      // Get correct decimals for proper formatting
+      const inputDecimals = await getDecimalsErc20(this.signer, tokenIn);
+      const outputDecimals = await getDecimalsErc20(this.signer, tokenOut);
+
+      logger.debug(`SushiSwap quote success: ${ethers.utils.formatUnits(amountIn, inputDecimals)} in -> ${ethers.utils.formatUnits(amountOut, outputDecimals)} out`);
 
       return {
         success: true,

@@ -3,6 +3,7 @@
 
 import { BigNumber, ethers } from 'ethers';
 import { logger } from '../logging';
+import { getDecimalsErc20 } from '../erc20';
 
 interface QuoteResult {
   success: boolean;
@@ -72,8 +73,11 @@ export class UniswapV3QuoteProvider {
         fee: tier,
         sqrtPriceLimitX96: 0 // No price limit
       };
-
-      logger.debug(`Getting Uniswap V3 quote using QuoterV2 at ${this.config.quoterV2Address}: ${ethers.utils.formatEther(srcAmount)} ${srcToken} -> ${dstToken} (fee: ${tier})`);
+      
+      // Get correct decimals for proper formatting
+      const inputDecimals = await getDecimalsErc20(this.signer, srcToken);
+      const outputDecimals = await getDecimalsErc20(this.signer, dstToken);
+      logger.debug(`Getting Uniswap V3 quote using QuoterV2 at ${this.config.quoterV2Address}: ${ethers.utils.formatUnits(srcAmount, inputDecimals)} ${srcToken} -> ${dstToken} (fee: ${tier})`);
 
       // CRITICAL: Use callStatic because QuoterV2 works by reverting with the result
       const result = await quoterContract.callStatic.quoteExactInputSingle(quoteParams);
@@ -88,7 +92,7 @@ export class UniswapV3QuoteProvider {
         };
       }
 
-      logger.debug(`Uniswap V3 quote result: ${ethers.utils.formatEther(amountOut)} ${dstToken} (gas: ${gasEstimate.toString()})`);
+      logger.debug(`Uniswap V3 quote result: ${ethers.utils.formatUnits(amountOut, outputDecimals)} ${dstToken} (gas: ${gasEstimate.toString()})`);
 
       return {
         success: true,

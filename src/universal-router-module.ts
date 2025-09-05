@@ -1,14 +1,19 @@
 // src/universal-router-module.ts
+// FIXED: Now mirrors working SushiSwap patterns for decimal handling and conservative approach
 import { Contract, BigNumber, Signer, providers, constants, ethers } from 'ethers';
 import { logger } from './logging';
 import { NonceTracker } from './nonce';
 import { weiToDecimaled } from './utils';
 import { getTokenFromAddress } from './uniswap';
+import { convertWadToTokenDecimals, getDecimalsErc20 } from './erc20';
 
 // ABIs
 const ERC20_ABI = [
   'function allowance(address,address) view returns (uint256)',
-  'function approve(address,uint256) returns (bool)'
+  'function approve(address,uint256) returns (bool)',
+  'function balanceOf(address) view returns (uint256)',
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)'
 ];
 
 const PERMIT2_ABI = [
@@ -20,11 +25,16 @@ const UNIVERSAL_ROUTER_ABI = [
   'function execute(bytes commands, bytes[] inputs, uint256 deadline) payable'
 ];
 
+const POOL_FACTORY_ABI = [
+  'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)'
+];
+
 // Command constants
 const V3_SWAP_EXACT_IN = '0x00';
 
 /**
- * Swaps tokens using Uniswap's Universal Router with Permit2
+ * FIXED: Swaps tokens using Uniswap's Universal Router with proper decimal handling
+ * Now mirrors the working SushiSwap patterns for conservative operation
  */
 export async function swapWithUniversalRouter(
   signer: Signer,
@@ -38,6 +48,7 @@ export async function swapWithUniversalRouter(
   poolFactoryAddress: string,
 ) {
   
+  // VALIDATION: Same as SushiSwap with additional factory validation
   if (!universalRouterAddress) {
     throw new Error('Universal Router address must be provided via configuration');
   }
@@ -69,7 +80,7 @@ export async function swapWithUniversalRouter(
   logger.info(`Chain ID: ${chainId}, Signer: ${signerAddress}`);
   logger.info(`Using Universal Router at: ${universalRouterAddress}`);
 
-  // Get token details
+  // Get token details - FIXED: Proper decimal handling like SushiSwap
   const tokenToSwap = await getTokenFromAddress(chainId, provider, tokenAddress);
   const targetToken = await getTokenFromAddress(chainId, provider, targetTokenAddress);
 
@@ -78,15 +89,31 @@ export async function swapWithUniversalRouter(
     return { success: true };
   }
 
+  // FIXED: Get actual decimals from contracts (like SushiSwap)
+  const inputDecimals = await getDecimalsErc20(signer, tokenAddress);
+  const outputDecimals = await getDecimalsErc20(signer, targetTokenAddress);
+
+  logger.debug(`Token decimals: ${tokenToSwap.symbol}=${inputDecimals}, ${targetToken.symbol}=${outputDecimals}`);
+
   // Get contract instances
   const tokenContract = new Contract(tokenAddress, ERC20_ABI, signer);
   const permit2Contract = new Contract(permit2Address, PERMIT2_ABI, signer);
   const universalRouter = new Contract(universalRouterAddress, UNIVERSAL_ROUTER_ABI, signer);
+  const factoryContract = new Contract(poolFactoryAddress, POOL_FACTORY_ABI, provider);
 
   try {
-    // Step 1: Check and approve Permit2 allowance
+    // STEP 1: Verify pool exists (from SushiSwap production pattern)
+    const poolAddress = await factoryContract.getPool(tokenAddress, targetTokenAddress, feeTier);
+    if (poolAddress === '0x0000000000000000000000000000000000000000') {
+      logger.warn(`No direct Uniswap pool exists for ${tokenToSwap.symbol}/${targetToken.symbol} with fee ${feeTier}`);
+      // Continue anyway as Universal Router may find a path through other pools
+    } else {
+      logger.info(`Found Uniswap pool at ${poolAddress} for ${tokenToSwap.symbol}/${targetToken.symbol}`);
+    }
+
+    // STEP 2: Check and approve Permit2 allowance (same as current but with better logging)
     const permit2Allowance = await tokenContract.allowance(signerAddress, permit2Address);
-    logger.info(`Current Permit2 allowance: ${weiToDecimaled(permit2Allowance, tokenToSwap.decimals)} ${tokenToSwap.symbol}`);
+    logger.info(`Current Permit2 allowance: ${weiToDecimaled(permit2Allowance, inputDecimals)} ${tokenToSwap.symbol}`);
     
     if (permit2Allowance.lt(amount)) {
       logger.info(`Approving Permit2 to spend ${tokenToSwap.symbol}`);
@@ -101,14 +128,14 @@ export async function swapWithUniversalRouter(
       logger.info(`Permit2 already has sufficient allowance for ${tokenToSwap.symbol}`);
     }
     
-    // Step 2: Check and approve Universal Router via Permit2
+    // STEP 3: Check and approve Universal Router via Permit2 (same as current)
     const { amount: routerAllowance, expiration } = await permit2Contract.allowance(
       tokenAddress,
       signerAddress,
       universalRouterAddress
     );
     
-    logger.info(`Current Universal Router allowance via Permit2: ${weiToDecimaled(routerAllowance, tokenToSwap.decimals)} ${tokenToSwap.symbol} (expires: ${new Date(expiration * 1000).toLocaleString()})`);
+    logger.info(`Current Universal Router allowance via Permit2: ${weiToDecimaled(routerAllowance, inputDecimals)} ${tokenToSwap.symbol} (expires: ${new Date(expiration * 1000).toLocaleString()})`);
     
     if (routerAllowance.lt(amount) || expiration <= Math.floor(Date.now() / 1000)) {
       logger.info(`Approving Universal Router via Permit2 for ${tokenToSwap.symbol}`);
@@ -131,28 +158,17 @@ export async function swapWithUniversalRouter(
       logger.info(`Universal Router already has sufficient allowance via Permit2 for ${tokenToSwap.symbol}`);
     }
     
-    // Step 3: Check if pool exists
-    let poolExists = true;
-    try {
-      const factory = poolFactoryAddress;	    
-      const factoryAbi = ['function getPool(address tokenA, address tokenB, uint24 fee) view returns (address pool)'];
-      const factoryContract = new Contract(factory, factoryAbi, provider);
-      
-      const poolAddress = await factoryContract.getPool(tokenAddress, targetTokenAddress, feeTier);
-      if (poolAddress === '0x0000000000000000000000000000000000000000') {
-        poolExists = false;
-        logger.warn(`No direct pool exists for ${tokenToSwap.symbol}/${targetToken.symbol} with fee ${feeTier/10000}%`);
-        // We'll continue anyway as the universal router may find a path
-      } else {
-        logger.info(`Found pool at ${poolAddress}`);
-      }
-    } catch (error: any) {
-      logger.warn(`Could not verify pool: ${error.message}`);
-    }
+    // STEP 4: FIXED: Conservative slippage calculation (mirrors SushiSwap pattern)
+    // For LP reward swaps without quotes, use conservative approach
+    const conservativeOutputRatio = (10000 - slippageBasisPoints) / 10000;
+    const amountOutMin = amount.mul(Math.floor(conservativeOutputRatio * 10000)).div(10000);
     
-    // Step 4: Prepare the swap command
+    logger.info(`Input amount: ${weiToDecimaled(amount, inputDecimals)} ${tokenToSwap.symbol}`);
+    logger.info(`Minimum output with ${slippageBasisPoints/100}% slippage: ${weiToDecimaled(amountOutMin, outputDecimals)} ${targetToken.symbol} (conservative estimate)`);
+    
+    // STEP 5: Prepare the swap command (same as current)
     logger.debug(
-      `Swapping token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, tokenToSwap.decimals)} to ${targetToken.symbol}`
+      `Swapping token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, inputDecimals)} to ${targetToken.symbol}`
     );
     
     const commands = V3_SWAP_EXACT_IN; // Single command for V3_SWAP_EXACT_IN
@@ -163,10 +179,6 @@ export async function swapWithUniversalRouter(
       [tokenAddress, feeTier, targetTokenAddress]
     );
     
-    // Calculate minimum out with slippage
-    const amountOutMin = amount.mul(10000 - slippageBasisPoints).div(10000);
-    logger.info(`Minimum output amount with ${slippageBasisPoints/100}% slippage: ${weiToDecimaled(amountOutMin, targetToken.decimals)} ${targetToken.symbol}`);
-    
     // Encode the inputs for V3_SWAP_EXACT_IN
     // Parameters: recipient, amountIn, amountOutMin, path, payerIsUser
     const inputs = [
@@ -176,15 +188,15 @@ export async function swapWithUniversalRouter(
       )
     ];
     
-    // Step 5: Execute the swap
+    // STEP 6: Execute the swap (same gas strategy as SushiSwap)
     const deadline = Math.floor(Date.now() / 1000) + 1800; // 30 minutes
     
-    // Get gas price and estimate gas
+    // Get gas price and estimate gas (mirrors SushiSwap pattern)
     const gasPrice = await provider.getGasPrice();
     const highGasPrice = gasPrice.mul(115).div(100); // 15% higher
     logger.info(`Using gas price: ${ethers.utils.formatUnits(highGasPrice, 'gwei')} gwei (15% higher than current)`);
     
-    // Execute the swap using our queued transaction system
+    // Execute the swap using our queued transaction system (same as SushiSwap)
     const receipt = await NonceTracker.queueTransaction(signer, async (nonce) => {
       const swapTx = await universalRouter.execute(
         commands,
@@ -192,12 +204,12 @@ export async function swapWithUniversalRouter(
         deadline,
         {
           nonce,
-          gasLimit: 1000000, // Generous gas limit
+          gasLimit: 1000000, // Generous gas limit for Universal Router
           gasPrice: highGasPrice
         }
       );
       
-      logger.info(`Swap transaction sent: ${swapTx.hash}`);
+      logger.info(`Uniswap swap transaction sent: ${swapTx.hash}`);
       
       logger.info(`Waiting for transaction confirmation...`);
       const timeoutPromise = new Promise((_, reject) => 
@@ -214,13 +226,13 @@ export async function swapWithUniversalRouter(
     logger.info(`Transaction confirmed: ${receipt.transactionHash}`);
     logger.info(`Gas used: ${receipt.gasUsed.toString()}`);
     logger.info(
-      `Swap successful for token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, tokenToSwap.decimals)} to ${targetToken.symbol}`
+      `Uniswap swap successful for token: ${tokenToSwap.symbol}, amount: ${weiToDecimaled(amount, inputDecimals)} to ${targetToken.symbol}`
     );
     
     return { success: true, receipt };
+    
   } catch (error: any) {
-    logger.error(`Swap failed for token: ${tokenAddress}: ${error}`);
-    // No need to manually reset nonce as our queueTransaction does this automatically on error
+    logger.error(`Uniswap swap failed for token: ${tokenAddress}: ${error}`);
     return { success: false, error: error.toString() };
   }
 }

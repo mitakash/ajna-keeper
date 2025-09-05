@@ -8,7 +8,7 @@ import { DexRouter } from './dex-router';
 import { BigNumber, ethers } from 'ethers';
 import { convertSwapApiResponseToDetailsBytes } from './1inch';
 import { AjnaKeeperTaker__factory } from '../typechain-types';
-import { getDecimalsErc20 } from './erc20';
+import { convertWadToTokenDecimals, getDecimalsErc20 } from './erc20';
 import { NonceTracker } from './nonce';
 import { SmartDexManager } from './smart-dex-manager';
 import { handleFactoryTakes } from './take-factory';
@@ -46,7 +46,6 @@ export async function handleTakes({
   logger.debug(`Detection Results - Type: ${deploymentType}, Valid: ${validation.valid}`);
   if (!validation.valid) {
     logger.error(`Configuration errors: ${validation.errors.join(', ')}`);
-    return;
   }
 
   // Route based on deployment type
@@ -82,12 +81,33 @@ export async function handleTakes({
       break;
 
     case 'none':
-      // No external DEX available - this shouldn't happen if take is configured
-      logger.warn(`Take configured but no DEX integration available for pool ${pool.name}`);
+      // External DEX unavailable, but arbTake should still work!
+      // Use the existing 1inch handler since it already supports arbTake fallback
+      logger.warn(`External DEX integration unavailable for pool ${pool.name} - checking arbTake only`);
+      await handleTakesWith1inch({
+        signer,
+        pool,
+        poolConfig,
+        config,
+      });
       break;
   }
 }
 
+
+/**
+ * Handle liquidations for all scenarios: 1inch external takes, factory takes, and arbTake-only
+ * 
+ * Despite the name, this function handles multiple take strategies:
+ * - External takes via 1inch (when keeperTaker contract is available)
+ * - External takes via factory system (when keeperTakerFactory + takerContracts available) 
+ * - ArbTake-only (when no external DEX contracts deployed)
+ * - LP reward collection and settlement (works in all scenarios)
+ * 
+ * The function automatically skips external takes when they're not profitable or possible,
+ * and falls back to arbTake when configured. This provides a unified interface for
+ * all liquidation scenarios while maintaining backward compatibility.
+ */
 
 export async function handleTakesWith1inch({
   signer,
@@ -230,16 +250,22 @@ async function checkIfTakeable(
       oneInchRouters: oneInchRouters ?? {},
       connectorTokens: connectorTokens ?? [],
     });
+    
+    // In checkIfTakeable function, before the dexRouter quote call:
+    const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
+    const collateralInTokenDecimals = convertWadToTokenDecimals(collateral, collateralDecimals);
+
+
     const quoteResult = await dexRouter.getQuoteFromOneInch(
       chainId,
-      collateral,
+      collateralInTokenDecimals,
       pool.collateralAddress,
       pool.quoteAddress
     );
 
     if (!quoteResult.success) {
       logger.debug(
-        `No valid quote data for collateral ${ethers.utils.formatUnits(collateral, await getDecimalsErc20(signer, pool.collateralAddress))} in pool ${pool.name}: ${quoteResult.error}`
+        `No valid quote data for collateral ${ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals)} in pool ${pool.name}: ${quoteResult.error}`	      
       );
       return { isTakeable: false };
     }
@@ -247,20 +273,19 @@ async function checkIfTakeable(
     const amountOut = ethers.BigNumber.from(quoteResult.dstAmount);
     if (amountOut.isZero()) {
       logger.debug(
-        `Zero amountOut for collateral ${ethers.utils.formatUnits(collateral, await getDecimalsErc20(signer, pool.collateralAddress))} in pool ${pool.name}`
+	`Zero amountOut for collateral ${ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals)} in pool ${pool.name}`      
       );
       return { isTakeable: false };
     }
 
-    const collateralDecimals = await getDecimalsErc20(
-      signer,
-      pool.collateralAddress
-    );
     const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
 
+    //collateralAmount is the human readable amount
     const collateralAmount = Number(
-      ethers.utils.formatUnits(collateral, collateralDecimals)
+     ethers.utils.formatUnits(collateralInTokenDecimals, collateralDecimals)  // ← Use converted amount
     );
+
+    //quoteAmount is supposed to be the human readable amount
     const quoteAmount = Number(
       ethers.utils.formatUnits(amountOut, quoteDecimals)
     );
@@ -392,14 +417,32 @@ export async function takeLiquidation({
         oneInchRouters: config.oneInchRouters ?? {},
         connectorTokens: config.connectorTokens ?? [],
       });
+
+      // Convert collateral from WAD to token decimals for 1inch API consistency
+      const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
+      const collateralInTokenDecimals = convertWadToTokenDecimals(liquidation.collateral, collateralDecimals);
+
       const swapData = await dexRouter.getSwapDataFromOneInch(
         await signer.getChainId(),
-        liquidation.collateral,
+        collateralInTokenDecimals,  //Use token decimals for 1inch API
         pool.collateralAddress,
         pool.quoteAddress,
         1,
         keeperTaker.address,
         true
+      );
+
+      // Log transaction parameters for debugging
+      logger.debug(
+        `Preparing takeWithAtomicSwap transaction:\n` +
+        `  Pool: ${pool.poolAddress}\n` +
+        `  Borrower: ${liquidation.borrower}\n` +
+        `  Auction Price (WAD): ${liquidation.auctionPrice.toString()}\n` +
+        `  Collateral (WAD): ${liquidation.collateral.toString()}\n` +
+        `  Collateral (Token Decimals): ${collateralInTokenDecimals.toString()}\n` +
+        `  Liquidity Source: ${poolConfig.take.liquiditySource}\n` +
+        `  1inch Router: ${dexRouter.getRouter(await signer.getChainId())}\n` +
+        `  Swap Data Length: ${swapData.data.length} chars`
       );
 
       try {

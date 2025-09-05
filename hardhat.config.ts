@@ -7,7 +7,19 @@ import "@nomicfoundation/hardhat-verify";
 dotenv.config();
 
 const config: HardhatUserConfig = {
-  solidity: '0.8.28',
+  //solidity: '0.8.28',
+  solidity: {
+    version: '0.8.28',
+    settings: {
+      optimizer: {
+        enabled: true,
+        runs: 200
+      },
+      metadata: {
+      bytecodeHash: "none"  // Helps with verification
+      },
+    },
+  },
   paths: {
     tests: './src/integration-tests',
   },
@@ -39,7 +51,23 @@ const config: HardhatUserConfig = {
   },
   },
   sourcify: { enabled: true },
-  etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
+  //etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },
+  etherscan: {
+    apiKey: {
+      avalanche: "verifyContract", // Snowtrace uses this generic key
+      snowtrace: "verifyContract"  // Alternative name
+    },
+    customChains: [
+      {
+        network: "avalanche",
+        chainId: 43114,
+        urls: {
+          apiURL: "https://api.routescan.io/v2/network/mainnet/evm/43114/etherscan/api",
+          browserURL: "https://snowtrace.io"
+        }
+      }
+    ]
+  }
 };
 
 export default config;

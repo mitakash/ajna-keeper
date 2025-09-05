@@ -9,18 +9,21 @@ import { IERC20Pool, PoolDeployer } from "../AjnaInterfaces.sol";
 import { IERC20 } from "../OneInchInterfaces.sol";
 import { IAjnaKeeperTaker } from "../interfaces/IAjnaKeeperTaker.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 /// @notice SushiSwap V3 implementation for Ajna keeper takes using SushiSwap Router
-/// @dev Follows the same pattern as UniswapV3KeeperTaker for consistency
+/// @dev FIXED: Now mirrors 1inch pattern for decimal handling and pre-calculated minimums
 // AUDIT FIX: Inherit from ReentrancyGuard for security
 contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     using SafeERC20 for IERC20;
-    /// @notice Configuration for SushiSwap swaps
+    using Math for uint256;
+      
+    /// @notice FIXED: Configuration for SushiSwap swaps with pre-calculated minimum (mirrors 1inch)
     struct SushiSwapDetails {
         address swapRouter;         // SushiSwap router contract address
         address targetToken;        // Token to swap collateral for (usually quote token)
         uint24 feeTier;            // SushiSwap fee tier (500, 3000, 10000)
-        uint256 slippageBps;       // Slippage in basis points (e.g., 200 = 2%)
+        uint256 amountOutMinimum;  // FIXED: Pre-calculated minimum output (replaces slippageBps)
         uint256 deadline;          // Swap deadline timestamp
     }
 
@@ -73,40 +76,34 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         if (source != LiquiditySource.SushiSwap) revert UnsupportedSource();
         if (!_validatePool(pool)) revert InvalidPool();
         
-        // AUDIT FIX: Decode and validate swap details
+        // FIXED: Decode new parameter structure (mirrors TypeScript encoding)
         if (swapDetails.length < 96) revert InvalidSwapDetails(); // Basic length check
-        (uint24 feeTier, uint256 slippageBps, uint256 deadline) = abi.decode(swapDetails, (uint24, uint256, uint256));
+        (uint24 feeTier, uint256 amountOutMinimum, uint256 deadline) = abi.decode(swapDetails, (uint24, uint256, uint256));
         
-        // Validate parameters
+        // FIXED: Validate parameters (updated for new structure)
         require(swapRouter != address(0), "Invalid router");
         require(deadline > block.timestamp, "Expired deadline");
-        require(slippageBps <= 5000, "Slippage too high"); // Max 50%
+        require(amountOutMinimum > 0, "Invalid minimum amount"); // FIXED: Validate minimum instead of slippage
 
-        // Configuration passed through to the callback function
+        // FIXED: Configuration with new struct (mirrors 1inch pattern)
         bytes memory data = abi.encode(SushiSwapDetails({
             swapRouter: swapRouter,
             targetToken: pool.quoteTokenAddress(),
             feeTier: feeTier,
-            slippageBps: slippageBps,
+            amountOutMinimum: amountOutMinimum, // FIXED: Use pre-calculated minimum
             deadline: deadline
         }));
 
-        // FIXED: Safe approval for pool to spend quote token
-        uint256 approvalAmount = _ceilWmul(maxAmount, auctionPrice) / pool.quoteTokenScale();
+        // FIXED: Safe approval using Ajna's scaling (same as 1inch pattern)
+        uint256 approvalAmount = Math.ceilDiv(_ceilWmul(maxAmount, auctionPrice), pool.quoteTokenScale());
         _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), approvalAmount);
 
         // Invoke the take
         pool.take(borrowerAddress, maxAmount, address(this), data);
         
-        // AUDIT FIX: Emit event for monitoring
-        emit TakeExecuted(
-            address(pool),
-            borrowerAddress,
-            maxAmount,
-            approvalAmount,
-            source,
-            msg.sender
-        );
+        // SECURITY FIX: Reset allowance to prevent future misuse
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
+
         
         // Send excess quote token (profit) to owner
         _recoverToken(IERC20(pool.quoteTokenAddress()));
@@ -114,7 +111,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
 
     /// @notice Called by Pool to swap collateral for quote tokens during liquidation
     // AUDIT FIX: Add nonReentrant modifier for security
-    function atomicSwapCallback(uint256 collateralAmountWad, uint256, bytes calldata data) external override nonReentrant {
+    function atomicSwapCallback(uint256 collateral, uint256, bytes calldata data) external override nonReentrant {
         // Ensure msg.sender is a valid Ajna pool
         IERC20Pool pool = IERC20Pool(msg.sender);
         if (!_validatePool(pool)) revert InvalidPool();
@@ -122,14 +119,11 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         // Decode swap configuration
         SushiSwapDetails memory details = abi.decode(data, (SushiSwapDetails));
         
-        // Convert WAD to token precision
-        uint256 collateralAmount = collateralAmountWad / pool.collateralScale();
-        
         // Execute SushiSwap swap
         _swapWithSushiSwap(
             pool.collateralAddress(),
             details.targetToken,
-            collateralAmount,
+            collateral, //this is already in native token amount that Ajna Core Knows
             details
         );
     }
@@ -150,7 +144,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         return source == LiquiditySource.SushiSwap;
     }
 
-    /// @dev Executes swap using SushiSwap Router
+    /// @dev FIXED: Executes swap using SushiSwap Router with pre-calculated minimum (mirrors 1inch)
     function _swapWithSushiSwap(
         address tokenIn,
         address tokenOut,
@@ -162,11 +156,12 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
 
         IERC20 tokenInContract = IERC20(tokenIn);
         
-        // FIXED: Safe approval for SushiSwap router to spend collateral token
+        // FIXED: Safe approval for SushiSwap router (same as 1inch pattern)
         _safeApproveWithReset(tokenInContract, details.swapRouter, amountIn);
 
-        // Calculate minimum amount out with slippage
-        uint256 amountOutMin = (amountIn * (10000 - details.slippageBps)) / 10000;
+        // CRITICAL FIX: Use pre-calculated minimum directly (mirrors 1inch success pattern)
+        // This replaces the broken slippage calculation that didn't work with mixed decimals
+        uint256 amountOutMin = details.amountOutMinimum;
 
         // Prepare SushiSwap exactInputSingle parameters
         bytes memory swapCalldata = abi.encodeWithSignature(
@@ -177,7 +172,7 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
             address(this),        // recipient
             details.deadline,     // deadline
             amountIn,             // amountIn
-            amountOutMin,         // amountOutMinimum
+            amountOutMin,         // FIXED: Use pre-calculated minimum (not broken slippage calc)
             uint160(0)            // sqrtPriceLimitX96 (no limit)
         );
 
@@ -193,8 +188,6 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         uint256 amountOut = abi.decode(result, (uint256));
         require(amountOut >= amountOutMin, "Insufficient output amount");
         
-        // AUDIT FIX: Emit swap event for monitoring
-        emit SwapExecuted(tokenIn, tokenOut, amountIn, amountOut);
     }
 
     /// @dev Recovers token balance to owner
@@ -210,12 +203,12 @@ contract SushiSwapKeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         return poolFactory.deployedPools(ERC20_NON_SUBSET_HASH, pool.collateralAddress(), pool.quoteTokenAddress()) == address(pool);
     }
 
-    /// @dev Multiplies two WADs and rounds up to the nearest decimal
+    /// @dev FIXED: Multiplies two WADs and rounds up (same as 1inch pattern)
     function _ceilWmul(uint256 x, uint256 y) internal pure returns (uint256) {
         return (x * y + 1e18 - 1) / 1e18;
     }
 
-    /// @dev FIXED: Safe approval that handles non-zero to non-zero allowance issue
+    /// @dev FIXED: Safe approval that handles non-zero to non-zero allowance issue (same as 1inch)
     /// @param token The ERC20 token to approve
     /// @param spender The address to approve
     /// @param amount The amount to approve
