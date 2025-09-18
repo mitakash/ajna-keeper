@@ -6,7 +6,7 @@ import {
   kick,
   bucketTake,
 } from '@ajna-finance/sdk/dist/contracts/pool';
-import { BigNumber } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { MAX_FENWICK_INDEX, MAX_UINT_256 } from './constants';
 import { NonceTracker } from './nonce';
 import { Bucket } from '@ajna-finance/sdk/dist/classes/Bucket';
@@ -16,6 +16,7 @@ import {
 } from '@ajna-finance/sdk/dist/contracts/erc20-pool';
 import { Liquidation } from '@ajna-finance/sdk/dist/classes/Liquidation';
 import { settle } from '@ajna-finance/sdk/dist/contracts/pool';
+import { getAllowanceOfErc20, getDecimalsErc20 } from './erc20';
 
 export async function poolWithdrawBonds(pool: FungiblePool, signer: Signer) {
   const contractPoolWithSigner = pool.contract.connect(signer);
@@ -69,6 +70,7 @@ export async function bucketRemoveCollateralToken(
   });
 }
 
+/**
 export async function poolQuoteApprove(
   pool: FungiblePool,
   signer: Signer,
@@ -89,6 +91,84 @@ export async function poolQuoteApprove(
     return await tx.verifyAndSubmit();
   });
 }
+*/
+
+export async function poolQuoteApprove(
+  pool: FungiblePool,
+  signer: Signer,
+  allowance: BigNumber
+) {
+  console.log('\n=== POOL QUOTE APPROVE DEBUG ===');
+  console.log(`Pool address: ${pool.poolAddress}`);
+  console.log(`Quote token address: ${pool.quoteAddress}`);
+  console.log(`Collateral token address: ${pool.collateralAddress}`);
+  console.log(`Original allowance amount: ${allowance.toString()}`);
+  console.log(`Original allowance (human readable): ${ethers.utils.formatEther(allowance)} ETH-equivalent`);
+  
+  // Get token decimals for context
+  try {
+    const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+    const collateralDecimals = await getDecimalsErc20(signer, pool.collateralAddress);
+    console.log(`Quote token decimals: ${quoteDecimals}`);
+    console.log(`Collateral token decimals: ${collateralDecimals}`);
+    console.log(`Original allowance as quote token: ${ethers.utils.formatUnits(allowance, quoteDecimals)}`);
+  } catch (e) {
+    console.log(`Error getting token decimals: ${e}`);
+  }
+  
+  // Get the actual quoteTokenScale value
+  const quoteScale = await quoteTokenScale(pool.contract);
+  console.log(`Quote token scale from SDK: ${quoteScale.toString()}`);
+  console.log(`Quote token scale (human readable): ${ethers.utils.formatEther(quoteScale)} ETH-equivalent`);
+  
+  // Calculate the denormalized allowance
+  const denormalizedAllowance = allowance.div(quoteScale);
+  console.log(`Denormalized allowance: ${denormalizedAllowance.toString()}`);
+  console.log(`Denormalized allowance (human readable): ${ethers.utils.formatEther(denormalizedAllowance)} ETH-equivalent`);
+  
+  // Show the math
+  console.log('\n--- MATH BREAKDOWN ---');
+  console.log(`${allowance.toString()} ÷ ${quoteScale.toString()} = ${denormalizedAllowance.toString()}`);
+  console.log(`Is denormalized allowance zero? ${denormalizedAllowance.isZero()}`);
+  console.log(`Is denormalized allowance greater than zero? ${denormalizedAllowance.gt(0)}`);
+  
+  // Check current allowance before approval
+  try {
+    const currentAllowance = await getAllowanceOfErc20(signer, pool.quoteAddress, pool.poolAddress);
+    console.log(`Current allowance before approval: ${currentAllowance.toString()}`);
+  } catch (e) {
+    console.log(`Error checking current allowance: ${e}`);
+  }
+  
+  console.log('\n--- PROCEEDING WITH APPROVAL ---');
+  console.log(`Amount to approve: ${denormalizedAllowance.toString()}`);
+  
+  await NonceTracker.queueTransaction(signer, async (nonce) => {
+    const tx = await approve(
+      signer,
+      pool.poolAddress,
+      pool.quoteAddress,
+      denormalizedAllowance,
+      { nonce: nonce.toString() }
+    );
+    console.log(`Approval transaction created with nonce: ${nonce}`);
+    return await tx.verifyAndSubmit();
+  });
+  
+  // Check allowance after approval
+  try {
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+    const newAllowance = await getAllowanceOfErc20(signer, pool.quoteAddress, pool.poolAddress);
+    console.log(`Allowance after approval: ${newAllowance.toString()}`);
+    console.log(`Approval successful? ${newAllowance.gte(denormalizedAllowance)}`);
+  } catch (e) {
+    console.log(`Error checking allowance after approval: ${e}`);
+  }
+  
+  console.log('=== END POOL QUOTE APPROVE DEBUG ===\n');
+}
+
+
 
 export async function poolKick(
   pool: FungiblePool,

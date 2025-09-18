@@ -30,6 +30,7 @@ interface FactoryTakeParams {
     | 'takerContracts'
     | 'universalRouterOverrides'
     | 'sushiswapRouterOverrides'
+    | 'curveRouterOverrides'
   >;
 }
 
@@ -172,7 +173,7 @@ async function checkIfTakeableFactory(
   price: number,
   collateral: BigNumber,
   poolConfig: RequireFields<PoolConfig, 'take'>,
-  config: Pick<FactoryTakeParams['config'], 'universalRouterOverrides' | 'sushiswapRouterOverrides' >,
+  config: Pick<FactoryTakeParams['config'], 'universalRouterOverrides' | 'sushiswapRouterOverrides' | 'curveRouterOverrides'  >,
   signer: Signer
 ): Promise<boolean> {
   
@@ -465,7 +466,7 @@ async function takeLiquidationFactory({
   poolConfig: RequireFields<PoolConfig, 'take'>;
   signer: Signer;
   liquidation: LiquidationToTake;
-  config: Pick<FactoryTakeParams['config'], 'dryRun' | 'keeperTakerFactory' | 'universalRouterOverrides' | 'sushiswapRouterOverrides' >;
+  config: Pick<FactoryTakeParams['config'], 'dryRun' | 'keeperTakerFactory' | 'universalRouterOverrides' | 'sushiswapRouterOverrides' | 'curveRouterOverrides' >;
 }) {
   
   const { borrower } = liquidation;

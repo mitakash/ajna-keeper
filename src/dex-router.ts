@@ -8,22 +8,22 @@ import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
 import { swapWithUniversalRouter } from './universal-router-module';
 import { swapWithSushiswapRouter } from './sushiswap-router-module';
+import { swapWithCurveRouter } from './curve-router-module';
 import { NonceTracker } from './nonce';
-import { PostAuctionDex } from './config-types';
-
-// TODO:
-// Why does this log errors and return failure rather than throwing exceptions?
+import { PostAuctionDex, CurvePoolType } from './config-types';
 
 export class DexRouter {
   private signer: Signer;
   private oneInchRouters: { [chainId: number]: string };
   private connectorTokens: string;
+  private tokenAddresses: { [symbol: string]: string }; // CURVE INTEGRATION: Added for symbol lookup
 
   constructor(
     signer: Signer,
     options: {
       oneInchRouters?: { [chainId: number]: string };
       connectorTokens?: Array<string>;
+      tokenAddresses?: { [symbol: string]: string }; // CURVE INTEGRATION: Added tokenAddresses
     } = {}
   ) {
     if (!signer) logger.error('Signer is required');
@@ -34,9 +34,9 @@ export class DexRouter {
     this.connectorTokens = options.connectorTokens
       ? options.connectorTokens.join(',')
       : '';
+    this.tokenAddresses = options.tokenAddresses || {}; // CURVE INTEGRATION: Store tokenAddresses
   }
 
-  // All methods stay exactly the same until swap()
   public getRouter(chainId: number): string | undefined {
     return this.oneInchRouters[chainId];
   }
@@ -148,7 +148,6 @@ export class DexRouter {
     return { success: true, data: response.data.tx };
   }
 
-  // swapWithOneInch stays exactly the same (preserves NonceTracker!)
   private async swapWithOneInch(
     chainId: number,
     amount: BigNumber,
@@ -238,18 +237,16 @@ export class DexRouter {
           };
         }
 
-        // CRITICAL: Keep NonceTracker.queueTransaction exactly as-is!
         const receipt = await NonceTracker.queueTransaction(this.signer, async (nonce: number) => {
-        // Create a new txWithNonce object that includes the nonce
-        const txWithNonce = {
-          ...tx,
-          nonce
-        };
-        const txResponse = await this.signer.sendTransaction(txWithNonce);
-        return await txResponse.wait();
+          const txWithNonce = {
+            ...tx,
+            nonce
+          };
+          const txResponse = await this.signer.sendTransaction(txWithNonce);
+          return await txResponse.wait();
         });
 	
-	logger.info(
+        logger.info(
           `1inch swap successful: ${amount.toString()} ${tokenIn} -> ${tokenOut} | Tx Hash: ${receipt.transactionHash}`
         );
         return { success: true, receipt };
@@ -269,7 +266,6 @@ export class DexRouter {
     return { success: false, error: 'Max retries reached for 1inch swap' };
   }
 
-  // Keep your existing swapWithSushiswap method exactly as-is
   private async swapWithSushiswap(
     chainId: number,
     amount: BigNumber,
@@ -298,7 +294,7 @@ export class DexRouter {
         sushiswapSettings.swapRouterAddress!,
         sushiswapSettings.quoterV2Address!,
         feeAmount || sushiswapSettings.defaultFeeTier || 500,
-	sushiswapSettings.factoryAddress,  // From your config
+        sushiswapSettings.factoryAddress,
       );
       
       return result;
@@ -310,7 +306,108 @@ export class DexRouter {
     }
   }
 
-  // MAJOR CHANGE: Update method signature and replace boolean logic with switch/case
+  // CURVE INTEGRATION: Simplified helper to find pool config by token pair
+  private getCurvePoolForTokenPair(
+    tokenIn: string, 
+    tokenOut: string, 
+    poolConfigs: any
+  ): { address: string; poolType: CurvePoolType } | undefined {
+    
+    // Convert addresses to symbol names for lookup  
+    const tokenInSymbol = this.getTokenSymbolFromAddress(tokenIn);
+    const tokenOutSymbol = this.getTokenSymbolFromAddress(tokenOut);
+    
+    if (!tokenInSymbol || !tokenOutSymbol) {
+      logger.debug(`Could not resolve token symbols for ${tokenIn}/${tokenOut}`);
+      return undefined;
+    }
+    
+    // Try both directions for the token pair
+    const key1 = `${tokenInSymbol}-${tokenOutSymbol}`;
+    const key2 = `${tokenOutSymbol}-${tokenInSymbol}`;
+    
+    const poolConfig = poolConfigs[key1] || poolConfigs[key2];
+    
+    if (poolConfig) {
+      logger.debug(`Found Curve pool for ${tokenInSymbol}/${tokenOutSymbol}: ${poolConfig.address}`);
+      return poolConfig;
+    }
+    
+    logger.debug(`No Curve pool configured for ${tokenInSymbol}/${tokenOutSymbol}`);
+    return undefined;
+  }
+
+  // CURVE INTEGRATION: Helper to convert address to symbol using tokenAddresses from config
+  private getTokenSymbolFromAddress(address: string): string | undefined {
+    for (const [symbol, tokenAddress] of Object.entries(this.tokenAddresses)) {
+      if (tokenAddress.toString().toLowerCase() === address.toLowerCase()) {
+        return symbol;
+      }
+    }
+    return undefined;
+  }
+
+  // CURVE INTEGRATION: Updated Curve swap method with simplified lookup
+  private async swapWithCurve(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    to: string,
+    slippage: number,
+    feeAmount?: number,
+    curveSettings?: any,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      
+      if (!curveSettings) {
+        return {
+          success: false,
+          error: 'Curve configuration not found'
+        };
+      }
+      
+      if (!curveSettings.poolConfigs) {
+        return {
+          success: false,
+          error: 'Curve pool configurations not found'
+        };
+      }
+      
+      // SIMPLIFIED: Use the new token pair lookup
+      const poolConfig = this.getCurvePoolForTokenPair(
+        tokenIn, 
+        tokenOut, 
+        curveSettings.poolConfigs
+      );
+      
+      if (!poolConfig) {
+        return {
+          success: false,
+          error: `No Curve pool configured for ${tokenIn}/${tokenOut}`
+        };
+      }
+      
+      const result = await swapWithCurveRouter(
+        this.signer,
+        tokenIn,
+        amount,
+        tokenOut,
+        slippage,
+        poolConfig.address,
+        poolConfig.poolType,
+        curveSettings.defaultSlippage
+      );
+      
+      return result;
+    } catch (error) {
+      return {
+        success: false,
+        error: `Curve swap failed: ${error}`
+      };
+    }
+  }
+
   public async swap(
     chainId: number,
     amount: BigNumber,
@@ -330,7 +427,17 @@ export class DexRouter {
         defaultFeeTier?: number;
         defaultSlippage?: number;
       };
-      sushiswap?: any; // ADD: SushiSwap settings
+      sushiswap?: any;
+      curve?: {
+        poolConfigs?: {
+          [tokenPair: string]: {
+            address: string;
+            poolType: CurvePoolType;
+          }
+        };
+        defaultSlippage?: number;
+        wethAddress?: string;
+      };
     }
   ): Promise<{ success: boolean; error?: string }> {
     if (!chainId || !amount || !tokenIn || !tokenOut || !to) {
@@ -362,11 +469,8 @@ export class DexRouter {
       return { success: false, error: `Insufficient balance for ${tokenIn}` };
     }
 
-
-    // ADD: Replace with switch/case enum logic
     switch (dexProvider) {
       case PostAuctionDex.ONEINCH:
-        // SAME: Keep exact same 1inch logic, preserves all nonce tracking!
         const oneInchRouter = this.oneInchRouters[chainId];
         if (!oneInchRouter) {
           logger.error(`No 1inch router defined for chainId ${chainId}`);
@@ -414,7 +518,6 @@ export class DexRouter {
         return result;
 
       case PostAuctionDex.UNISWAP_V3:
-        // SAME: Keep exact same Uniswap logic, just change uniswapOverrides → combinedSettings?.uniswap
         if (combinedSettings?.uniswap?.universalRouterAddress && combinedSettings?.uniswap?.permit2Address && combinedSettings?.uniswap?.poolFactoryAddress) {
           try {
             logger.info(`Using Universal Router for swap`);
@@ -457,7 +560,6 @@ export class DexRouter {
         }
 
       case PostAuctionDex.SUSHISWAP:
-        // NEW: Add SushiSwap case
         return await this.swapWithSushiswap(
           chainId,
           adjustedAmount,
@@ -467,6 +569,19 @@ export class DexRouter {
           slippage,
           feeAmount,
           combinedSettings?.sushiswap
+        );
+
+      case PostAuctionDex.CURVE:
+        // CURVE INTEGRATION: New case for Curve post-auction swaps
+        return await this.swapWithCurve(
+          chainId,
+          adjustedAmount,
+          tokenIn,
+          tokenOut,
+          to,
+          slippage,
+          feeAmount,
+          combinedSettings?.curve
         );
 
       default:
