@@ -307,7 +307,7 @@ export class DexRouter {
   }
 
   // CURVE INTEGRATION: Simplified helper to find pool config by token pair
-  private getCurvePoolForTokenPair(
+  public getCurvePoolForTokenPair(
     tokenIn: string, 
     tokenOut: string, 
     poolConfigs: any
@@ -338,7 +338,7 @@ export class DexRouter {
   }
 
   // CURVE INTEGRATION: Helper to convert address to symbol using tokenAddresses from config
-  private getTokenSymbolFromAddress(address: string): string | undefined {
+  public getTokenSymbolFromAddress(address: string): string | undefined {
     for (const [symbol, tokenAddress] of Object.entries(this.tokenAddresses)) {
       if (tokenAddress.toString().toLowerCase() === address.toLowerCase()) {
         return symbol;
