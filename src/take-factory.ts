@@ -411,13 +411,14 @@ async function checkSushiSwapQuote(
 
 /**
  * Check Curve profitability using CurveQuoteProvider
+ * FIXED: Now passes tokenAddresses for reliable pool discovery
  */
 async function checkCurveQuote(
   pool: FungiblePool,
   auctionPrice: number,
   collateral: BigNumber,
   poolConfig: RequireFields<PoolConfig, 'take'>,
-  config: Pick<FactoryTakeParams['config'], 'curveRouterOverrides'>,
+  config: Pick<FactoryTakeParams['config'], 'curveRouterOverrides' | 'tokenAddresses'>,
   signer: Signer
 ): Promise<boolean> {
   
@@ -438,11 +439,12 @@ async function checkCurveQuote(
     // Import CurveQuoteProvider dynamically to avoid circular dependencies
     const { CurveQuoteProvider } = await import('./dex-providers/curve-quote-provider');
     
-    // Create Curve quote provider
+    // FIXED: Create Curve quote provider with tokenAddresses mapping
     const quoteProvider = new CurveQuoteProvider(signer, {
       poolConfigs: curveConfig.poolConfigs,
       defaultSlippage: curveConfig.defaultSlippage || 1.0,
       wethAddress: curveConfig.wethAddress,
+      tokenAddresses: config.tokenAddresses || {}, // FIXED: Pass tokenAddresses for reliable pool discovery
     });
 
     // Initialize and check availability
@@ -503,7 +505,6 @@ async function checkCurveQuote(
     return false;
   }
 }
-
 
 /**
  * ArbTake check (same logic as existing, copied to avoid dependencies)
