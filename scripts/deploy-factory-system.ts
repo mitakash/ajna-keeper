@@ -23,7 +23,9 @@ interface DeploymentAddresses {
   factory?: string;
   uniswapTaker?: string;
   sushiTaker?: string;
-  // Future: curveTaker, etc.
+  curveTaker?: string;
+  uniswapV4?: string;
+  // Future: uniswapV4, pancakeswap, balancer, izumi, etc.
 }
 
 // Gas configuration for different networks
@@ -39,6 +41,11 @@ const GAS_CONFIGS: { [chainId: number]: { gasLimit: string; gasPrice?: string } 
   1: { // Ethereum Mainnet
     gasLimit: '6000000',
   },
+  8453: { // Base
+    gasLimit: '6000000',
+    gasPrice: '1000000000', // 1 gwei
+  },
+
   // Add more networks as needed
 };
 
@@ -128,7 +135,44 @@ async function validateConfig(config: KeeperConfig): Promise<void> {
     }
   }
 
-  console.log('Configuration validation passed');
+//   const curvePools = config.pools?.filter(pool =>
+//     pool.take?.liquiditySource === 4 // LiquiditySource.CURVE
+//   ) || [];
+
+//   if (curvePools.length > 0) {
+//     console.log(`Found ${curvePools.length} pools configured for Curve takes`);
+  
+//   // Validate Curve configuration
+//   if (!config.curveRouterOverrides) {
+//     throw new Error('curveRouterOverrides required for Curve pools');
+//   }
+//   if (!config.curveRouterOverrides.poolConfigs || Object.keys(config.curveRouterOverrides.poolConfigs).length === 0) {
+//     throw new Error('Missing curveRouterOverrides.poolConfigs for Curve');
+//   }
+//   if (!config.curveRouterOverrides.wethAddress) {
+//     throw new Error('Missing curveRouterOverrides.wethAddress for Curve');
+//   }
+// }
+
+  const v4Pools = (config.pools || []).filter(
+    p => p.take?.liquiditySource === 5 // LiquiditySource.UNISWAPV4
+  );
+
+  if (v4Pools.length > 0) {
+    const v4 = config.uniswapV4RouterOverrides;
+    if (!v4) throw new Error('uniswapV4RouterOverrides required when using UNISWAPV4');
+    if (!v4.router) throw new Error('uniswapV4RouterOverrides.router is missing');
+    if (!v4.pools || Object.keys(v4.pools).length === 0)
+      throw new Error('uniswapV4RouterOverrides.pools must have at least one poolKey');
+    
+      const v4ArtifactPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'takers', 'UniswapV4KeeperTaker.sol', 'UniswapV4KeeperTaker.json');
+      try { require(v4ArtifactPath); } catch {
+        throw new Error('UniswapV4KeeperTaker artifact not found. Run: yarn compile');
+      }
+    
+  }
+
+    console.log('Configuration validation passed');
 }
 
 async function deployFactory(
@@ -276,6 +320,80 @@ async function deploySushiSwapTaker(
   return taker.address;
 }
 
+async function deployUniswapV4KeeperTaker(
+  deployer: ethers.Wallet,
+  ajnaErc20PoolFactory: string,
+  keeperTakerFactory: string,
+  chainId: number
+): Promise<string> {
+  console.log('\n📦 Deploying UniswapV4KeeperTaker…');
+
+  // Hardhat artifact path; adjust if your build path differs
+  const artifactPath = path.join(
+    __dirname, '..', 'artifacts', 'contracts', 'takers',
+    'UniswapV4KeeperTaker.sol', 'UniswapV4KeeperTaker.json'
+  );
+  const art = require(artifactPath);
+
+  const Factory = new ethers.ContractFactory(art.abi, art.bytecode, deployer);
+
+  const gasConfig = getGasConfig(chainId);
+  const deployOptions: any = {
+    gasLimit: gasConfig.gasLimit,
+  };
+  
+  if (gasConfig.gasPrice) {
+    deployOptions.gasPrice = gasConfig.gasPrice;
+  }
+
+  const taker = await Factory.deploy(ajnaErc20PoolFactory, keeperTakerFactory, deployOptions);
+  console.log('  tx:', taker.deployTransaction.hash);
+  await taker.deployed();
+  console.log('  ✅ UniswapV4KeeperTaker at', taker.address);
+  return taker.address;
+}
+
+async function deployCurveKeeperTaker(
+  deployer: ethers.Wallet,
+  ajnaPoolFactory: string,
+  factoryAddress: string,
+  chainId: number
+): Promise<string> {
+  console.log('\n📦 Step 2c: Deploying CurveKeeperTaker...');
+
+  const takerArtifactPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'takers', 'CurveKeeperTaker.sol', 'CurveKeeperTaker.json');
+  const takerArtifact = require(takerArtifactPath);
+
+  const CurveKeeperTaker = new ethers.ContractFactory(
+    takerArtifact.abi,
+    takerArtifact.bytecode,
+    deployer
+  );
+
+  // Get gas configuration
+  const gasConfig = getGasConfig(chainId);
+  const deployOptions: any = {
+    gasLimit: gasConfig.gasLimit,
+  };
+
+  if (gasConfig.gasPrice) {
+    deployOptions.gasPrice = gasConfig.gasPrice;
+  }
+
+  // Deploy with factory authorization
+  const taker = await CurveKeeperTaker.deploy(
+    ajnaPoolFactory,  // Ajna pool factory
+    factoryAddress,   // Authorized factory
+    deployOptions
+  );
+
+  console.log('✅ Curve taker deployment tx:', taker.deployTransaction.hash);
+  await taker.deployed();
+  console.log('🎉 CurveKeeperTaker deployed to:', taker.address);
+
+  return taker.address;
+}
+
 async function configureFactory(
   deployer: ethers.Wallet,
   factoryAddress: string,
@@ -301,7 +419,24 @@ async function configureFactory(
     await setSushiTakerTx.wait();
     console.log('🎉 Factory configured with SushiSwap taker');
   }
-  
+
+  if (addresses.uniswapV4) {
+    // 5 is the enum value for UniswapV4 (LiquiditySource.UNISWAPV4)
+    const tx = await factory.setTaker(5, addresses.uniswapV4);
+    console.log('  setTaker(UNISWAPV4):', tx.hash);
+    await tx.wait();
+    console.log('  ✅ Factory wired to UniswapV4 taker');
+  }
+
+  // Register Curve taker (LiquiditySource.CURVE = 4)
+  if (addresses.curveTaker) {
+    const setCurveTakerTx = await factory.setTaker(4, addresses.curveTaker);
+    console.log('✅ Curve configuration tx:', setCurveTakerTx.hash);
+    await setCurveTakerTx.wait();
+    console.log('🎉 Factory configured with Curve taker');
+  }
+  // ADD DELAY AFTER CONFIGURATION
+  await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
 }
 
 async function verifyDeployment(
@@ -373,7 +508,7 @@ function generateConfigUpdate(
     console.log(`keeperTakerFactory: '${addresses.factory}',`);
   }
   
-  if (addresses.uniswapTaker || addresses.sushiTaker) {
+  if (addresses.uniswapTaker || addresses.sushiTaker || addresses.curveTaker || addresses.uniswapV4) {
     console.log('takerContracts: {');
     if (addresses.uniswapTaker) {
       console.log(`  'UniswapV3': '${addresses.uniswapTaker}',`);
@@ -381,6 +516,12 @@ function generateConfigUpdate(
     if (addresses.sushiTaker) {
       console.log(`  'SushiSwap': '${addresses.sushiTaker}'`);
     }
+    if (addresses.curveTaker) {
+    console.log(`  'Curve': '${addresses.curveTaker}',`);
+    }
+    if (addresses.uniswapV4) {
+      console.log(`  'UniswapV4': '${addresses.uniswapV4}',`);
+      }
     console.log('},');
   }
   console.log('```');
@@ -394,6 +535,9 @@ function generateConfigUpdate(
   }
   if (addresses.sushiTaker) {
     console.log(`🍣 SushiSwapKeeperTaker: ${addresses.sushiTaker}`);
+  }
+  if (addresses.uniswapV4) {
+    console.log(`🦄 UniswapV4KeeperTaker: ${addresses.uniswapV4}`);
   }
   
   console.log('\n🚀 Next Steps:');
@@ -472,6 +616,10 @@ async function main() {
     // Deploy factory FIRST
     addresses.factory = await deployFactory(deployer, config.ajna.erc20PoolFactory, chainInfo.chainId);
     
+    // ADD DELAY AFTER FACTORY DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+
+
     // Deploy Uniswap V3 taker if configured
     if (config.universalRouterOverrides) {
       addresses.uniswapTaker = await deployUniswapTaker(
@@ -480,8 +628,10 @@ async function main() {
         addresses.factory,  // Pass factory address for authorization
         chainInfo.chainId
       );
+    // ADD DELAY AFTER UNISWAP DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
     }
-    
+
     // Deploy SushiSwap taker if configured
     if (config.sushiswapRouterOverrides) {
       addresses.sushiTaker = await deploySushiSwapTaker(
@@ -489,15 +639,46 @@ async function main() {
         config.ajna.erc20PoolFactory,
         addresses.factory,
         chainInfo.chainId
-      );
+      ); 
+    // ADD DELAY AFTER UNISWAP DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
     }
 
+    if (config.uniswapV4RouterOverrides) {
+      addresses.uniswapV4 = await deployUniswapV4KeeperTaker(
+        deployer,
+        config.ajna.erc20PoolFactory,
+        addresses.factory!,                 // KeeperTakerFactory you just deployed
+        chainInfo.chainId
+      );
+      // ADD DELAY AFTER UNISWAP DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+    }
+
+    // Deploy curve taker if configured
+    // if (config.curveRouterOverrides) {
+    //   addresses.curveTaker = await deployCurveKeeperTaker(
+    //   deployer,
+    //   config.ajna.erc20PoolFactory,
+    //   addresses.factory,
+    //   chainInfo.chainId
+    //   );
+    // // ADD DELAY AFTER CURVE DEPLOYMENT
+    // await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+    // }
+    // ADD DELAY BEFORE CONFIGURATION
+    console.log('\n⏳ Waiting before configuration...');
+    await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
+
+    
     // Step 7: Configure factory
     if (!addresses.factory) {
       throw new Error('Missing factory address for configuration');
     }
     await configureFactory(deployer, addresses.factory, addresses);
     
+    
+
     // Step 8: Verify everything works
     await verifyDeployment(deployer, addresses);
     

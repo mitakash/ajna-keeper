@@ -8,8 +8,9 @@ import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
 import { swapWithUniversalRouter } from './universal-router-module';
 import { swapWithSushiswapRouter } from './sushiswap-router-module';
+import { swapWithUniswapV4Adapter, UniV4PoolKey } from './uniswapV4-router-module';
 import { NonceTracker } from './nonce';
-import { PostAuctionDex } from './config-types';
+import { PostAuctionDex, UniswapV4RouterOverrides } from './config-types';
 
 // TODO:
 // Why does this log errors and return failure rather than throwing exceptions?
@@ -18,6 +19,20 @@ export class DexRouter {
   private signer: Signer;
   private oneInchRouters: { [chainId: number]: string };
   private connectorTokens: string;
+
+  private findV4PoolKeyForPair(
+    tokenIn: string,
+    tokenOut: string,
+    v4?: UniswapV4RouterOverrides
+  ): UniV4PoolKey | undefined {
+    if (!v4?.pools) return undefined;
+  
+    // Try direct address-key matches if you store with raw addresses in the key:
+    // e.g. key = `${tokenIn.toLowerCase()}-${tokenOut.toLowerCase()}`
+    const k1 = `${tokenIn.toLowerCase()}-${tokenOut.toLowerCase()}`;
+    const k2 = `${tokenOut.toLowerCase()}-${tokenIn.toLowerCase()}`;
+    return (v4.pools[k1] || v4.pools[k2]);
+  }
 
   constructor(
     signer: Signer,
@@ -331,6 +346,7 @@ export class DexRouter {
         defaultSlippage?: number;
       };
       sushiswap?: any; // ADD: SushiSwap settings
+      uniswapV4?: UniswapV4RouterOverrides;
     }
   ): Promise<{ success: boolean; error?: string }> {
     if (!chainId || !amount || !tokenIn || !tokenOut || !to) {
@@ -468,12 +484,34 @@ export class DexRouter {
           feeAmount,
           combinedSettings?.sushiswap
         );
+      
+      case PostAuctionDex.UNISWAP_V4: {
+          const v4 = combinedSettings?.uniswapV4;
+          if (!v4?.router) {
+            return { success: false, error: 'UniswapV4 router not configured' };
+          }
+          const poolKey = this.findV4PoolKeyForPair(tokenIn, tokenOut, v4);
+          if (!poolKey) {
+            return { success: false, error: 'No UniswapV4 poolKey configured for token pair' };
+          }
+          return await swapWithUniswapV4Adapter(
+            this.signer,
+            tokenIn,
+            adjustedAmount,
+            tokenOut,
+            slippage ?? v4.defaultSlippage ?? 0.5,
+            v4,
+            poolKey,
+            to
+          );
+        }
 
       default:
         return {
           success: false,
           error: `Unsupported DEX provider: ${dexProvider}`
         };
+      
     }
   }
 }

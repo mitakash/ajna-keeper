@@ -1,0 +1,211 @@
+import {
+    KeeperConfig,
+    RewardActionLabel,
+    PriceOriginSource,
+    TokenToCollect,
+    LiquiditySource,  // ← NEW: Import for external takes
+    PostAuctionDex
+  } from './src/config-types';
+import { FeeAmount } from '@uniswap/v3-sdk';
+  
+  const config: KeeperConfig = {
+    dryRun: false,
+    ethRpcUrl: 'https://avax-mainnet.g.alchemy.com/v2/VyzG2sPmffT5_9oOZXpE4',  // GET YOUR OWN ALCHEMY URL
+    subgraphUrl: 'https://api.goldsky.com/api/public/project_cme0ohnrjwmp301tb9p300h2a/subgraphs/ajna-avalanche-fixed3/1.0.0/gn', // GET GOLDSKY SUBGRAPH OR LOCAL SUBGRAPH
+    keeperKeystore: '/Users/bigdellis/keystore-files/keeper-keystore2.json', // YOU NEED FULL PATH TO YOUR KEYSTORE
+    
+    // ← NEW: 1inch Single Contract Setup for External Takes (deploy with scripts/query-1inch.ts --action deploy)
+    // Factory system configuration for external takes
+    keeperTakerFactory: '0x9F19C4e9854cA13C3d1517460a8B97d6001a59D2',
+    takerContracts: {
+    'UniswapV3': '0x9aa6bD11e3890Ee6289037442e9f764BBAB9ea0B'
+    },
+
+    multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
+    multicallBlock: 11907934,
+    delayBetweenRuns: 15,
+    delayBetweenActions: 61, // THIS IS IN SECONDS AND NEEDS TO BE CONSERVATIVE FOR FREE TIER OF 1INCH API KEY
+    logLevel: 'debug',
+    
+    // ← NEW: 1inch Router Configuration for External Takes
+    oneInchRouters: {
+      43114: '0x111111125421ca6dc452d289314280a0f8842a65', // Avalanche
+    },
+    
+    tokenAddresses: {
+      avax: '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE', // Native AVAX
+      wavax: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', // Wrapped AVAX
+      usdc: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', // USDC on Avalanche
+      savusd: '0x06d47F3fb376649c3A9Dafe069B3D6E35572219E', // savUSD on Avalanche
+      usd_t1: '0x9a522edA6e9420CD15143b1610193E6a657A7dBd', // Your USD_T1 token
+      usd_t2: '0xAD47a9b2Bc081D074EC25A0953DDC11E650b1784', // Your USD_T2 token
+      test_A1: '0x2354201FDeA4b038B582B16545fb9BB8a222Fc81',
+      test_A2: '0xCAA2495035FCb92E9175Dbc1c6C79909aa545EF7',
+      test_A3: '0x9A19D2A451C607248D027c5E3d94585B97d41427',
+      test_A4: '0x5dB99e789514eC42200e1B7BaA243823Aa1f9cEC'
+    },
+    
+    // Universal Router configuration (for LP reward swapping via Uniswap V3)
+    universalRouterOverrides: {
+      universalRouterAddress: '0x4Dae2f939ACf50408e13d58534Ff8c2776d45265', // Avalanche UniversalRouter
+      wethAddress: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', // wrapped AVAX as intermediary token
+      permit2Address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
+      defaultFeeTier: 500, // 0.3% as default for this chain
+      defaultSlippage: 0.5, // 0.5% as default slippage
+      poolFactoryAddress: '0x740b1c1de25031C31FF4fC9A62f554A55cdC1baD',
+    },
+  
+    // ← NEW: 1inch connector token addresses to find the best path to destination token
+    connectorTokens: [
+      '0x24de8771bc5ddb3362db529fc3358f2df3a0e346',
+      '0xb97ef9ef8734c71904d8002f8b6bc66dd9c48a6e',
+      '0x9702230a8ea53601f5cd2dc00fdbc13d4df4a8c7',
+      '0xb31f66aa3c1e785363f0875a1b74e27b85fd66c7',
+    ],
+    
+    // Avalanche-specific Ajna contract addresses
+    ajna: {
+      erc20PoolFactory: '0x2aA2A6e6B4b20f496A4Ed65566a6FD13b1b8A17A',
+      erc721PoolFactory: '0xB3d773147A086A23fB72dcc03828C66DcE5D6627',
+      poolUtils: '0x9e407019C07b50e8D7C2d0E2F796C4eCb0F485b3',
+      positionManager: '0x0bf183a32614b3Cd11C0268441D96047D05967e0',
+      ajnaToken: '0xE055Ee581c637C419e55B8d5fFBA84375546f70f',
+      grantFund: '',
+      burnWrapper: '',
+      lenderHelper: '',
+    },
+    coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY', // YOU NEED TO GET A COINGECKO API KEY, IF NOT USING STATIC PRICES
+    pools: 
+    [
+      //{
+        // name: 'savusd / usdc',
+        // address: '0x936e0fdec18d4dc5055b3e091fa063bc75d6215c',
+        // price: {
+        //     source: PriceOriginSource.FIXED,
+        //     value: 1.04,
+        //   },
+        //   kick: {
+        //     minDebt: 0.07,
+        //     priceFactor: 0.99,
+        // },
+        // take: {
+        //     minCollateral: 0.07,
+        //     hpbPriceFactor: 0.90,
+  
+        //     // ← NEW: External Takes via 1inch (requires keeperTaker deployment)
+        //     liquiditySource: LiquiditySource.ONEINCH,
+        //     marketPriceFactor: 0.98, // Take when auction price < market * 0.98
+  
+        //   },	
+        // collectBond: true,
+        // collectLpReward: {
+        //   redeemFirst: TokenToCollect.QUOTE,
+        //   minAmountQuote: 0.01,       // don't redeem LP for less than a penny
+        //   minAmountCollateral: 0.05,  // don't redeem LP for less than what it may cost to swap collateral for USDC
+        //   rewardActionCollateral: {
+        //     action: RewardActionLabel.EXCHANGE,
+        //     address: "0x06d47F3fb376649c3A9Dafe069B3D6E35572219E", // Token to swap (savUSD)
+        //     targetToken: "usdc",                                   // Target token (USDC)
+        //     slippage: 1,                                           // Slippage percentage (0-100)
+        //     useOneInch: true,                                      // Set to true for 1inch
+        //   },
+        // },
+        // // Settlement configuration for stable pools - conservative settings
+        // settlement: {
+        //   enabled: true,                    // Enable settlement
+        //   minAuctionAge: 18000,             // Wait 5 hours for stable pools (18000 seconds)
+        //   maxBucketDepth: 100,             // Process more buckets for stable pools
+        //   maxIterations: 8,                // More iterations may be needed for complex settlements
+        //   checkBotIncentive: false,        // Settle even without kicker rewards for stable pools, being altruistic for the pool
+        // },
+      //}
+    //   {
+    //     name: 'USD_T1 / USD_T2',
+    //     address: '0x87250b9d571aac691f9a14205ecd2a0259f0bf72',
+    //     price: {
+    //       source: PriceOriginSource.FIXED, // Use fixed price for simpler testing
+    //       value: 0.99, // Static price ratio USD_T1/USD_T2
+    //     },
+    //     kick: {
+    //       minDebt: 0.1, // Minimum debt in USD_T2 to kick
+    //       priceFactor: 0.99, // Kick when NP * 0.99 > current price
+    //     },
+    //     take: {
+    //       minCollateral: 0.1, // Enable arbTake when collateral >= 0.1
+    //       hpbPriceFactor: 0.99, // ArbTake when price < hpb * 0.99
+          
+    //       // ← OPTION: Could also use 1inch for external takes here
+    //     //   liquiditySource: LiquiditySource.ONEINCH,
+    //     //   marketPriceFactor: 0.98,
+    //     },
+    //     collectBond: true, // Collect liquidation bonds
+    //     collectLpReward: {
+    //       redeemFirst: TokenToCollect.COLLATERAL, // For kickers, redeem collateral first
+    //       minAmountQuote: 0.001, // Minimum quote to redeem
+    //       minAmountCollateral: 0.001, // Minimum collateral to redeem
+    //       // Configure collateral to use Uniswap V3 to get back quote_token (no external contracts needed for LP rewards)
+    //       rewardActionCollateral: {
+    //         action: RewardActionLabel.EXCHANGE,
+    //         address: '0x9a522edA6e9420CD15143b1610193E6a657A7dBd', // USD_T1
+    //         targetToken: 'usd_t2', // Or keep as USD_T1 if preferred
+    //         slippage: 2,
+    //         dexProvider: PostAuctionDex.UNISWAP_V3, // Use Uniswap V3
+    //         fee: FeeAmount.MEDIUM,
+    //       },
+    //     },
+    //     // Settlement configuration for test tokens - standard settings
+    //     settlement: {
+    //       enabled: true,                    // Enable settlement
+    //       minAuctionAge: 3600,             // Wait 1 hour before settling (3600 seconds)
+    //       maxBucketDepth: 50,              // Process 50 buckets per settlement call
+    //       maxIterations: 10,               // Max 10 settlement iterations
+    //       checkBotIncentive: true,         // Only settle if bot has rewards to claim
+    //     },
+    //   },
+      {
+        name: 'Test_A4 / Test_A3',
+        address: '0xe376b974686e6a1aaf1c0b77be8a8fd11790d7d1',
+        price: {
+          source: PriceOriginSource.FIXED, // Use fixed price for simpler testing
+          value: 1.01, // Static price ratio Test_A1 / Test_A2
+        },
+        kick: {
+          minDebt: 0.001, // Minimum debt in USD_T2 to kick
+          priceFactor: 0.91, // Kick when NP * 0.99 > current price
+        },
+        take: {
+          minCollateral: 0.1, // Enable arbTake when collateral >= 0.1
+          hpbPriceFactor: 0.90, // ArbTake when price < hpb * 0.99
+          
+          // ← OPTION: Could also use 1inch for external takes here
+          // liquiditySource: LiquiditySource.UNISWAPV3,
+          // marketPriceFactor: 0.99,
+        },
+        collectBond: true, // Collect liquidation bonds
+        collectLpReward: {
+          redeemFirst: TokenToCollect.COLLATERAL, // For kickers, redeem collateral first
+          minAmountQuote: 0.001, // Minimum quote to redeem
+          minAmountCollateral: 0.001, // Minimum collateral to redeem
+          // Configure collateral to use Uniswap V3 to get back quote_token (no external contracts needed for LP rewards)
+          rewardActionCollateral: {
+            action: RewardActionLabel.EXCHANGE,
+            address: '0x5dB99e789514eC42200e1B7BaA243823Aa1f9cEC', // Test_A4
+            targetToken: 'test_A3',
+            slippage: 2,
+            dexProvider: PostAuctionDex.UNISWAP_V3, // NEW: Use enum instead of useOneInch: false
+            fee: FeeAmount.LOW,
+          },
+        },
+        // Settlement configuration for test tokens - standard settings
+        settlement: {
+          enabled: true,                    // Enable settlement
+          minAuctionAge: 3600,             // Wait 1 hour before settling (3600 seconds)
+          maxBucketDepth: 50,              // Process 50 buckets per settlement call
+          maxIterations: 10,               // Max 10 settlement iterations
+          checkBotIncentive: true,         // Only settle if bot has rewards to claim
+        },
+      }
+    ]
+  };
+  
+  export default config

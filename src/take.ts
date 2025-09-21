@@ -28,7 +28,8 @@ interface HandleTakeParams {
     | 'keeperTakerFactory'   
     | 'takerContracts'
     | 'universalRouterOverrides'
-    | 'sushiswapRouterOverrides'     
+    | 'sushiswapRouterOverrides'  
+    | 'uniswapV4RouterOverrides'   
   >;
 }
 
@@ -76,6 +77,7 @@ export async function handleTakes({
           takerContracts: config.takerContracts,
           universalRouterOverrides: (config as any).universalRouterOverrides, // Type fix
 	  sushiswapRouterOverrides: (config as any).sushiswapRouterOverrides,
+    uniswapV4RouterOverrides: (config as any).uniswapV4RouterOverrides,
         },
       });
       break;

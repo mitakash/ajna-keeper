@@ -6,6 +6,9 @@ export class NonceTracker {
   private nonces: Map<string, number> = new Map();
   private pendingTransactions: Map<string, Promise<void>> = new Map();
   private static instance: NonceTracker;
+  
+  // Universal RPC cache refresh delay - applies to all chains
+  private static readonly RPC_CACHE_REFRESH_DELAY = 1000; // 1000ms for aggressive RPC caching
 
   constructor() {
     if (!NonceTracker.instance) {
@@ -82,6 +85,12 @@ export class NonceTracker {
       // Execute the transaction
       try {
         const result = await txFunction(nonce);
+
+        // Universal RPC cache refresh delay after every transaction
+        // This prevents race conditions between transaction confirmation and subsequent reads
+        logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
+        await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
+
         logger.debug(`Transaction with nonce ${nonce} completed successfully`);
         return result;
       } catch (txError) {
@@ -96,5 +105,11 @@ export class NonceTracker {
       logger.error(`Error in queueTransaction: ${error}`);
       throw error;
     }
+  }
+  /**
+   * Simple delay function
+   */
+   private async delay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

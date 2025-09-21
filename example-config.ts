@@ -71,6 +71,22 @@ const config: KeeperConfig = {
     defaultFeeTier: 500,    // 0.05% fee tier (SushiSwap typically lower fees)
     defaultSlippage: 2.0,   // 2% slippage tolerance (conservative for SushiSwap)
   },
+
+  uniswapV4RouterOverrides: {
+    router: '0xYOUR_V4_ROUTER_OR_ADAPTER',
+    // poolManager: '0xOPTIONAL_POOL_MANAGER',
+    defaultSlippage: 0.5,
+    pools: {
+      'WETH-USDC': {
+        token0: '0x4200000000000000000000000000000000000006',
+        token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        fee: 3000,
+        tickSpacing: 60,
+        hooks: '0x0000000000000000000000000000000000000000',
+        sqrtPriceLimitX96: '0'
+      },
+    },
+  },
   
   ajna: {
     erc20PoolFactory: '0x214f62B5836D83f3D6c4f71F174209097B1A779C',

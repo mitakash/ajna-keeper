@@ -93,7 +93,8 @@ export class RewardActionTracker {
         ...this.config.uniswapOverrides,
         ...this.config.universalRouterOverrides
       },
-      sushiswap: this.config.sushiswapRouterOverrides
+      sushiswap: this.config.sushiswapRouterOverrides,
+      uniswapV4: this.config.uniswapV4RouterOverrides
     };
     const result = await this.dexRouter.swap(
       chainId,

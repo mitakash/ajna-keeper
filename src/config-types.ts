@@ -89,6 +89,7 @@ export enum LiquiditySource {
   UNISWAPV3 = 2, // use Uniswap V3 via Universal Router
   SUSHISWAP = 3, // Future: SushiSwap integration
   CURVE = 4,     // Future: Curve integration
+  UNISWAPV4 = 5,
 }
 
 export interface TakeSettings {
@@ -129,6 +130,7 @@ export enum PostAuctionDex {
   ONEINCH = 'oneinch',
   UNISWAP_V3 = 'uniswap_v3', 
   SUSHISWAP = 'sushiswap',
+  UNISWAP_V4 = 'uniswap_v4'
   // Future additions:
   // CURVE = 'curve',
   // IZUMI = 'izumi', 
@@ -220,6 +222,23 @@ export interface SushiswapRouterOverrides {
   defaultSlippage?: number; // Default: 1.0 (1%)
 }
 
+//add Univ4 config types
+export interface UniV4PoolKey {
+  token0: string;
+  token1: string;
+  fee: number;          // e.g. 3000
+  tickSpacing: number;  // e.g. 60
+  hooks: string;        // often 0x0000...0000
+  sqrtPriceLimitX96?: string; // optional
+}
+
+export interface UniswapV4RouterOverrides {
+  router: string;                     // V4 router/adapter you’ll call
+  poolManager?: string;               // optional if your adapter needs it
+  defaultSlippage: number;            // e.g., 0.5
+  pools: Record<string, UniV4PoolKey>;// e.g., { 'WETH-USDC': { … } }
+}
+
 export interface KeeperConfig {
   /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
   ethRpcUrl: string;
@@ -265,6 +284,8 @@ export interface KeeperConfig {
   universalRouterOverrides?: UniversalRouterOverrides;
   /** SushiSwap configuration for post-auction swaps */
   sushiswapRouterOverrides?: SushiswapRouterOverrides;
+  /** UNISWAPV4 configuration for post-auction swaps */
+  uniswapV4RouterOverrides?: UniswapV4RouterOverrides;
 }
 
 // Validation function for PostAuctionDex configuration
@@ -285,6 +306,14 @@ export function validatePostAuctionDex(dexProvider: PostAuctionDex, config: Keep
         throw new Error('PostAuctionDex.SUSHISWAP requires sushiswapRouterOverrides configuration');
       }
       break;
+    case PostAuctionDex.UNISWAP_V4:                           // NEW
+      if (!config.uniswapV4RouterOverrides)
+        throw new Error('PostAuctionDex.UNISWAP_V4 requires uniswapV4RouterOverrides configuration');
+      if (!config.uniswapV4RouterOverrides.router)
+        throw new Error('PostAuctionDex.UNISWAP_V4: router address missing in uniswapV4RouterOverrides');
+      if (!config.uniswapV4RouterOverrides.pools || Object.keys(config.uniswapV4RouterOverrides.pools).length === 0)
+        throw new Error('PostAuctionDex.UNISWAP_V4: at least one poolKey must be configured');
+      return;
     default:
       throw new Error(`Unsupported PostAuctionDex: ${dexProvider}`);
   }
@@ -380,7 +409,8 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
 
     if (config.liquiditySource !== LiquiditySource.ONEINCH &&
         config.liquiditySource !== LiquiditySource.UNISWAPV3 &&
-        config.liquiditySource !== LiquiditySource.SUSHISWAP) {
+        config.liquiditySource !== LiquiditySource.SUSHISWAP &&
+        config.liquiditySource !== LiquiditySource.UNISWAPV4) {
       throw new Error('TakeSettings: liquiditySource must be ONEINCH or UNISWAPV3 or SUSHISWAP');
     }
 
@@ -418,6 +448,16 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
         throw new Error('TakeSettings: sushiswapRouterOverrides required when liquiditySource is SUSHISWAP');
       }
     }
+
+    if (config.liquiditySource === LiquiditySource.UNISWAPV4) { // NEW
+      if (!keeperConfig.keeperTakerFactory) throw new Error('TakeSettings: keeperTakerFactory required when liquiditySource is UNISWAPV4');
+      if (!keeperConfig.takerContracts?.['UniswapV4']) throw new Error('TakeSettings: takerContracts.UniswapV4 required');
+      if (!keeperConfig.uniswapV4RouterOverrides) throw new Error('TakeSettings: uniswapV4RouterOverrides required');
+      if (!keeperConfig.uniswapV4RouterOverrides.router) throw new Error('TakeSettings: V4 router/adapter address missing');
+      if (!keeperConfig.uniswapV4RouterOverrides.pools || Object.keys(keeperConfig.uniswapV4RouterOverrides.pools).length === 0)
+        throw new Error('TakeSettings: at least one V4 poolKey must be configured');
+    }
+
   }
 
   if (hasArbTake) {

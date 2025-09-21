@@ -6,7 +6,7 @@ import {
   kick,
   bucketTake,
 } from '@ajna-finance/sdk/dist/contracts/pool';
-import { BigNumber } from 'ethers';
+import { BigNumber, ethers } from 'ethers';
 import { MAX_FENWICK_INDEX, MAX_UINT_256 } from './constants';
 import { NonceTracker } from './nonce';
 import { Bucket } from '@ajna-finance/sdk/dist/classes/Bucket';
@@ -16,6 +16,7 @@ import {
 } from '@ajna-finance/sdk/dist/contracts/erc20-pool';
 import { Liquidation } from '@ajna-finance/sdk/dist/classes/Liquidation';
 import { settle } from '@ajna-finance/sdk/dist/contracts/pool';
+import { getAllowanceOfErc20, getDecimalsErc20 } from './erc20';
 
 export async function poolWithdrawBonds(pool: FungiblePool, signer: Signer) {
   const contractPoolWithSigner = pool.contract.connect(signer);

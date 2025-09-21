@@ -13,9 +13,12 @@ import { AjnaKeeperTakerFactory__factory } from '../typechain-types';
 // Import the Uniswap V3 quote provider (FIXED PATH)
 import { UniswapV3QuoteProvider } from './dex-providers/uniswap-quote-provider';
 import { SushiSwapQuoteProvider } from './dex-providers/sushiswap-quote-provider';
+import { UniswapV4QuoteProvider } from './dex-providers/uniswapV4-quote-provider';
 import { convertWadToTokenDecimals, getDecimalsErc20 } from './erc20';
+import { UniswapV4RouterOverrides, UniV4PoolKey } from './config-types';
 // FIXED: Import quoteTokenScale function
 import { quoteTokenScale } from '@ajna-finance/sdk/dist/contracts/pool';
+import { DexRouter } from './dex-router'
 
 interface FactoryTakeParams {
   signer: Signer;
@@ -30,6 +33,7 @@ interface FactoryTakeParams {
     | 'takerContracts'
     | 'universalRouterOverrides'
     | 'sushiswapRouterOverrides'
+    | 'uniswapV4RouterOverrides'
   >;
 }
 
@@ -172,7 +176,7 @@ async function checkIfTakeableFactory(
   price: number,
   collateral: BigNumber,
   poolConfig: RequireFields<PoolConfig, 'take'>,
-  config: Pick<FactoryTakeParams['config'], 'universalRouterOverrides' | 'sushiswapRouterOverrides' >,
+  config: Pick<FactoryTakeParams['config'], 'universalRouterOverrides' | 'sushiswapRouterOverrides' | 'uniswapV4RouterOverrides' >,
   signer: Signer
 ): Promise<boolean> {
   
@@ -192,7 +196,10 @@ async function checkIfTakeableFactory(
     if (poolConfig.take.liquiditySource === LiquiditySource.SUSHISWAP) {
       return await checkSushiSwapQuote(pool, price, collateral, poolConfig, config, signer);
     }
-
+    
+    if (poolConfig.take.liquiditySource == LiquiditySource.UNISWAPV4){
+      return await checkUniswapV4Quote(pool, price, collateral, poolConfig, config, signer)
+    }
     // Future: Add other DEX sources here
 
     logger.debug(`Factory: Unsupported liquidity source: ${poolConfig.take.liquiditySource}`);
@@ -403,6 +410,90 @@ async function checkSushiSwapQuote(
   }
 }
 
+async function checkUniswapV4Quote(
+  pool: FungiblePool,
+  auctionPrice: number,
+  collateral: BigNumber,
+  poolConfig: RequireFields<PoolConfig, 'take'>,
+  config: Pick<FactoryTakeParams['config'], 'uniswapV4RouterOverrides'>,
+  signer: Signer
+): Promise<boolean> {
+
+  const v4 = config.uniswapV4RouterOverrides;
+  if (!v4 || !v4.router || !v4.pools) {
+    logger.debug(`Factory: Missing uniswapV4RouterOverrides configuration`);
+    return false;
+  }
+
+  // tokenIn is the collateral Ajna gives us in the callback; we need quote token out
+  const tokenIn  = pool.collateralAddress;
+  const tokenOut = pool.quoteAddress;
+
+  // find a matching poolKey in overrides (either order)
+  const poolKey = findV4PoolKeyForPair(v4, tokenIn, tokenOut);
+  if (!poolKey) {
+    logger.debug(`Factory: No Uni v4 poolKey configured for ${tokenIn}/${tokenOut}`);
+    return false;
+  }
+
+  try {
+    const collateralDecimals = await getDecimalsErc20(signer, tokenIn);
+    const quoteDecimals      = await getDecimalsErc20(signer, tokenOut);
+    const inAmtTokenDec      = convertWadToTokenDecimals(collateral, collateralDecimals);
+
+    const qp = new UniswapV4QuoteProvider(signer, {
+      router: v4.router,
+      defaultSlippage: v4.defaultSlippage ?? 0.5,
+      pools: v4.pools
+    });
+
+    const mr = await qp.getMarketPrice(
+      inAmtTokenDec,
+      tokenIn,
+      tokenOut,
+      collateralDecimals,
+      quoteDecimals,
+      poolKey
+    );
+
+    if (!mr.success || mr.price === undefined) {
+      logger.debug(`Factory: Uni v4 quote unavailable: ${mr.error ?? 'unknown error'}`);
+      return false;
+    }
+
+    const marketPrice      = mr.price; // quote per collateral
+    const marketPriceFactor = poolConfig.take.marketPriceFactor!;
+    const takeablePrice    = marketPrice * marketPriceFactor;
+    const profitable       = auctionPrice <= takeablePrice;
+
+    logger.debug(`Uni v4 price check: auction=${auctionPrice.toFixed(6)}, market=${marketPrice.toFixed(6)}, takeable=${takeablePrice.toFixed(6)}, profitable=${profitable}`);
+    return profitable;
+
+  } catch (e) {
+    logger.debug(`Factory: Uni v4 quote failed: ${e}`);
+    return false;
+  }
+}
+
+// helper: pick poolKey from overrides by address pair
+function findV4PoolKeyForPair(
+  v4: UniswapV4RouterOverrides,
+  a: string,
+  b: string
+): UniV4PoolKey | undefined {
+  if (!v4.pools) return undefined;                  // narrow away the {}
+
+  const aLc = a.toLowerCase();
+  const bLc = b.toLowerCase();
+
+  const entries: UniV4PoolKey[] = Object.values(v4.pools); // now typed
+  return entries.find(k => {
+    const t0 = k.token0.toLowerCase();
+    const t1 = k.token1.toLowerCase();
+    return (t0 === aLc && t1 === bLc) || (t0 === bLc && t1 === aLc);
+  });
+}
+
 
 /**
  * ArbTake check (same logic as existing, copied to avoid dependencies)
@@ -465,7 +556,7 @@ async function takeLiquidationFactory({
   poolConfig: RequireFields<PoolConfig, 'take'>;
   signer: Signer;
   liquidation: LiquidationToTake;
-  config: Pick<FactoryTakeParams['config'], 'dryRun' | 'keeperTakerFactory' | 'universalRouterOverrides' | 'sushiswapRouterOverrides' >;
+  config: Pick<FactoryTakeParams['config'], 'dryRun' | 'keeperTakerFactory' | 'universalRouterOverrides' | 'sushiswapRouterOverrides' | 'uniswapV4RouterOverrides' >;
 }) {
   
   const { borrower } = liquidation;
@@ -491,7 +582,17 @@ async function takeLiquidationFactory({
       liquidation,
       config,
     });
-  } else if (poolConfig.take.liquiditySource === LiquiditySource.SUSHISWAP) {
+  } 
+  else if (poolConfig.take.liquiditySource === LiquiditySource.UNISWAPV4) {
+    await takeWithUniswapV4Factory({
+      pool,
+      poolConfig,
+      signer,
+      liquidation,
+      config,
+    });
+  }
+  else if (poolConfig.take.liquiditySource === LiquiditySource.SUSHISWAP) {
   await takeWithSushiSwapFactory({
     pool,
     poolConfig,
@@ -675,6 +776,100 @@ async function takeWithSushiSwapFactory({
   }
 }
 
+async function takeWithUniswapV4Factory({
+  pool,
+  poolConfig,
+  signer,
+  liquidation,
+  config,
+}: {
+  pool: FungiblePool;
+  poolConfig: RequireFields<PoolConfig, 'take'>;
+  signer: Signer;
+  liquidation: LiquidationToTake;
+  config: Pick<FactoryTakeParams['config'], 'keeperTakerFactory' | 'uniswapV4RouterOverrides'>;
+}) {
+  const v4 = config.uniswapV4RouterOverrides;
+  if (!v4 || !v4.router) {
+    logger.error('Factory: uniswapV4RouterOverrides.router is required for Uni v4 takes');
+    return;
+  }
+
+  const factory = AjnaKeeperTakerFactory__factory.connect(config.keeperTakerFactory!, signer);
+
+  // find poolKey for collateral→quote
+  const tokenIn  = pool.collateralAddress;
+  const tokenOut = pool.quoteAddress;
+  const poolKey  = findV4PoolKeyForPair(v4, tokenIn, tokenOut);
+
+  if (!poolKey) {
+    logger.error(`Factory: No Uni v4 poolKey configured for ${tokenIn}/${tokenOut}`);
+    return;
+  }
+
+  // Minimal out (trust Ajna core to enforce profitability); or compute with slippage if you prefer
+  const amountOutMin = ethers.BigNumber.from(1);
+  const deadline     = Math.floor(Date.now() / 1000) + 30 * 60; // 30m
+
+  /**
+   * IMPORTANT: The ABI layout here MUST MATCH your UniswapV4KeeperTaker.sol.
+   * Adjust the tuple types/ordering to exactly what that contract `abi.decode(...)` expects.
+   *
+   * Example layout (common pattern):
+   *   struct V4SwapDetails {
+   *     PoolKey poolKey;              // (token0, token1, fee, tickSpacing, hooks, poolManager)
+   *     uint256 amountOutMinimum;
+   *     uint160 sqrtPriceLimitX96;
+   *     uint256 deadline;
+   *   }
+   */
+  const sqrtPriceLimitX96 = poolKey.sqrtPriceLimitX96
+    ? ethers.BigNumber.from(poolKey.sqrtPriceLimitX96)
+    : ethers.BigNumber.from(0);
+
+  // if your solidity poolKey includes poolManager, inject it; else drop it from the tuple
+  const poolManager = v4.poolManager ?? ethers.constants.AddressZero;
+
+  const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
+    [
+      // tuple: token0, token1, fee, tickSpacing, hooks, poolManager
+      'tuple(address,address,uint24,int24,address,address)',
+      'uint256',
+      'uint160',
+      'uint256',
+    ],
+    [
+      [poolKey.token0, poolKey.token1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks, poolManager],
+      amountOutMin,
+      sqrtPriceLimitX96,
+      deadline,
+    ],
+  );
+
+  logger.debug(
+    `Factory: Uni v4 take\n` +
+    `  pool=${pool.name}\n` +
+    `  borrower=${liquidation.borrower}\n` +
+    `  router=${v4.router}\n` +
+    `  poolKey=(${poolKey.token0}, ${poolKey.token1}, fee=${poolKey.fee}, ts=${poolKey.tickSpacing}, hooks=${poolKey.hooks})`
+  );
+
+  await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+    const tx = await factory.takeWithAtomicSwap(
+      pool.poolAddress,
+      liquidation.borrower,
+      liquidation.auctionPrice,      // WAD
+      liquidation.collateral,        // WAD
+      Number(LiquiditySource.UNISWAPV4), // 5
+      v4.router,                     // swapRouter param
+      encodedSwapDetails,
+      { nonce: nonce.toString() }
+    );
+    return await tx.wait();
+  });
+
+  logger.info(`Factory Uni v4 take successful - pool=${pool.poolAddress}, borrower=${liquidation.borrower}`);
+}
 
 /**
  * ArbTake using existing logic (same as original)
