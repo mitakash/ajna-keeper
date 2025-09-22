@@ -901,6 +901,11 @@ async function takeWithCurveFactory({
 
 
     logger.debug(`Factory: Sending Curve Take Tx - poolAddress: ${pool.poolAddress}, borrower: ${liquidation.borrower}`);
+    
+    // L2 STATE PROPAGATION FIX: Apply to all networks to handle sequencer delays
+    // Research shows this issue affects Arbitrum, Optimism, Base, zkSync, and other L2s
+    logger.debug(`Adding 2000ms state propagation delay before factory take (L2 sequencer protection)`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
 
     await NonceTracker.queueTransaction(signer, async (nonce: number) => {
       // FIXED: Send WAD amounts directly - no decimal pre-conversion (follows SushiSwap pattern)
