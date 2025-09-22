@@ -23,7 +23,8 @@ interface DeploymentAddresses {
   factory?: string;
   uniswapTaker?: string;
   sushiTaker?: string;
-  // Future: curveTaker, etc.
+  curveTaker?: string;
+  // Future: uniswapV4, pancakeswap, balancer, izumi, etc.
 }
 
 // Gas configuration for different networks
@@ -39,6 +40,11 @@ const GAS_CONFIGS: { [chainId: number]: { gasLimit: string; gasPrice?: string } 
   1: { // Ethereum Mainnet
     gasLimit: '6000000',
   },
+  8453: { // Base
+    gasLimit: '6000000',
+    gasPrice: '1000000000', // 1 gwei
+  },
+
   // Add more networks as needed
 };
 
@@ -127,6 +133,25 @@ async function validateConfig(config: KeeperConfig): Promise<void> {
       }
     }
   }
+
+  const curvePools = config.pools?.filter(pool =>
+    pool.take?.liquiditySource === 4 // LiquiditySource.CURVE
+  ) || [];
+
+  if (curvePools.length > 0) {
+    console.log(`Found ${curvePools.length} pools configured for Curve takes`);
+  
+  // Validate Curve configuration
+  if (!config.curveRouterOverrides) {
+    throw new Error('curveRouterOverrides required for Curve pools');
+  }
+  if (!config.curveRouterOverrides.poolConfigs || Object.keys(config.curveRouterOverrides.poolConfigs).length === 0) {
+    throw new Error('Missing curveRouterOverrides.poolConfigs for Curve');
+  }
+  if (!config.curveRouterOverrides.wethAddress) {
+    throw new Error('Missing curveRouterOverrides.wethAddress for Curve');
+  }
+}
 
   console.log('Configuration validation passed');
 }
@@ -276,6 +301,47 @@ async function deploySushiSwapTaker(
   return taker.address;
 }
 
+async function deployCurveKeeperTaker(
+  deployer: ethers.Wallet,
+  ajnaPoolFactory: string,
+  factoryAddress: string,
+  chainId: number
+): Promise<string> {
+  console.log('\n📦 Step 2c: Deploying CurveKeeperTaker...');
+
+  const takerArtifactPath = path.join(__dirname, '..', 'artifacts', 'contracts', 'takers', 'CurveKeeperTaker.sol', 'CurveKeeperTaker.json');
+  const takerArtifact = require(takerArtifactPath);
+
+  const CurveKeeperTaker = new ethers.ContractFactory(
+    takerArtifact.abi,
+    takerArtifact.bytecode,
+    deployer
+  );
+
+  // Get gas configuration
+  const gasConfig = getGasConfig(chainId);
+  const deployOptions: any = {
+    gasLimit: gasConfig.gasLimit,
+  };
+
+  if (gasConfig.gasPrice) {
+    deployOptions.gasPrice = gasConfig.gasPrice;
+  }
+
+  // Deploy with factory authorization
+  const taker = await CurveKeeperTaker.deploy(
+    ajnaPoolFactory,  // Ajna pool factory
+    factoryAddress,   // Authorized factory
+    deployOptions
+  );
+
+  console.log('✅ Curve taker deployment tx:', taker.deployTransaction.hash);
+  await taker.deployed();
+  console.log('🎉 CurveKeeperTaker deployed to:', taker.address);
+
+  return taker.address;
+}
+
 async function configureFactory(
   deployer: ethers.Wallet,
   factoryAddress: string,
@@ -301,7 +367,16 @@ async function configureFactory(
     await setSushiTakerTx.wait();
     console.log('🎉 Factory configured with SushiSwap taker');
   }
-  
+
+  // Register Curve taker (LiquiditySource.CURVE = 4)
+  if (addresses.curveTaker) {
+    const setCurveTakerTx = await factory.setTaker(4, addresses.curveTaker);
+    console.log('✅ Curve configuration tx:', setCurveTakerTx.hash);
+    await setCurveTakerTx.wait();
+    console.log('🎉 Factory configured with Curve taker');
+  }
+  // ADD DELAY AFTER CONFIGURATION
+  await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
 }
 
 async function verifyDeployment(
@@ -373,13 +448,16 @@ function generateConfigUpdate(
     console.log(`keeperTakerFactory: '${addresses.factory}',`);
   }
   
-  if (addresses.uniswapTaker || addresses.sushiTaker) {
+  if (addresses.uniswapTaker || addresses.sushiTaker || addresses.curveTaker) {
     console.log('takerContracts: {');
     if (addresses.uniswapTaker) {
       console.log(`  'UniswapV3': '${addresses.uniswapTaker}',`);
     }
     if (addresses.sushiTaker) {
       console.log(`  'SushiSwap': '${addresses.sushiTaker}'`);
+    }
+    if (addresses.curveTaker) {
+    console.log(`  'Curve': '${addresses.curveTaker}',`);
     }
     console.log('},');
   }
@@ -472,6 +550,10 @@ async function main() {
     // Deploy factory FIRST
     addresses.factory = await deployFactory(deployer, config.ajna.erc20PoolFactory, chainInfo.chainId);
     
+    // ADD DELAY AFTER FACTORY DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+
+
     // Deploy Uniswap V3 taker if configured
     if (config.universalRouterOverrides) {
       addresses.uniswapTaker = await deployUniswapTaker(
@@ -480,8 +562,10 @@ async function main() {
         addresses.factory,  // Pass factory address for authorization
         chainInfo.chainId
       );
+    // ADD DELAY AFTER UNISWAP DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
     }
-    
+
     // Deploy SushiSwap taker if configured
     if (config.sushiswapRouterOverrides) {
       addresses.sushiTaker = await deploySushiSwapTaker(
@@ -489,15 +573,35 @@ async function main() {
         config.ajna.erc20PoolFactory,
         addresses.factory,
         chainInfo.chainId
-      );
+      ); 
+    // ADD DELAY AFTER UNISWAP DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
     }
 
+    // Deploy curve taker if configured
+    if (config.curveRouterOverrides) {
+      addresses.curveTaker = await deployCurveKeeperTaker(
+      deployer,
+      config.ajna.erc20PoolFactory,
+      addresses.factory,
+      chainInfo.chainId
+      );
+    // ADD DELAY AFTER CURVE DEPLOYMENT
+    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+    }
+    // ADD DELAY BEFORE CONFIGURATION
+    console.log('\n⏳ Waiting before configuration...');
+    await new Promise(resolve => setTimeout(resolve, 3000)); // 3 second delay
+
+    
     // Step 7: Configure factory
     if (!addresses.factory) {
       throw new Error('Missing factory address for configuration');
     }
     await configureFactory(deployer, addresses.factory, addresses);
     
+    
+
     // Step 8: Verify everything works
     await verifyDeployment(deployer, addresses);
     

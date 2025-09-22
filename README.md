@@ -456,6 +456,101 @@ const config: KeeperConfig = {
 }
 ```
 
+#### Curve Integration (Factory System)
+
+**Contract Deployment:**
+```bash  
+yarn ts-node scripts/deploy-factory-system.ts your-config.ts
+```
+
+**Config.ts Setup:**
+```typescript
+const config: KeeperConfig = {
+  // Required for Curve external takes
+  keeperTakerFactory: '0x[factory-address]',
+  takerContracts: {
+    'Curve': '0x[curve-taker-address]'
+  },
+  curveRouterOverrides: {
+    poolConfigs: {
+      // Stablecoin pools (use STABLE pool type)
+      'usdc-usdt': {
+        address: '0x[CURVE_STABLE_POOL_ADDRESS]',
+        poolType: CurvePoolType.STABLE
+      },
+      // Crypto pools (use CRYPTO pool type)
+      'weth-wbtc': {
+        address: '0x[CURVE_CRYPTO_POOL_ADDRESS]', 
+        poolType: CurvePoolType.CRYPTO
+      }
+    },
+    defaultSlippage: 1.0,
+    wethAddress: '0x4200000000000000000000000000000000000006',
+  },
+  // Required: Token symbol to address mapping
+  tokenAddresses: {
+    weth: '0x4200000000000000000000000000000000000006',
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    usdt: '0x[USDT_ADDRESS]',
+    wbtc: '0x[WBTC_ADDRESS]',
+  },
+  
+  pools: [{
+    take: {
+      liquiditySource: LiquiditySource.CURVE,
+      marketPriceFactor: 0.99, // Take when auction < market * 0.99
+    }
+  }]
+}
+```
+
+#### Curve Configuration Guide
+
+**Step 1: Find Curve Pool Addresses**
+- Visit [Curve.fi](https://curve.fi) or use block explorers to find pool addresses for your network
+- Look for pools containing your desired token pairs (e.g., 3Pool for USDC/USDT/DAI)
+- Note: One pool address can serve multiple token pairs
+
+**Step 2: Determine Pool Type**
+- **STABLE pools**: Stablecoin pools (USDC/DAI/USDT) - use `CurvePoolType.STABLE`
+- **CRYPTO pools**: Volatile asset pools (ETH/BTC/tricrypto) - use `CurvePoolType.CRYPTO`
+- Check pool contract on block explorer: STABLE pools use `int128` indices, CRYPTO pools use `uint256`
+
+**Step 3: Configure Token Address Mapping**
+```typescript
+tokenAddresses: {
+  usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // Must match exact addresses
+  dai: '0x[DAI_ADDRESS]',
+  usdt: '0x[USDT_ADDRESS]',
+  weth: '0x4200000000000000000000000000000000000006',
+}
+```
+
+**Step 4: Set Up Pool Configurations**
+```typescript
+curveRouterOverrides: {
+  poolConfigs: {
+    // Use token symbols from tokenAddresses above
+    'usdc-dai': {
+      address: '0x[3POOL_ADDRESS]', // Same pool can serve multiple pairs
+      poolType: CurvePoolType.STABLE
+    },
+    'usdc-usdt': {
+      address: '0x[3POOL_ADDRESS]', // Same address if tokens are in same pool
+      poolType: CurvePoolType.STABLE  
+    }
+  },
+  defaultSlippage: 1.0, // 1% for stable, 2-4% for crypto pairs
+  wethAddress: '0x4200000000000000000000000000000000000006',
+}
+```
+
+**Common Validation Steps:**
+1. Verify pool contains your tokens: call `pool.coins(0)`, `pool.coins(1)`, etc.
+2. Test with small amounts first
+3. Ensure token symbols in `poolConfigs` match `tokenAddresses` keys
+4. Use correct pool type to avoid transaction failures
+
 ### Automatic Detection
 
 The keeper automatically detects your configuration:

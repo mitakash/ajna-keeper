@@ -1,3 +1,6 @@
+// src/config-types.ts
+// CURVE INTEGRATION: Only additions for Curve DEX support, no existing code modified
+
 import { promises as fs } from 'fs';
 import path from 'path';
 import { Config, Address } from '@ajna-finance/sdk';
@@ -87,8 +90,14 @@ export enum LiquiditySource {
   NONE = 0,      // invalid
   ONEINCH = 1,   // use 1inch `quote` API for pricing and `swap` API to swap
   UNISWAPV3 = 2, // use Uniswap V3 via Universal Router
-  SUSHISWAP = 3, // Future: SushiSwap integration
-  CURVE = 4,     // Future: Curve integration
+  SUSHISWAP = 3, // SushiSwap integration
+  CURVE = 4,     // CURVE INTEGRATION: Added Curve support
+}
+
+// CURVE INTEGRATION: New enum for pool type selection
+export enum CurvePoolType {
+  STABLE = 'stable',  // StableSwap/StableSwapNG pools (int128 indices)
+  CRYPTO = 'crypto'   // CryptoSwap/TriCrypto pools (uint256 indices)
 }
 
 export interface TakeSettings {
@@ -129,8 +138,8 @@ export enum PostAuctionDex {
   ONEINCH = 'oneinch',
   UNISWAP_V3 = 'uniswap_v3', 
   SUSHISWAP = 'sushiswap',
+  CURVE = 'curve',           // CURVE INTEGRATION: Added Curve for post-auction swaps
   // Future additions:
-  // CURVE = 'curve',
   // IZUMI = 'izumi', 
   // BALANCER = 'balancer',
   // DODO = 'dodo'
@@ -220,6 +229,23 @@ export interface SushiswapRouterOverrides {
   defaultSlippage?: number; // Default: 1.0 (1%)
 }
 
+// CURVE INTEGRATION: New configuration interface for Curve pools
+export interface CurveRouterOverrides {
+  /** Pre-configured pool mappings for token pair routing */
+  poolConfigs?: {
+    [tokenPair: string]: {
+      /** Curve pool contract address */
+      address: string;
+      /** Pool type determines ABI selection (int128 vs uint256 indices) */
+      poolType: CurvePoolType;
+    }
+  };
+  /** Default slippage percentage for Curve swaps (default: 1.0%) */
+  defaultSlippage?: number;
+  /** WETH address for ETH/WETH conversion in pool lookups */
+  wethAddress?: string; 
+}
+
 export interface KeeperConfig {
   /** The url of RPC endpoint. Should include API key. example: https://avax-mainnet.g.alchemy.com/v2/asf... */
   ethRpcUrl: string;
@@ -265,6 +291,8 @@ export interface KeeperConfig {
   universalRouterOverrides?: UniversalRouterOverrides;
   /** SushiSwap configuration for post-auction swaps */
   sushiswapRouterOverrides?: SushiswapRouterOverrides;
+  /** CURVE INTEGRATION: Curve configuration for post-auction swaps */
+  curveRouterOverrides?: CurveRouterOverrides;
 }
 
 // Validation function for PostAuctionDex configuration
@@ -283,6 +311,12 @@ export function validatePostAuctionDex(dexProvider: PostAuctionDex, config: Keep
     case PostAuctionDex.SUSHISWAP:
       if (!config.sushiswapRouterOverrides) {
         throw new Error('PostAuctionDex.SUSHISWAP requires sushiswapRouterOverrides configuration');
+      }
+      break;
+    // CURVE INTEGRATION: Added validation case for Curve
+    case PostAuctionDex.CURVE:
+      if (!config.curveRouterOverrides) {
+        throw new Error('PostAuctionDex.CURVE requires curveRouterOverrides configuration');
       }
       break;
     default:
@@ -380,8 +414,9 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
 
     if (config.liquiditySource !== LiquiditySource.ONEINCH &&
         config.liquiditySource !== LiquiditySource.UNISWAPV3 &&
-        config.liquiditySource !== LiquiditySource.SUSHISWAP) {
-      throw new Error('TakeSettings: liquiditySource must be ONEINCH or UNISWAPV3 or SUSHISWAP');
+        config.liquiditySource !== LiquiditySource.SUSHISWAP &&
+        config.liquiditySource !== LiquiditySource.CURVE) {  // CURVE INTEGRATION: Added CURVE to validation
+      throw new Error('TakeSettings: liquiditySource must be ONEINCH or UNISWAPV3 or SUSHISWAP or CURVE');
     }
 
     if (config.marketPriceFactor === undefined || config.marketPriceFactor <= 0) {
@@ -416,6 +451,13 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
       }
       if (!keeperConfig.sushiswapRouterOverrides) {
         throw new Error('TakeSettings: sushiswapRouterOverrides required when liquiditySource is SUSHISWAP');
+      }
+    }
+
+    // CURVE INTEGRATION: Added minimal validation for Curve
+    if (config.liquiditySource === LiquiditySource.CURVE) {
+      if (!keeperConfig.curveRouterOverrides) {
+        throw new Error('TakeSettings: curveRouterOverrides required when liquiditySource is CURVE');
       }
     }
   }

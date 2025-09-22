@@ -33,12 +33,13 @@ While the main README covers the basic setup process, production deployments ben
 
 ### Decision Matrix: Which Approach to Use?
 
-| Chain Type | 1inch Available? | Uniswap V3? | SushiSwap V3? | Recommended Approach | Deployment Script |
-|------------|------------------|-------------|---------------|---------------------|-------------------|
-| **Major Chains**<br/>(Ethereum, Avalanche, Base, Arbitrum) | ✅ Yes | ✅ Yes | ✅ Yes | **1inch Single Contract** | `scripts/query-1inch.ts` |
-| **Emerging L2s**<br/>(Hemi, Scroll, etc.) | ❌ No | ✅ Yes | ✅ Yes | **Factory System (Uniswap V3 + SushiSwap)** | `scripts/deploy-factory-system.ts` |
-| **Uniswap-only Chains** | ❌ No | ✅ Yes | ❌ No | **Factory System (Uniswap V3 Only)** | `scripts/deploy-factory-system.ts` |
-| **Testing/Basic** | N/A | N/A | N/A | **No External Takes** | Skip deployment |
+| Chain Type | 1inch Available? | Uniswap V3? | SushiSwap V3? | Curve? | Recommended Approach | Deployment Script |
+|------------|------------------|-------------|---------------|--------|---------------------|-------------------|
+| **Major Chains**<br/>(Ethereum, Avalanche, Base, Arbitrum) | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | **1inch Single Contract** | `scripts/query-1inch.ts` |
+| **Emerging L2s**<br/>(Hemi, Scroll, etc.) | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes | **Factory System (Multi-DEX)** | `scripts/deploy-factory-system.ts` |
+| **Stablecoin-Heavy Chains** | ❌ No | ✅ Yes | ❌ No | ✅ Yes | **Factory System (Uniswap V3 + Curve)** | `scripts/deploy-factory-system.ts` |
+| **Uniswap-only Chains** | ❌ No | ✅ Yes | ❌ No | ❌ No | **Factory System (Uniswap V3 Only)** | `scripts/deploy-factory-system.ts` |
+
 
 ### Option A: 1inch Single Contract Deployment
 
@@ -51,8 +52,10 @@ While the main README covers the basic setup process, production deployments ben
 # 1. Compile contracts first
 yarn compile
 
-# 2. Verify 1inch router addresses for your chain
-# Check: https://docs.1inch.io/docs/aggregation-protocol/api/swagger
+# 2. Verify Universal Router, SushiSwap, and Curve addresses for your chain
+# Uniswap V3: https://docs.uniswap.org/contracts/v3/reference/deployments
+# SushiSwap: Check official documentation or block explorers
+# Curve: Find pool addresses on Curve.fi for your network
 ```
 
 **Deployment Steps:**
@@ -61,8 +64,13 @@ yarn compile
 yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 
 # Expected output:
-# AjnaKeeperTaker deployed to: 0x[contract-address]
-# Update config.keeperTaker with this address
+# ✅ AjnaKeeperTakerFactory deployed to: 0x[factory-address]
+# ✅ UniswapV3KeeperTaker deployed to: 0x[uniswap-taker-address]
+# ✅ SushiSwapKeeperTaker deployed to: 0x[sushiswap-taker-address]
+# ✅ CurveKeeperTaker deployed to: 0x[curve-taker-address]
+# ✅ Factory configured with UniswapV3, SushiSwap, and Curve takers
+# ✅ All verification checks passed
+
 ```
 
 **Configuration Updates:**
@@ -320,6 +328,18 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 | Base | `0x1111111254EEB25477B68fb85Ed929f73A960582` |
 | Arbitrum | `0x1111111254EEB25477B68fb85Ed929f73A960582` |
 
+
+### Curve Pool Addresses
+
+**Curve pools vary by network. Find current pools at [Curve.fi](https://curve.fi):**
+
+| Network | Example Pools | Pool Type | Notes |
+|---------|---------------|-----------|-------|
+| Ethereum | 3Pool (USDC/USDT/DAI) | STABLE | `0xbEbc44782C7dB0a1A60Cb6fe97d0b483032FF1C7` |
+| Ethereum | TriCrypto2 (ETH/BTC/USDT) | CRYPTO | `0xD51a44d3FaE010294C616388b506AcdA1bfAAE46` |
+| Base | TriCrypto (crvUSD/tBTC/ETH) | CRYPTO | `0x6e53131F68a034873b6bFA15502aF094Ef0c5854` |
+| Base | crvUSD/USDC | STABLE | Check Curve.fi for current pools |
+
 ## Step 4: API Rate Limits and Service Tiers
 
 ### Understanding Rate Limits
@@ -336,6 +356,11 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 **Uniswap V3:**
 - No API rate limits (direct contract interaction)
 - May have RPC rate limits depending on provider
+
+**Curve:**
+- No API rate limits (direct pool contract interaction)
+- May have RPC rate limits depending on provider
+- Pool discovery requires manual configuration
 
 **Goldsky:**
 - 50 requests/second (generous for subgraph queries)
@@ -686,6 +711,24 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 - Set higher slippage (10%+) for volatile pairs
 - Verify factory and router addresses per chain
 
+**Curve Pool Selection:**
+- Use STABLE pools (int128) for stablecoin pairs (USDC/DAI/USDT)
+- Use CRYPTO pools (uint256) for volatile pairs (ETH/BTC/volatile assets)
+- Higher slippage tolerance needed for crypto pools (2-4%)
+- Manual pool address configuration required (no universal router)
+
+**Curve Gas Optimization:**
+- Conservative gas limits (800k) due to complex pool mathematics
+- L2 networks generally have lower gas costs for Curve operations
+- Pool type affects gas usage (STABLE pools typically cheaper)
+- Consider multiple pool routing for better rates on larger trades
+
+**Curve Configuration Best Practices:**
+- Always include `tokenAddresses` mapping for reliable pool discovery
+- Test pool configurations with small amounts first
+- Verify pool contents using block explorer before deployment
+- Use established pools with good liquidity for production
+
 ### Production Monitoring
 
 **Key Logs to Monitor:**
@@ -701,6 +744,21 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 
 # LP reward swaps
 "Successfully swapped 1.5 of 0x123... to usdc via sushiswap"
+```
+
+**Key Logs to Monitor for Curve:**
+```bash
+# Successful Curve external take
+"Factory Curve Take successful - poolAddress: 0x..., borrower: 0x..."
+
+# Curve price comparison (debug level)
+"Curve price check: pool=USDC/DAI, auction=0.9980, market=1.0015, takeable=0.9915, profitable=true"
+
+# Curve pool discovery
+"Found Curve pool for usdc/dai: 0x123... (STABLE)"
+
+# Curve LP reward swaps
+"Successfully swapped 1.2 of 0x456... to usdc via curve"
 ```
 
 **Health Check Commands:**

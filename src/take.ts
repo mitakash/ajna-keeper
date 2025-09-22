@@ -29,6 +29,8 @@ interface HandleTakeParams {
     | 'takerContracts'
     | 'universalRouterOverrides'
     | 'sushiswapRouterOverrides'     
+    | 'curveRouterOverrides'    
+    | 'tokenAddresses'
   >;
 }
 
@@ -76,6 +78,8 @@ export async function handleTakes({
           takerContracts: config.takerContracts,
           universalRouterOverrides: (config as any).universalRouterOverrides, // Type fix
 	  sushiswapRouterOverrides: (config as any).sushiswapRouterOverrides,
+	  curveRouterOverrides: (config as any).curveRouterOverrides,
+          tokenAddresses: config.tokenAddresses,
         },
       });
       break;
