@@ -197,13 +197,15 @@ If the price source only has quote token priced in collateral, you may add `"inv
 
 ### DEX Integration
 
-The keeper supports three DEX integration approaches for external takes and LP reward swapping:
+The keeper supports four DEX integration approaches for external takes and LP reward swapping:
 
 | DEX Integration | External Takes | LP Rewards | Contract Required | Best For |
 |-----------------|----------------|------------|-------------------|----------|
 | **1inch** | ✅ | ✅ | Yes (Single) | Major chains (Ethereum, Avalanche, Base, Arbitrum) |
 | **Uniswap V3** | ✅ | ✅ | Yes (Factory) | All chains with Uniswap V3 |
 | **SushiSwap** | ✅ | ✅ | Yes (Factory) | Chains with SushiSwap V3 |
+| **Curve** | ✅ | ✅ | Yes (Factory) | Chains with Curve pools (stablecoin/crypto pairs) |
+
 
 #### Configuring for 1inch
 
