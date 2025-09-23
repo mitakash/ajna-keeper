@@ -16,7 +16,8 @@ import {
 } from '@ajna-finance/sdk/dist/contracts/erc20-pool';
 import { Liquidation } from '@ajna-finance/sdk/dist/classes/Liquidation';
 import { settle } from '@ajna-finance/sdk/dist/contracts/pool';
-import { getAllowanceOfErc20, getDecimalsErc20 } from './erc20';
+import { getAllowanceOfErc20, getDecimalsErc20, convertWadToTokenDecimals } from './erc20';
+import { weiToDecimaled } from './utils';  //added these just in case we need extra logging for debugging
 
 export async function poolWithdrawBonds(pool: FungiblePool, signer: Signer) {
   const contractPoolWithSigner = pool.contract.connect(signer);

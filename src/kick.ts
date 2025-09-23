@@ -5,6 +5,7 @@ import {
   getAllowanceOfErc20,
   getBalanceOfErc20,
   getDecimalsErc20,
+  convertWadToTokenDecimals,
 } from './erc20';
 import { logger } from './logging';
 import { getPrice } from './price';
@@ -183,17 +184,21 @@ export async function approveBalanceForLoanToKick({
       weiToDecimaled(amountToApprove) * LIQUIDATION_BOND_MARGIN
     );
     const amountWithMargin = amountToApprove.add(margin);
+    // Get quote token details for human-readable logging
+    const quoteDecimals = await getDecimalsErc20(signer, pool.quoteAddress);
+    const amountInNativeDecimals = convertWadToTokenDecimals(amountWithMargin, quoteDecimals);
+    const readableAmount = weiToDecimaled(amountInNativeDecimals, quoteDecimals);
     try {
       logger.debug(
-        `Approving quote. pool: ${pool.name}, amount: ${amountWithMargin}`
+        `Approving quote. pool: ${pool.name}, amount: ${amountWithMargin} WAD (${readableAmount} quote tokens)`
       );
       await poolQuoteApprove(pool, signer, amountWithMargin);
       logger.debug(
-        `Approved quote. pool: ${pool.name}, amount: ${amountWithMargin}`
+        `Approved quote. pool: ${pool.name}, amount: ${amountWithMargin} WAD (${readableAmount} quote tokens)`
       );
     } catch (error) {
       logger.error(
-        `Failed to approve quote. pool: ${pool.name}, amount: ${amountWithMargin}`,
+        `Failed to approve quote. pool: ${pool.name}, amount: ${amountWithMargin} WAD (${readableAmount} quote tokens)`,
         error
       );
       return false;
