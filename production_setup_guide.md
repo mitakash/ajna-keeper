@@ -1,6 +1,6 @@
 # Production Setup Guide
 
-This guide covers the recommended approach for running the Ajna keeper in production environments, based on real-world deployment experience on Avalanche, Hemi, and other networks.
+This guide covers the recommended approach for running the Ajna keeper in production environments, based on real-world deployment experience on Avalanche, Hemi, Base, and other networks.
 
 ## Overview: Production vs Development Setup
 
@@ -9,7 +9,7 @@ While the main README covers the basic setup process, production deployments ben
 **Recommended Production Stack:**
 - **RPC Provider**: Alchemy or QuickNode (hosted)
 - **Subgraph**: BuiltByMom/Ajna-subgraph deployed on Goldsky (hosted)
-- **DEX Integration**: 1inch API, Uniswap V3 Universal Router, or SushiSwap V3 Router
+- **DEX Integration**: 1inch API, Uniswap V3 Universal Router, SushiSwap V3 Router, or Curve
 - **Monitoring**: Goldsky subgraph monitoring + custom logging
 
 ## Step 1: RPC Provider Setup
@@ -27,7 +27,121 @@ While the main README covers the basic setup process, production deployments ben
 
 **Why hosted RPC?** Running a local node requires significant infrastructure, storage, and maintenance. Hosted providers offer better uptime and are more cost-effective for most use cases.
 
-## Step 1.5: Contract Deployment for External Takes
+## Step 1.5: Critical Fee Tier Selection (Before Contract Deployment)
+
+### Understanding Smart Contract Fee Tier Constraints
+
+**IMPORTANT:** The fee tier you specify in router overrides gets compiled into the deployed smart contract. This creates a permanent constraint for external takes that cannot be changed without full redeployment.
+
+```typescript
+universalRouterOverrides: {
+  defaultFeeTier: 3000, // ← THIS GETS COMPILED INTO SMART CONTRACT
+  // ... other settings
+},
+sushiswapRouterOverrides: {
+  defaultFeeTier: 500,  // ← THIS GETS COMPILED INTO SMART CONTRACT  
+  // ... other settings
+}
+```
+
+### Pre-Deployment Research Workflow
+
+**Step 1: Inventory Your Pools**
+```bash
+# List all token pairs you'll be liquidating
+# Example: USDC/WETH, DAI/USDC, WBTC/WETH, vcred/usdc_e, etc.
+```
+
+**Step 2: Research Fee Tier Liquidity**
+
+**Fee Tier Mapping (Critical Reference):**
+- `500` = 0.05% = 5 basis points (typically stablecoins)
+- `3000` = 0.3% = 30 basis points (most common major pairs)  
+- `10000` = 1.0% = 100 basis points (exotic pairs, higher volatility)
+
+For Uniswap V3:
+1. Visit [Uniswap Info](https://info.uniswap.org/#/pools) → your network
+2. For each token pair, compare TVL across fee tiers:
+   - 500 (0.05%): Usually stablecoins, lower volatility
+   - 3000 (0.3%): Most common major pairs  
+   - 10000 (1%): Exotic pairs, higher volatility
+3. **Weight by expected liquidation volume/value**
+
+For SushiSwap:
+1. Check [SushiSwap Analytics](https://www.sushi.com/base/pool) → your network
+2. Most pools use 500 (0.05%) or 3000 (0.3%)
+3. Verify pools exist for your pairs before deployment
+
+**Step 3: Make Strategic Fee Tier Decision**
+```
+Priority Matrix:
+High-value pools + High-frequency pairs = Highest weight in decision
+Medium-value pools = Medium weight  
+Low-value/rare pairs = Optimize via LP reward overrides later
+```
+
+**Real-World Example Decision Process (Based on Production Configs):**
+```
+Hemi Network Pools Analysis:
+- vcred/usdc_e (medium value): Most liquidity in 500 tier (0.05%)
+- vusd/usdc_e (medium value): Most liquidity in 500 tier (0.05%)  
+- usd_t1/usdc_t (high frequency): Most liquidity in 3000 tier (0.3%)
+
+Production Decision: Use defaultFeeTier: 3000
+Rationale: 
+- Optimize for highest frequency pair (usd_t1/usdc_t) 
+- External takes get optimal routing for most common liquidations
+- Use fee: FeeAmount.LOW overrides in LP rewards for vcred/vusd pairs
+
+Result in Production Config:
+universalRouterOverrides: {
+  defaultFeeTier: 3000, // All external takes use 0.3%
+},
+sushiswapRouterOverrides: {
+  defaultFeeTier: 3000, // All external takes use 0.3%  
+}
+```
+
+### Post-Deployment Flexibility
+
+After contract deployment, you retain flexibility only for LP reward swaps:
+
+```typescript
+pools: [
+  {
+    name: "vcred/usdc_e",
+    take: {
+      // External takes: LOCKED to contract's defaultFeeTier (3000 = 0.3%)
+      liquiditySource: LiquiditySource.SUSHISWAP,
+    },
+    collectLpReward: {
+      rewardActionCollateral: {
+        fee: FeeAmount.LOW, // FLEXIBLE: Can use optimal 0.05% for this pair
+        dexProvider: PostAuctionDex.SUSHISWAP
+      }
+    }
+  }
+]
+```
+
+### When to Redeploy Contracts
+
+Consider redeployment if:
+- Market liquidity shifts significantly (quarterly review)
+- You add pools with very different optimal fee tiers
+- External take profitability drops due to poor routing
+- Major liquidity migrations between fee tiers
+
+**Redeployment Process:**
+1. Research current market conditions
+2. Update `defaultFeeTier` in config
+3. Redeploy: `yarn ts-node scripts/deploy-factory-system.ts config.ts`  
+4. Update config with new contract addresses
+5. Test thoroughly before production
+
+This makes fee tier selection a **strategic infrastructure decision**, not just a configuration parameter.
+
+## Step 2: Contract Deployment for External Takes
 
 **External takes** connect Ajna liquidation auctions directly to external DEX liquidity, enabling profitable liquidation of undercollateralized loans using external market prices.
 
@@ -49,13 +163,14 @@ While the main README covers the basic setup process, production deployments ben
 
 **Prerequisites:**
 ```bash
-# 1. Compile contracts first
+# 1. Complete fee tier research (not applicable to 1inch - it auto-routes optimally)
+# 2. Compile contracts first
 yarn compile
 
-# 2. Verify Universal Router, SushiSwap, and Curve addresses for your chain
-# Uniswap V3: https://docs.uniswap.org/contracts/v3/reference/deployments
-# SushiSwap: Check official documentation or block explorers
-# Curve: Find pool addresses on Curve.fi for your network
+# 3. Verify 1inch router addresses for your chain
+# Ethereum: 0x1111111254EEB25477B68fb85Ed929f73A960582
+# Avalanche: 0x111111125421ca6dc452d289314280a0f8842a65
+# Base: 0x1111111254EEB25477B68fb85Ed929f73A960582
 ```
 
 **Deployment Steps:**
@@ -64,13 +179,9 @@ yarn compile
 yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 
 # Expected output:
-# ✅ AjnaKeeperTakerFactory deployed to: 0x[factory-address]
-# ✅ UniswapV3KeeperTaker deployed to: 0x[uniswap-taker-address]
-# ✅ SushiSwapKeeperTaker deployed to: 0x[sushiswap-taker-address]
-# ✅ CurveKeeperTaker deployed to: 0x[curve-taker-address]
-# ✅ Factory configured with UniswapV3, SushiSwap, and Curve takers
-# ✅ All verification checks passed
-
+# ✅ 1inch keeper taker deployed to: 0x[deployed-address]
+# ✅ Contract verification successful
+# ✅ Ready for external takes and LP reward swaps
 ```
 
 **Configuration Updates:**
@@ -118,11 +229,12 @@ const config: KeeperConfig = {
 
 **Prerequisites:**
 ```bash
-# 1. Compile contracts first
+# 1. COMPLETE FEE TIER RESEARCH (CRITICAL - see Step 1.5 above)
+# 2. Compile contracts first
 yarn compile
 
-# 2. Verify Universal Router and SushiSwap addresses for your chain
-# Uniswap V3: https://docs.uniswap.org/contracts/v3/reference/deployments
+# 3. Verify Universal Router and SushiSwap addresses for your chain
+# Uniswap V3 Gov Post: https://gov.uniswap.org/t/official-uniswap-v3-deployments-list/24323/8
 # SushiSwap: Check official documentation or block explorers
 ```
 
@@ -132,14 +244,14 @@ yarn compile
 yarn ts-node scripts/deploy-factory-system.ts your-config.ts
 
 # Expected output:
-# ✓ AjnaKeeperTakerFactory deployed to: 0x[factory-address]
-# ✓ UniswapV3KeeperTaker deployed to: 0x[uniswap-taker-address]
-# ✓ SushiSwapKeeperTaker deployed to: 0x[sushiswap-taker-address]
-# ✓ Factory configured with UniswapV3 and SushiSwap takers
-# ✓ All verification checks passed
+# ✅ AjnaKeeperTakerFactory deployed to: 0x[factory-address]
+# ✅ UniswapV3KeeperTaker deployed to: 0x[uniswap-taker-address]
+# ✅ SushiSwapKeeperTaker deployed to: 0x[sushiswap-taker-address]
+# ✅ Factory configured with UniswapV3 and SushiSwap takers
+# ✅ All verification checks passed
 ```
 
-**Configuration Updates:**
+**Configuration Updates (Based on Production Hemi Config Pattern):**
 ```typescript
 const config: KeeperConfig = {
   // ADD: Factory system addresses
@@ -156,7 +268,7 @@ const config: KeeperConfig = {
     permit2Address: '0xB952578f3520EE8Ea45b7914994dcf4702cEe578',
     poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
     quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5',
-    defaultFeeTier: 3000,    // 0.3% fee tier
+    defaultFeeTier: 3000,    // ← COMPILED INTO CONTRACT: 0.3% fee tier
     defaultSlippage: 0.5,    // 0.5% slippage tolerance
   },
   
@@ -166,8 +278,8 @@ const config: KeeperConfig = {
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
     factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
     wethAddress: '0x4200000000000000000000000000000000000006',
-    defaultFeeTier: 500,     // 0.05% fee tier
-    defaultSlippage: 10.0,   // 10% slippage tolerance
+    defaultFeeTier: 3000,    // ← COMPILED INTO CONTRACT: 0.3% fee tier
+    defaultSlippage: 1.0,    // 1% slippage tolerance
   },
   
   pools: [{
@@ -180,10 +292,10 @@ const config: KeeperConfig = {
     collectLpReward: {
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
-        targetToken: 'usd_t2',
+        targetToken: 'usdc_t',
         slippage: 2,
         dexProvider: PostAuctionDex.SUSHISWAP, // or UNISWAP_V3
-        fee: FeeAmount.MEDIUM,
+        fee: FeeAmount.LOW, // Can use different fee tier than external takes!
       }
     }
   }]
@@ -245,7 +357,7 @@ yarn start --config your-config.ts
 # Expected log: "Detection Results - Type: factory, Valid: true"
 ```
 
-## Step 2: Subgraph Setup with Goldsky
+## Step 3: Subgraph Setup with Goldsky
 
 ### Use BuiltByMom Fork + Goldsky Hosting
 
@@ -291,7 +403,7 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 4. **Get Subgraph URL:**
    After deployment, use the provided GraphQL endpoint URL in your keeper config.
 
-## Step 3: Known Good Contract Addresses
+## Step 4: Known Good Contract Addresses
 
 ### Ajna Deployment Addresses
 
@@ -340,7 +452,7 @@ The recommended approach uses the [BuiltByMom/Ajna-subgraph](https://github.com/
 | Base | TriCrypto (crvUSD/tBTC/ETH) | CRYPTO | `0x6e53131F68a034873b6bFA15502aF094Ef0c5854` |
 | Base | crvUSD/USDC | STABLE | Check Curve.fi for current pools |
 
-## Step 4: API Rate Limits and Service Tiers
+## Step 5: API Rate Limits and Service Tiers
 
 ### Understanding Rate Limits
 
@@ -383,7 +495,103 @@ The keeper is configured with conservative timing to respect rate limits:
 
 **For faster operation:** Upgrade to paid API tiers. The bot timing can be reduced with higher-tier service plans.
 
-## Step 5: Chain-Specific Configuration Examples
+## Step 6: DEX Configuration Best Practices
+
+### Pool Liquidity Verification
+
+**Critical for Production Success:** DEX integrations require manual pool/fee tier selection. The bot will only use exactly what you configure - it cannot automatically find better routes.
+
+**For Uniswap V3:**
+1. Visit [Uniswap Info](https://info.uniswap.org/#/pools) → your network
+2. Search each token pair in your pools (e.g., "USDC WETH")
+3. Compare Total Value Locked (TVL) across fee tiers:
+   - 500 (0.05%) - typically stablecoin pairs
+   - 3000 (0.3%) - most common for major pairs  
+   - 10000 (1%) - exotic or volatile pairs
+4. Set `defaultFeeTier` to the highest TVL option
+5. For LP rewards, set `fee: FeeAmount.MEDIUM` (or appropriate tier)
+
+**For SushiSwap:**
+1. Check [SushiSwap Analytics](https://www.sushi.com/pool) → your network
+2. Verify pool existence and liquidity for your pairs
+3. Most SushiSwap pools use 500 (0.05%) or 3000 (0.3%) tiers
+4. Set `defaultFeeTier` conservatively (typically 500)
+5. Use higher `defaultSlippage` (5-10%) due to potentially lower liquidity
+
+**For Curve:**
+1. Visit [Curve.fi](https://curve.finance) → your network
+2. Manually identify pool addresses containing your token pairs
+3. Verify pool type: StableSwap (int128 indices) vs CryptoSwap (uint256 indices)
+4. Check recent volume and TVL before configuring
+5. Use conservative slippage (2-5%) and test thoroughly
+
+### Understanding External Takes vs Post-Auction Swaps
+
+**External Takes (Time-Sensitive):**
+- Execute during active auctions when timing is critical
+- Use global DEX settings: `defaultFeeTier` from router overrides
+- Cannot be customized per pool due to speed requirements
+- Choose `defaultFeeTier` based on your most common/valuable token pairs
+
+**Post-Auction Swaps (Flexible):**  
+- Execute after auctions complete when timing is less critical
+- Can override fee tiers per pool using the `fee` parameter in `rewardAction`
+- Allow optimization for each specific token pair
+- If no `fee` specified, falls back to global `defaultFeeTier`
+
+### Configuration Strategy
+
+**Step 1: Set Global Defaults for External Takes**
+```typescript
+universalRouterOverrides: {
+  defaultFeeTier: 3000, // Optimize for most common pairs (WETH/USDC, etc.)
+  defaultSlippage: 0.5,
+  // ... other settings
+}
+```
+
+**Step 2: Override Per Pool for LP Rewards**
+```typescript
+pools: [
+  {
+    name: "Stablecoin Pool (USDC/DAI)",
+    collectLpReward: {
+      rewardActionCollateral: {
+        fee: FeeAmount.LOW, // 0.05% - better for stables
+        dexProvider: PostAuctionDex.UNISWAP_V3
+      }
+    }
+  },
+  {
+    name: "Volatile Pool (WETH/WBTC)",
+    // No fee override = uses defaultFeeTier (3000)
+    collectLpReward: {
+      rewardActionCollateral: {
+        dexProvider: PostAuctionDex.UNISWAP_V3 // Uses global default
+      }
+    }
+  }
+]
+```
+
+### Liquidity Research Workflow
+
+1. **For External Takes**: Focus on your highest-value pools and most common token pairs
+2. **For Post-Auction LP Rewards**: Research each specific token pair individually
+3. Use Uniswap Info or SushiSwap Analytics to compare TVL across fee tiers
+4. Set global defaults conservatively, then optimize individual pools as needed
+
+### Production Monitoring
+
+Once deployed, monitor for these signs of suboptimal pool configuration:
+- Frequent "insufficient liquidity" errors
+- Large price impact warnings in logs
+- Lower-than-expected arbitrage profits
+- High slippage on external takes
+
+Regular review (monthly/quarterly) ensures configuration stays optimal as DEX liquidity evolves.
+
+## Step 7: Chain-Specific Configuration Examples
 
 ### Avalanche Production Config Snippet
 
@@ -483,7 +691,7 @@ const config: KeeperConfig = {
   dryRun: false,
   keeperKeystore: 'PUT_YOUR_FULL_PATH_HERE/keystore.json',
   logLevel: 'debug',
-  ethRpcUrl: 'https://rpc.hemi.network/rpc',
+  ethRpcUrl: 'https://rpc.hemi.network/rpc',  //you can put in your own Quicknode RPC here
   subgraphUrl: 'https://api.goldsky.com/api/public/project_[id]/subgraphs/ajna-hemi/1.0.0/gn',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 484490,
@@ -502,7 +710,7 @@ const config: KeeperConfig = {
     universalRouterAddress: '0x533c7A53389e0538AB6aE1D7798D6C1213eAc28B',
     wethAddress: '0x4200000000000000000000000000000000000006',
     permit2Address: '0xB952578f3520EE8Ea45b7914994dcf4702cEe578',
-    defaultFeeTier: 3000,
+    defaultFeeTier: 3000, // ← COMPILED INTO CONTRACT: All Uniswap external takes use 0.3%
     defaultSlippage: 0.5,
     poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
     quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5',
@@ -514,8 +722,8 @@ const config: KeeperConfig = {
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
     factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
     wethAddress: '0x4200000000000000000000000000000000000006',
-    defaultFeeTier: 500,
-    defaultSlippage: 10.0,
+    defaultFeeTier: 3000, // ← COMPILED INTO CONTRACT: All SushiSwap external takes use 0.3%
+    defaultSlippage: 1.0,
   },
   
   // Hemi token addresses
@@ -523,8 +731,7 @@ const config: KeeperConfig = {
     weth: '0x4200000000000000000000000000000000000006',
     usd_t1: '0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6',
     usd_t2: '0x91e1a2966408d434cfc1c0790df4a1ce08dc73d8',
-    usd_t3: '0x9f60ec2c81308c753e84467e2526c7d8fc05cd0d',
-    usd_t4: '0x00b2fee99fe3fc9aab91d1b249c99c9ffbb1ccde',
+    usdc_t: '0x37eBf9aC1C05c023D329095B0b17A812ae9C66F6',
   },
   
   // Hemi Ajna contract addresses
@@ -534,14 +741,14 @@ const config: KeeperConfig = {
   },
   
   pools: [{
-    name: 'USD_T1 / USD_T2',
-    address: '0x600ca6e0b5cf41e3e4b4242a5b170f3b02ce3da7',
+    name: 'usd_t1 / usdc_t',
+    address: '0xf4a658cfaf358efdf5c2420fac783b160ae9b9e4',
     price: {
       source: PriceOriginSource.FIXED,
-      value: 1.01,
+      value: 1.00,
     },
     kick: {
-      minDebt: 0.07,
+      minDebt: 0.1,
       priceFactor: 0.99,
     },
     settlement: {
@@ -549,23 +756,24 @@ const config: KeeperConfig = {
       minAuctionAge: 18000,
       maxBucketDepth: 50,
       maxIterations: 10,
-      checkBotIncentive: true,
+      checkBotIncentive: false,
     },
     take: {
-      // External take via SushiSwap
+      // External take via SushiSwap (uses contract's 0.3% tier)
       liquiditySource: LiquiditySource.SUSHISWAP,
       marketPriceFactor: 0.99,
-      minCollateral: 0.1,
+      minCollateral: 0.01,
       // ArbTake as backup
-      hpbPriceFactor: 0.98,
+      hpbPriceFactor: 0.985,
     },
-    // LP reward swapping via SushiSwap (no contracts needed)
+    // LP reward swapping via SushiSwap (can override fee tier)
     collectLpReward: {
       rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
-        targetToken: 'usd_t2',
+        targetToken: 'usdc_t',
         dexProvider: PostAuctionDex.SUSHISWAP,
-        fee: FeeAmount.LOW
+        fee: FeeAmount.MEDIUM, // Can use different tier than external takes!
+        slippage: 3,
       }
     }
   }],
@@ -584,7 +792,72 @@ yarn ts-node scripts/deploy-factory-system.ts hemi-config.ts
 yarn start --config hemi-config.ts
 ```
 
-## Step 6: Production Monitoring and Maintenance
+### Base Curve Production Config Snippet
+
+```typescript
+const config: KeeperConfig = {
+  // ... basic config
+  
+  // Factory System Setup with Curve
+  keeperTakerFactory: '0x[DEPLOY_WITH_deploy-factory-system.ts]',
+  takerContracts: {
+    'Curve': '0x[DEPLOYED_CURVE_TAKER_ADDRESS]',
+  },
+
+  curveRouterOverrides: {
+    poolConfigs: {
+      'tbtc-weth': {  // crvUSD-tBTC-ETH 3 pool (tricrypto)
+        address: '0x6e53131F68a034873b6bFA15502aF094Ef0c5854', // TriCrypto (Base)
+        poolType: CurvePoolType.CRYPTO
+      },
+      'usdc_t-usd_t1': {  // 3-pool stablecoin configuration
+        address: '0x01C2c9f2C271ECEF81287B44FA6F813a1605F5Eb', // 3 stable-coin pool (Base)
+        poolType: CurvePoolType.STABLE
+      }
+    },
+    defaultSlippage: 1.0,
+    wethAddress: '0x4200000000000000000000000000000000000006'
+  },
+
+  // Required token address mapping for Curve
+  tokenAddresses: {
+    weth: '0x4200000000000000000000000000000000000006',
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    tbtc: '0x236aa50979D5f3De3Bd1Eeb40E81137F22ab794b',
+    usdc_t: '0x53Be558aF29cC65126ED0E585119FAC748FeB01B',
+    usd_t1: '0xf0c44a9f24159E1f2A0D9Ba3203172f528d224CA',
+  },
+  
+  pools: [
+    {
+      name: 'USDC_T/USD_T1',
+      address: '0xda5cc6f3ee0c9b80b2e4df9a34de7c4c81067c46',
+      price: {
+        source: PriceOriginSource.FIXED,
+        value: 1.00,
+      },
+      take: {
+        liquiditySource: LiquiditySource.CURVE, // Use Curve for external takes
+        marketPriceFactor: 0.99,
+        minCollateral: 0.01,
+        hpbPriceFactor: 0.98, // ArbTake backup
+      },
+      collectLpReward: {
+        rewardActionCollateral: {
+          action: RewardActionLabel.EXCHANGE,
+          address: "0x53Be558aF29cCC65126ED0E585119FAC748FeB01B", // USDC_T
+          targetToken: "usd_t1",
+          slippage: 1,
+          dexProvider: PostAuctionDex.CURVE, // Use Curve for LP rewards
+        },
+      },
+      // ... other config
+    }
+  ]
+};
+```
+
+## Step 8: Production Monitoring and Maintenance
 
 ### Monitoring Setup
 
@@ -616,7 +889,7 @@ yarn start --config hemi-config.ts
 - Use reputable providers (Alchemy, QuickNode)
 - Consider backup RPC endpoints for redundancy
 
-## Step 7: Security Considerations
+## Step 9: Security Considerations
 
 ### Keystore Security
 - Store keystore files in secure locations with proper permissions
@@ -633,7 +906,7 @@ yarn start --config hemi-config.ts
 - Fund quote tokens for liquidation bonds
 - Monitor balances and set up alerts
 
-## Step 8: Troubleshooting External Takes
+## Step 10: Troubleshooting External Takes
 
 ### Contract Deployment Issues
 
@@ -737,13 +1010,19 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 "Factory Take successful - poolAddress: 0x..., borrower: 0x..."
 
 # Price comparison (debug level)
-"Price check: pool=USD_T1/USD_T2, auction=0.9950, market=1.0020, takeable=0.9920, profitable=true"
+"Price check: pool=usd_t1/usdc_t, auction=0.9950, market=1.0020, takeable=0.9920, profitable=true"
 
 # Detection results
 "Detection Results - Type: factory, Valid: true"
 
 # LP reward swaps
-"Successfully swapped 1.5 of 0x123... to usdc via sushiswap"
+"Successfully swapped 1.5 of 0x123... to usdc_t via sushiswap"
+
+# Fee tier usage in external takes
+"Using compiled fee tier 3000 (0.3%) for external take"
+
+# Fee tier override in LP rewards  
+"LP reward swap: Using fee override 500 (0.05%) instead of default 3000"
 ```
 
 **Key Logs to Monitor for Curve:**
@@ -752,13 +1031,13 @@ yarn ts-node scripts/deploy-factory-system.ts config.ts
 "Factory Curve Take successful - poolAddress: 0x..., borrower: 0x..."
 
 # Curve price comparison (debug level)
-"Curve price check: pool=USDC/DAI, auction=0.9980, market=1.0015, takeable=0.9915, profitable=true"
+"Curve price check: pool=USDC_T/USD_T1, auction=0.9980, market=1.0015, takeable=0.9915, profitable=true"
 
 # Curve pool discovery
-"Found Curve pool for usdc/dai: 0x123... (STABLE)"
+"Found Curve pool for usdc_t/usd_t1: 0x123... (STABLE)"
 
 # Curve LP reward swaps
-"Successfully swapped 1.2 of 0x456... to usdc via curve"
+"Successfully swapped 1.2 of 0x456... to usd_t1 via curve"
 ```
 
 **Health Check Commands:**
@@ -768,6 +1047,9 @@ yarn ts-node scripts/query-1inch.ts --config config.ts --action quote --poolName
 
 # Verify factory deployment
 grep "Type: factory, Valid: true" logs/keeper.log
+
+# Check fee tier compilation
+grep "compiled fee tier" logs/keeper.log
 ```
 
 ## Troubleshooting Production Issues
@@ -837,6 +1119,21 @@ This indicates the auction needs more settlement iterations or has complex debt 
 
 ### DEX-Specific Issues
 
+**Smart Contract Fee Tier Issues:**
+```bash
+# Log: "External takes consistently unprofitable"
+# Cause: Contract deployed with suboptimal fee tier
+# Solution: Research current liquidity, consider redeploying with better tier
+
+# Log: "High price impact on external takes"  
+# Cause: Contract locked to low-liquidity fee tier
+# Solution: Either redeploy or rely more on arbTake strategy
+
+# Log: "LP rewards more profitable than external takes"
+# Cause: LP rewards using optimal per-pool overrides, external takes using suboptimal contract tier
+# Solution: Normal - this is expected with strategic fee tier choices
+```
+
 **SushiSwap Quote Provider Issues:**
 ```bash
 # Log: "SushiSwap quote failed: INSUFFICIENT_LIQUIDITY"
@@ -845,8 +1142,8 @@ This indicates the auction needs more settlement iterations or has complex debt 
 # Log: "SushiSwap quoter reverted"
 # Solution: Verify quoterV2Address and factory addresses
 
-# Log: "No SushiSwap pool for tokenA/tokenB with fee 500"
-# Solution: Try different fee tier (3000) or verify token addresses
+# Log: "No SushiSwap pool for tokenA/tokenB with fee 3000"
+# Solution: Try different fee tier (500) or verify token addresses
 ```
 
 **Multi-DEX Factory Issues:**
