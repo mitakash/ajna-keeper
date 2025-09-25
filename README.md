@@ -49,7 +49,7 @@ The production guide covers the recommended approach using hosted services:
 - Hosted RPC setup (Alchemy/QuickNode) vs local nodes
 - Hosted subgraph deployment (BuiltByMom fork + Goldsky) vs local Graph Node  
 - Verified contract addresses for major chains (Avalanche, Hemi, Base, Arbitrum)
-- Multiple DEX integration options (1inch, Uniswap V3, SushiSwap)
+- Multiple DEX integration options (1inch, Uniswap V3, SushiSwap, Curve)
 - API rate limits and service tier recommendations
 - Real-world configuration examples
 - Production monitoring and troubleshooting
@@ -226,6 +226,54 @@ A 1inch API key may be obtained from their [developer portal](https://portal.1in
 
 **External takes** connect Ajna liquidation auctions to external DEX liquidity with Atomic Swaps. This requires deploying smart contracts to atomically take collateral and swap it.
 
+### Critical Fee Tier Configuration for External Takes
+
+**⚠️ CRITICAL: Smart Contract Fee Tier Configuration**
+
+The `defaultFeeTier` values in your router overrides get **compiled into deployed smart contracts** and cannot be changed without redeploying. This directly impacts external take profitability.
+
+**Fee Tier Value → Percentage → Common Use:**
+- `500` = 0.05% = 5 basis points (stablecoins)
+- `3000` = 0.3% = 30 basis points (most common)  
+- `10000` = 1.0% = 100 basis points (exotic pairs)
+
+**External Takes vs Post-Auction Swaps:**
+
+**For External Takes (Time-Sensitive):**
+- Fee tier is **permanently set** at contract deployment time
+- Uses `universalRouterOverrides.defaultFeeTier` or `sushiswapRouterOverrides.defaultFeeTier`
+- Changing requires full contract redeployment  
+- Choose carefully based on your most valuable/frequent liquidation pairs
+
+**For Post-Auction LP Rewards (Flexible):**
+- Can override per pool using `fee: FeeAmount.MEDIUM` in `rewardAction`
+- Falls back to contract's default if no override specified
+- Flexible and changeable without redeployment
+
+### Pre-Deployment Fee Tier Research (REQUIRED)
+
+Before running deployment scripts, research liquidity for ALL your configured pools:
+
+**Step 1: List all token pairs from your pools**  
+**Step 2: Check Uniswap Info or SushiSwap Analytics for EACH pair's fee tier liquidity**  
+**Step 3: Choose the fee tier that optimizes for your highest-value pairs**  
+**Step 4: Set defaultFeeTier in config**  
+**Step 5: Deploy contracts (fee tier is now permanent)**
+
+Example research process:
+```
+Pools: USDC/WETH (high value), DAI/USDC (medium), RARE/WETH (low)
+
+Research Results:
+- USDC/WETH: 500 tier has $50M TVL, 3000 tier has $200M TVL  
+- DAI/USDC: 500 tier has $100M TVL, 3000 tier has $30M TVL
+- RARE/WETH: Only exists in 10000 tier
+
+Decision: Use defaultFeeTier: 3000 
+Rationale: Optimizes highest-value pair (USDC/WETH)
+Plan: Override DAI/USDC in LP rewards, RARE/WETH gets suboptimal external takes
+```
+
 ### Choose Your Deployment Approach
 
 **Option A: 1inch Integration (Major Chains)**
@@ -245,7 +293,7 @@ yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 ```
 
 **Option B: Factory System (Multi-DEX Chains)**  
-- For chains with Uniswap V3 and/or SushiSwap V3
+- For chains with Uniswap V3 and/or SushiSwap V3 and/or Curve
 - Multi-DEX factory pattern supporting multiple DEXs
 - Direct DEX integration via router contracts
 
@@ -278,6 +326,8 @@ External takes require contract deployment and specific configuration:
 
 #### 1inch Integration (Single Contract)
 
+**IMPORTANT:** 1inch contract deployment is now **required even for LP reward swaps**.
+
 **Contract Deployment:**
 ```bash
 yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
@@ -286,7 +336,7 @@ yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
 **Config.ts Setup:**
 ```typescript
 const config: KeeperConfig = {
-  // Required for 1inch external takes
+  // Required for 1inch external takes AND LP rewards
   keeperTaker: '0x[deployed-address]',
   oneInchRouters: {
     1: '0x1111111254EEB25477B68fb85Ed929f73A960582',    // Ethereum
@@ -302,6 +352,9 @@ const config: KeeperConfig = {
   }]
 }
 ```
+
+**Important: 1inch Fee Tier Considerations**
+1inch automatically routes through optimal fee tiers, so you don't need to worry about fee tier selection for 1inch integration. The API handles routing optimization.
 
 #### Uniswap V3 Integration (Factory System)
 
@@ -324,7 +377,7 @@ const config: KeeperConfig = {
     permit2Address: '0xB952578f3520EE8Ea45b7914994dcf4702cEe578',
     poolFactoryAddress: '0x346239972d1fa486FC4a521031BC81bFB7D6e8a4',
     quoterV2Address: '0xcBa55304013187D49d4012F4d7e4B63a04405cd5',
-    defaultFeeTier: 3000,
+    defaultFeeTier: 3000, // ← COMPILED INTO CONTRACT: All external takes use 0.3%
     defaultSlippage: 0.5,
   },
   
@@ -336,6 +389,19 @@ const config: KeeperConfig = {
   }]
 }
 ```
+
+**⚠️ Important: Uniswap V3 Pool Selection and Fee Tier Configuration**
+
+Before running in production, manually verify which fee tier has the highest liquidity for your token pairs. The Universal Router will ONLY use the specific fee tier you configure (500 = 0.05%, 3000 = 0.3%, 10000 = 1%) - it does not automatically select the optimal route. 
+
+To check liquidity:
+1. Visit [Uniswap Info](https://info.uniswap.org/#/pools) for your network
+2. Search for your token pair (e.g., USDC/WETH)  
+3. Compare TVL across different fee tiers
+4. Set `defaultFeeTier` to the most liquid option
+5. Monitor and update as liquidity shifts over time
+
+Low-liquidity pools can cause swap failures or poor pricing that impacts liquidation profitability.
 
 #### SushiSwap Integration (Factory System)
 
@@ -357,7 +423,7 @@ const config: KeeperConfig = {
     quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
     factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
     wethAddress: '0x4200000000000000000000000000000000000006',
-    defaultFeeTier: 500,
+    defaultFeeTier: 500, // ← COMPILED INTO CONTRACT: All external takes use 0.05%
     defaultSlippage: 10.0,
   },
   
@@ -370,93 +436,18 @@ const config: KeeperConfig = {
 }
 ```
 
-### Configuring for LP Reward Swapping (Post-Auction Swaps)
+**⚠️ Important: SushiSwap Pool Selection and Fee Tier Configuration**
 
-**IMPORTANT:** LP reward swapping now uses an enum-based system. Only 1inch requires contract deployment for LP rewards.
+SushiSwap routing requires manual fee tier selection. The router will only use the `defaultFeeTier` you specify (typically 500 = 0.05%, 3000 = 0.3%) - it does not find alternative routes automatically.
 
-#### Using 1inch for LP Rewards (Requires Contract Deployment)
-```bash
-# REQUIRED: Deploy 1inch contract first
-yarn ts-node scripts/query-1inch.ts --config your-config.ts --action deploy
-```
+To verify optimal pools:
+1. Check [SushiSwap Analytics](https://sushi.com/pool) for your network
+2. Compare liquidity across fee tiers for your token pairs
+3. Set `defaultFeeTier` to the highest liquidity option
+4. Test with small amounts before production deployment
+5. Adjust configuration as market conditions change
 
-```typescript
-const config: KeeperConfig = {
-  // REQUIRED: Must deploy contract for 1inch LP reward swaps
-  keeperTaker: '0x[deployed-address]',
-  oneInchRouters: {
-    43114: '0x111111125421ca6dc452d289314280a0f8842a65', // Avalanche
-  },
-  
-  pools: [{
-    collectLpReward: {
-      rewardActionCollateral: {
-        action: RewardActionLabel.EXCHANGE,
-        address: '0x[collateral-token]',
-        targetToken: 'usdc',
-        slippage: 1,
-        dexProvider: PostAuctionDex.ONEINCH,  // Use enum
-      }
-    }
-  }]
-}
-```
-
-#### Using Uniswap V3 for LP Rewards (No Contract Deployment Needed)
-```typescript
-const config: KeeperConfig = {
-  // Universal Router configuration (for Uniswap V3 swaps)
-  universalRouterOverrides: {
-    universalRouterAddress: '0x3fC91A3afd70395Cd496C647d5a6CC9D4B2b7FAD',
-    wethAddress: '0x4200000000000000000000000000000000000006',
-    permit2Address: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
-    poolFactoryAddress: '0x33128a8fC17869897dcE68Ed026d694621f6FDfD',
-    defaultFeeTier: 3000,
-    defaultSlippage: 0.5,
-  },
-  
-  pools: [{
-    collectLpReward: {
-      rewardActionCollateral: {
-        action: RewardActionLabel.EXCHANGE,
-        address: '0x[collateral-token]', 
-        targetToken: 'usdc',
-        slippage: 1,
-        dexProvider: PostAuctionDex.UNISWAP_V3, // Use enum
-        fee: FeeAmount.MEDIUM,
-      }
-    }
-  }]
-}
-```
-
-#### Using SushiSwap for LP Rewards (No Contract Deployment Needed)
-```typescript
-const config: KeeperConfig = {
-  // SushiSwap configuration 
-  sushiswapRouterOverrides: {
-    swapRouterAddress: '0x33d91116e0370970444B0281AB117e161fEbFcdD', //addresses for Hemi Chain
-    quoterV2Address: '0x1400feFD6F9b897970f00Df6237Ff2B8b27Dc82C',
-    factoryAddress: '0xCdBCd51a5E8728E0AF4895ce5771b7d17fF71959',
-    wethAddress: '0x4200000000000000000000000000000000000006',
-    defaultFeeTier: 500,
-    defaultSlippage: 10.0,
-  },
-  
-  pools: [{
-    collectLpReward: {
-      rewardActionCollateral: {
-        action: RewardActionLabel.EXCHANGE,
-        address: '0x[collateral-token]', 
-        targetToken: 'usdc',
-        slippage: 10,
-        dexProvider: PostAuctionDex.SUSHISWAP, // SushiSwap option
-        fee: FeeAmount.LOW, // 0.05% fee tier
-      }
-    }
-  }]
-}
-```
+Using low-liquidity pools may result in failed swaps or unfavorable pricing.
 
 #### Curve Integration (Factory System)
 
@@ -509,7 +500,7 @@ const config: KeeperConfig = {
 #### Curve Configuration Guide
 
 **Step 1: Find Curve Pool Addresses**
-- Visit [Curve.fi](https://curve.fi) or use block explorers to find pool addresses for your network
+- Visit [Curve.fi](https://curve.finance) or use block explorers to find pool addresses for your network
 - Look for pools containing your desired token pairs (e.g., 3Pool for USDC/USDT/DAI)
 - Note: One pool address can serve multiple token pairs
 
@@ -547,12 +538,6 @@ curveRouterOverrides: {
 }
 ```
 
-**Common Validation Steps:**
-1. Verify pool contains your tokens: call `pool.coins(0)`, `pool.coins(1)`, etc.
-2. Test with small amounts first
-3. Ensure token symbols in `poolConfigs` match `tokenAddresses` keys
-4. Use correct pool type to avoid transaction failures
-
 ### Automatic Detection
 
 The keeper automatically detects your configuration:
@@ -589,8 +574,14 @@ const config: KeeperConfig = {
     'UniswapV3': '0x[taker-address]',
     'SushiSwap': '0x[taker-address]'
   },
-  universalRouterOverrides: { /* addresses */ },
-  sushiswapRouterOverrides: { /* addresses */ },
+  universalRouterOverrides: { 
+    defaultFeeTier: 3000, // 0.3% compiled into Uniswap contract
+    /* other addresses */ 
+  },
+  sushiswapRouterOverrides: { 
+    defaultFeeTier: 3000, // 0.3% compiled into SushiSwap contract  
+    /* other addresses */ 
+  },
   
   pools: [{
     take: {
@@ -811,18 +802,20 @@ pools: [
     collectLpReward: {
       redeemFirst: "COLLATERAL",
       minAmount: 0.001,
-      rewardAction: {
+      rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         address: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
         targetToken: "usdc",
         slippage: 1,
         dexProvider: PostAuctionDex.UNISWAP_V3, // Use enum
-        fee: 3000 // 0.3% fee tier
+        fee: FeeAmount.MEDIUM // Can use different fee tier than external takes!
       }
     }
   }
 ],
 ```
+
+Note: LP reward swaps can use **different fee tiers** than external takes by specifying `fee: FeeAmount.LOW` (500), `fee: FeeAmount.MEDIUM` (3000), or `fee: FeeAmount.HIGH` (10000).
 
 ##### SushiSwap LP Reward Configuration
 
@@ -854,18 +847,20 @@ pools: [
     collectLpReward: {
       redeemFirst: "COLLATERAL",
       minAmount: 0.001,
-      rewardAction: {
+      rewardActionCollateral: {
         action: RewardActionLabel.EXCHANGE,
         address: "0x1f0d51a052aa79527fffaf3108fb4440d3f53ce6",
         targetToken: "usd_t2",
         slippage: 10,
         dexProvider: PostAuctionDex.SUSHISWAP, // SushiSwap option
-        fee: 500 // 0.05% fee tier
+        fee: FeeAmount.LOW // Can use different fee tier than external takes!
       }
     }
   }
 ],
 ```
+
+Note: Like Uniswap V3, LP reward swaps can use **different fee tiers** than external takes for optimal routing.
 
 ##### Notes
 
