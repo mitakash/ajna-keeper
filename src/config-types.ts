@@ -229,13 +229,13 @@ export interface UniV4PoolKey {
   fee: number;          // e.g. 3000
   tickSpacing: number;  // e.g. 60
   hooks: string;        // often 0x0000...0000
-  sqrtPriceLimitX96?: string; // optional
+  sqrtPriceLimitX96?: string; 
 }
 
 export interface UniswapV4RouterOverrides {
   router: string;                     // V4 router/adapter you’ll call
-  poolManager?: string;               // optional if your adapter needs it
   defaultSlippage: number;            // e.g., 0.5
+  poolManager?: string;
   pools: Record<string, UniV4PoolKey>;// e.g., { 'WETH-USDC': { … } }
 }
 
@@ -456,7 +456,12 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
       if (!keeperConfig.uniswapV4RouterOverrides.router) throw new Error('TakeSettings: V4 router/adapter address missing');
       if (!keeperConfig.uniswapV4RouterOverrides.pools || Object.keys(keeperConfig.uniswapV4RouterOverrides.pools).length === 0)
         throw new Error('TakeSettings: at least one V4 poolKey must be configured');
+      if (!keeperConfig.uniswapV4RouterOverrides.poolManager) {
+          logger.warn('TakeSettings: poolManager address recommended for V4');
+        }
     }
+
+   
 
   }
 

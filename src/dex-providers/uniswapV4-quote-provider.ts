@@ -1,315 +1,243 @@
-import { ethers, BigNumber, Signer } from 'ethers';
+// src/dex-providers/uniswapV4-quote-provider.ts
+import { ethers, BigNumber, Contract, Signer } from 'ethers';
 import { logger } from '../logging';
-import { getDecimalsErc20 } from '../erc20';
+import { UniV4PoolKey } from '../config-types';
+import { V4Utils, POOL_MANAGER_ABI, PoolKey, Currency } from '../uniswapv4';
 
-/** ---------------------------
- *  Minimal ABIs / Interfaces
- *  ---------------------------
- */
-
-/** Your Uniswap V4 adapter/router ABI: simulate swaps via callStatic */
-const UNI_V4_ADAPTER_ABI = [
-  // Adjust the function name/signature if your adapter differs
-  `function swapExactIn(
-    (address token0,address token1,uint24 fee,int24 tickSpacing,address hooks) poolKey,
-    bool zeroForOne,
-    uint256 amountIn,
-    uint256 amountOutMinimum,
-    uint160 sqrtPriceLimitX96,
-    bytes hookData
-  ) returns (int256 amount0Delta, int256 amount1Delta)`,
-];
-
-// Minimal ABIs — keep both so we can try quote() first, then fallback to callStatic.swap()
-const V4_QUOTER_ABI = [
-    // Pure/view quote path (preferred if your adapter exposes it)
-    'function quoteExactInputSingle((address token0,address token1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceLimitX96), uint256 amountIn, bytes hookData) external view returns (uint256 amountOut)',
-    'function poolManager() external view returns (address)'
-  ];
-
-
-  const V4_ROUTER_ABI = [
-    // Fallback: same struct, simulate the swap (no state change)
-    'function exactInputSingle((address token0,address token1,uint24 fee,int24 tickSpacing,address hooks,uint160 sqrtPriceLimitX96), uint256 amountIn, uint256 amountOutMinimum, address recipient, bytes hookData) external returns (uint256 amountOut)',
-    'function poolManager() external view returns (address)'
-  ];
-
-  
-
-export type UniV4PoolKey = {
-  token0: string;
-  token1: string;
-  fee: number;           // e.g. 3000
-  tickSpacing: number;   // e.g. 60
-  hooks: string;         // often 0x00...00
-  sqrtPriceLimitX96?: string; // optional bound
-};
-
-export interface UniswapV4QuoteConfig {
-  router: string;                         // V4 adapter/router you will call
-  defaultSlippage: number;                // % (e.g., 0.5 for 0.5%)
-  pools: Record<string, UniV4PoolKey>;    // keyed by a pair name like "WETH-USDC"
+interface V4Config {
+  router: string; // Actually the PoolManager address in V4
+  poolManager?: string; // Optional explicit PoolManager address  
+  defaultSlippage: number;
+  pools: Record<string, UniV4PoolKey>;
 }
 
-/** Aligns with your Sushi provider’s return shape */
 interface QuoteResult {
   success: boolean;
   dstAmount?: BigNumber;
   error?: string;
-  gasEstimate?: BigNumber; // optional; we can’t easily estimate here, kept for parity
+  price?: number;
 }
 
 export class UniswapV4QuoteProvider {
   private signer: Signer;
-  private config: UniswapV4QuoteConfig;
-  private adapter: ethers.Contract;
-  private isInitialized = false;
+  private config: V4Config;
+  private poolManager?: Contract;
+  private poolManagerAddress: string;
 
-  constructor(signer: Signer, config: UniswapV4QuoteConfig) {
+  constructor(signer: Signer, config: V4Config) {
     this.signer = signer;
     this.config = config;
-    this.adapter = new ethers.Contract(config.router, UNI_V4_ADAPTER_ABI, signer);
+    // In V4, the "router" is actually the PoolManager address
+    this.poolManagerAddress = config.poolManager || config.router;
   }
 
-  /** Ensure router exists on-chain */
   async initialize(): Promise<boolean> {
-    if (this.isInitialized) return true;
-
     try {
-      const code = await this.signer.provider!.getCode(this.config.router);
-      if (code === '0x') {
-        logger.warn(`UniswapV4 adapter/router not found at ${this.config.router}`);
+      if (!this.poolManagerAddress) {
+        // Try to get from known addresses
+        const chainId = await this.signer.getChainId();
+        const knownAddress = V4Utils.getPoolManagerAddress(chainId);
+        
+        if (!knownAddress) {
+          logger.debug('V4: Pool Manager address not found for chain ' + chainId);
+          return false;
+        }
+        
+        this.poolManagerAddress = knownAddress;
+      }
+
+      this.poolManager = new Contract(
+        this.poolManagerAddress,
+        POOL_MANAGER_ABI,
+        this.signer
+      );
+
+      // Test connection with a simple view call instead of deployed()
+      try {
+        const provider = this.signer.provider;
+        if (!provider) {
+          throw new Error('No provider available');
+        }
+        
+        // Check if contract exists by getting code
+        const code = await provider.getCode(this.poolManagerAddress);
+        if (code === '0x') {
+          throw new Error(`Contract not deployed at ${this.poolManagerAddress}`);
+        }
+        
+        logger.debug(`V4: PoolManager detected at ${this.poolManagerAddress} on chain ${await this.signer.getChainId()}`);
+        return true;
+        
+      } catch (contractError) {
+        logger.error(`V4: Contract verification failed: ${contractError}`);
         return false;
       }
-      this.isInitialized = true;
-      return true;
-    } catch (err) {
-      logger.error(`Failed to initialize UniswapV4QuoteProvider: ${err}`);
+      
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`V4: Failed to initialize: ${errorMessage}`);
       return false;
     }
   }
 
-  isAvailable(): boolean {
-    return this.isInitialized;
-  }
-
-  getRouterAddress(): string {
-    return this.config.router;
-  }
-
   /**
-   * Look up a pool key from config by label (e.g. "WETH-USDC").
-   * You can also build this dynamically per token pair in your orchestration layer if preferred.
+   * Get market price for a token pair using V4 pool state
    */
-  getPoolKey(label: string): UniV4PoolKey | undefined {
-    return this.config.pools[label];
-  }
-
-  private toPoolKeyStruct(key: UniV4PoolKey) {
-    return {
-      token0: key.token0,
-      token1: key.token1,
-      fee: key.fee,
-      tickSpacing: key.tickSpacing,
-      hooks: key.hooks,
-      sqrtPriceLimitX96: key.sqrtPriceLimitX96
-        ? ethers.BigNumber.from(key.sqrtPriceLimitX96)
-        : ethers.constants.Zero,
-    };
-  }
-  
-  private findPoolKey(tokenIn: string, tokenOut: string): UniV4PoolKey | undefined {
-    const entries = Object.values(this.config.pools || {}) as UniV4PoolKey[];
-    return entries.find((k) => {
-      const a = k.token0.toLowerCase(), b = k.token1.toLowerCase();
-      const x = tokenIn.toLowerCase(),  y = tokenOut.toLowerCase();
-      // same pool supports both directions; we just need the correct key
-      return (a === x && b === y) || (a === y && b === x);
-    });
-  }
-
-  /**
-   * Quote exact input using callStatic on your V4 adapter.
-   * We pass amountOutMinimum = 0 and read the returned signed deltas.
-   *
-   * IMPORTANT:
-   * - For zeroForOne (token0 -> token1), adapter typically returns:
-   *     amount0Delta = -amountIn  (negative)
-   *     amount1Delta = +amountOut (positive)
-   * - For oneForZero (token1 -> token0), the signs flip.
-   */
-  async getQuoteExactIn(
-    amountIn: BigNumber,
-    tokenIn: string,
-    tokenOut: string,
-    poolKeyLabel: string,
-    hookData: string = '0x',
-    overrideSqrtPriceLimitX96?: string
-  ): Promise<QuoteResult> {
-    try {
-      if (!this.isInitialized) {
-        const ok = await this.initialize();
-        if (!ok) return { success: false, error: 'Quote provider not available' };
-      }
-
-      const pk = this.config.pools[poolKeyLabel];
-      if (!pk) return { success: false, error: `PoolKey '${poolKeyLabel}' not configured` };
-
-      // Determine direction vs poolKey order
-      const zeroForOne = tokenIn.toLowerCase() === pk.token0.toLowerCase()
-                      && tokenOut.toLowerCase() === pk.token1.toLowerCase();
-
-      const oneForZero = tokenIn.toLowerCase() === pk.token1.toLowerCase()
-                      && tokenOut.toLowerCase() === pk.token0.toLowerCase();
-
-      if (!zeroForOne && !oneForZero) {
-        return { success: false, error: `Token pair ${tokenIn}/${tokenOut} does not match poolKey ${pk.token0}/${pk.token1}` };
-      }
-
-      const sqrtPriceLimitX96 = overrideSqrtPriceLimitX96 ?? pk.sqrtPriceLimitX96 ?? '0';
-
-      // Simulate swap via callStatic. We set minOut = 0 for quoting.
-      const txData = [
-        { token0: pk.token0, token1: pk.token1, fee: pk.fee, tickSpacing: pk.tickSpacing, hooks: pk.hooks },
-        zeroForOne,                               // direction
-        amountIn,                                 // exact input
-        BigNumber.from(0),                        // minOut = 0 (quote only)
-        sqrtPriceLimitX96,                        // optional price bound
-        hookData
-      ] as const;
-
-      // Use callStatic to avoid sending a tx; pass from to mimic real caller if needed
-      const fromAddr = await this.signer.getAddress();
-      const [amount0Delta, amount1Delta]: [BigNumber, BigNumber] =
-        await this.adapter.callStatic.swapExactIn(...txData, { from: fromAddr });
-
-      // Parse signed deltas into a positive output amount
-      // zeroForOne: input=token0 (amount0Delta negative), output=token1 (amount1Delta positive)
-      // oneForZero: input=token1 (amount1Delta negative), output=token0 (amount0Delta positive)
-      let out: BigNumber;
-      if (zeroForOne) {
-        // expect amount1Delta > 0
-        out = BigNumber.from(amount1Delta.toString());
-      } else {
-        // oneForZero path: expect amount0Delta > 0
-        out = BigNumber.from(amount0Delta.toString());
-      }
-
-      if (out.lte(0)) {
-        return { success: false, error: 'Zero or negative output from UniV4 simulation' };
-      }
-
-      // (Optional) decimals + log — parity with your Sushi provider
-      const inDec = await getDecimalsErc20(this.signer, tokenIn);
-      const outDec = await getDecimalsErc20(this.signer, tokenOut);
-      logger.debug(
-        `UniV4 quote success: ${ethers.utils.formatUnits(amountIn, inDec)} in -> ${ethers.utils.formatUnits(out, outDec)} out`
-      );
-
-      return { success: true, dstAmount: out };
-    } catch (error: any) {
-      logger.debug(`Uniswap V4 quote failed: ${error.message || error}`);
-      // Common revert parsing
-      if (error.message?.includes('INSUFFICIENT_LIQUIDITY')) {
-        return { success: false, error: 'Insufficient liquidity in UniV4 pool' };
-      } else if (error.message?.includes('revert')) {
-        return { success: false, error: `UniV4 simulation reverted: ${error.reason || error.message}` };
-      } else {
-        return { success: false, error: `UniV4 quote error: ${error.message || String(error)}` };
-      }
-    }
-  }
-
-  /**
-   * Convenience: compute a market price = output per 1 unit input
-   * Mirrors your Sushi provider so downstream logic stays the same.
-   */
-   async getMarketPrice(
+  async getMarketPrice(
     amountIn: BigNumber,
     tokenIn: string,
     tokenOut: string,
     tokenInDecimals: number,
     tokenOutDecimals: number,
-    poolKey?: UniV4PoolKey
+    poolKey: UniV4PoolKey
   ): Promise<{ success: boolean; price?: number; error?: string }> {
-    const quote = await this.getQuote(amountIn, tokenIn, tokenOut, poolKey);
-    if (!quote.success || !quote.dstAmount) return { success: false, error: quote.error };
-    const inAmt  = Number(ethers.utils.formatUnits(amountIn, tokenInDecimals));
-    const outAmt = Number(ethers.utils.formatUnits(quote.dstAmount, tokenOutDecimals));
-    return inAmt > 0 ? { success: true, price: outAmt / inAmt } : { success: false, error: 'Invalid input' };
-  }
-  
-  async getQuote(
-    amountIn: BigNumber,
-    tokenIn: string,
-    tokenOut: string,
-    poolKey?: UniV4PoolKey
-  ): Promise<QuoteResult> {
+    
+    if (!this.poolManager) {
+      const initialized = await this.initialize();
+      if (!initialized) {
+        return { success: false, error: 'Pool Manager not initialized' };
+      }
+    }
+
     try {
-      // Resolve pool key
-      const key = poolKey ?? this.findPoolKey(tokenIn, tokenOut);
-      if (!key) {
-        return { success: false, error: 'No Uniswap V4 poolKey found for pair' };
+      // Convert config poolKey to V4 PoolKey format
+      const v4PoolKey = this.convertToV4PoolKey(poolKey);
+      
+      // Generate pool ID
+      const poolId = V4Utils.generatePoolId(v4PoolKey);
+      
+      // Get pool state from PoolManager
+      const slot0 = await this.poolManager!.getSlot0(poolId);
+      const { sqrtPriceX96, tick } = slot0;
+      
+      if (sqrtPriceX96.isZero()) {
+        return { success: false, error: 'Pool not initialized or has no liquidity' };
       }
-  
-      if (!this.config.router) {
-        return { success: false, error: 'Missing Uniswap V4 router/adapter address in config' };
-      }
-  
-      const provider = this.signer.provider!;
-      const code = await provider.getCode(this.config.router);
-      if (code === '0x') {
-        return { success: false, error: `Router not a contract: ${this.config.router}` };
-      }
-  
-      const keyStruct = this.toPoolKeyStruct(key);
-      const hookData = '0x';
-  
-      // 1) Try a pure/view quoter if available
-      let amountOut: BigNumber | undefined;
-      try {
-        const quoter = new ethers.Contract(this.config.router, V4_QUOTER_ABI, this.signer);
-        amountOut = await quoter.quoteExactInputSingle(keyStruct, amountIn, hookData);
-      } catch {
-        // ignore; many adapters won’t expose a pure quoter
-      }
-  
-      // 2) Fallback: simulate the swap via callStatic on exactInputSingle
-      if (!amountOut) {
-        const router = new ethers.Contract(this.config.router, V4_ROUTER_ABI, this.signer);
-        const recipient = await this.signer.getAddress();
-        amountOut = await router.callStatic.exactInputSingle(
-          keyStruct,
-          amountIn,
-          0,           // amountOutMinimum (0 for quote)
-          recipient,   // unused for callStatic, but required by ABI
-          hookData
-        );
-      }
-  
-      if (!amountOut || amountOut.isZero()) {
-        return { success: false, error: 'Zero output returned by V4 quote' };
-      }
-  
-      return { success: true, dstAmount: amountOut };
-  
-    } catch (e: any) {
-      // common decode for revert messages
-      const msg =
-        e?.error?.message ||
-        e?.reason ||
-        e?.message ||
-        'Uniswap V4 quote failed';
-      return { success: false, error: msg };
+
+      // Determine if tokenIn is token0 or token1
+      const isToken0Input = tokenIn.toLowerCase() === poolKey.token0.toLowerCase();
+      
+      // Calculate price from sqrtPriceX96
+      const price = V4Utils.sqrtPriceX96ToPrice(
+        sqrtPriceX96,
+        tokenInDecimals,
+        tokenOutDecimals,
+        isToken0Input
+      );
+
+      logger.debug(`V4: Pool price calculated: ${price} ${tokenOut}/${tokenIn} (tick: ${tick})`);
+      
+      return { success: true, price };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`V4: Error getting market price: ${errorMessage}`);
+      return { success: false, error: errorMessage };
     }
   }
 
   /**
-   * Gas estimate placeholder for parity with Sushi provider.
-   * For V4, realistic gas depends on hooks/tick crosses; we typically rely on router estimates
-   * during *real* execution. Here we just return undefined.
+   * Get quote for exact input swap
+   * Since V4 doesn't have a quoter yet, we use price-based estimation
    */
-  async estimateSwapGas(): Promise<BigNumber | undefined> {
-    return undefined;
+  async getQuote(
+    amountIn: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    poolKey: UniV4PoolKey
+  ): Promise<QuoteResult> {
+    
+    try {
+      // Get token decimals (you should pass these or get them from contracts)
+      const tokenInDecimals = await this.getTokenDecimals(tokenIn);
+      const tokenOutDecimals = await this.getTokenDecimals(tokenOut);
+      
+      const priceResult = await this.getMarketPrice(
+        amountIn,
+        tokenIn,
+        tokenOut,
+        tokenInDecimals,
+        tokenOutDecimals,
+        poolKey
+      );
+
+      if (!priceResult.success || !priceResult.price) {
+        return { success: false, error: priceResult.error };
+      }
+
+      // Simple price-based calculation
+      // In production, you'd want to account for slippage and fees
+      const amountInNumber = Number(ethers.utils.formatUnits(amountIn, tokenInDecimals));
+      const amountOutNumber = amountInNumber * priceResult.price;
+      
+      // Apply fee reduction (approximate)
+      const feeReduction = (10000 - poolKey.fee) / 10000;
+      const amountOutAfterFees = amountOutNumber * feeReduction;
+      
+      const amountOut = ethers.utils.parseUnits(
+        amountOutAfterFees.toFixed(tokenOutDecimals), 
+        tokenOutDecimals
+      );
+
+      logger.debug(`V4: Quote - ${amountInNumber} ${tokenIn} -> ${amountOutAfterFees.toFixed(6)} ${tokenOut}`);
+
+      return {
+        success: true,
+        dstAmount: BigNumber.from(amountOut),
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error(`V4: Quote error: ${errorMessage}`);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Convert config PoolKey to V4 PoolKey format
+   */
+  private convertToV4PoolKey(poolKey: UniV4PoolKey): PoolKey {
+    return {
+      currency0: { addr: poolKey.token0 },
+      currency1: { addr: poolKey.token1 },
+      fee: poolKey.fee,
+      tickSpacing: poolKey.tickSpacing,
+      hooks: poolKey.hooks
+    };
+  }
+
+  /**
+   * Get token decimals from contract
+   */
+  private async getTokenDecimals(tokenAddress: string): Promise<number> {
+    if (tokenAddress === '0x0000000000000000000000000000000000000000') {
+      return 18; // Native ETH
+    }
+
+    try {
+      const tokenContract = new Contract(
+        tokenAddress,
+        ['function decimals() view returns (uint8)'],
+        this.signer
+      );
+      return await tokenContract.decimals();
+    } catch (error) {
+      logger.warn(`V4: Could not get decimals for ${tokenAddress}, defaulting to 18`);
+      return 18;
+    }
+  }
+
+  /**
+   * Check if quote provider is available
+   */
+  isAvailable(): boolean {
+    return !!this.poolManager;
+  }
+
+  /**
+   * Get the Pool Manager address being used
+   */
+  getPoolManagerAddress(): string {
+    return this.poolManagerAddress;
   }
 }

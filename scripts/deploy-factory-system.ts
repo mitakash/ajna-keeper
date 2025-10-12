@@ -42,8 +42,8 @@ const GAS_CONFIGS: { [chainId: number]: { gasLimit: string; gasPrice?: string } 
     gasLimit: '6000000',
   },
   8453: { // Base
-    gasLimit: '6000000',
-    gasPrice: '1000000000', // 1 gwei
+    gasLimit: '4000000', // Reduced from 6M
+    gasPrice: '100000000', // 0.1 gwei (much lower)
   },
 
   // Add more networks as needed
@@ -324,11 +324,11 @@ async function deployUniswapV4KeeperTaker(
   deployer: ethers.Wallet,
   ajnaErc20PoolFactory: string,
   keeperTakerFactory: string,
+  poolManagerAddress: string,  // ✅ ADD THIS
   chainId: number
 ): Promise<string> {
   console.log('\n📦 Deploying UniswapV4KeeperTaker…');
 
-  // Hardhat artifact path; adjust if your build path differs
   const artifactPath = path.join(
     __dirname, '..', 'artifacts', 'contracts', 'takers',
     'UniswapV4KeeperTaker.sol', 'UniswapV4KeeperTaker.json'
@@ -346,7 +346,14 @@ async function deployUniswapV4KeeperTaker(
     deployOptions.gasPrice = gasConfig.gasPrice;
   }
 
-  const taker = await Factory.deploy(ajnaErc20PoolFactory, keeperTakerFactory, deployOptions);
+  // ✅ ADD poolManagerAddress parameter
+  const taker = await Factory.deploy(
+    ajnaErc20PoolFactory, 
+    keeperTakerFactory, 
+    poolManagerAddress,  // ✅ ADD THIS
+    deployOptions
+  );
+  
   console.log('  tx:', taker.deployTransaction.hash);
   await taker.deployed();
   console.log('  ✅ UniswapV4KeeperTaker at', taker.address);
@@ -397,16 +404,26 @@ async function deployCurveKeeperTaker(
 async function configureFactory(
   deployer: ethers.Wallet,
   factoryAddress: string,
-  addresses: DeploymentAddresses
+  addresses: DeploymentAddresses,
+  chainId: number  // ✅ ADD chainId parameter
 ): Promise<void> {
   console.log('\n⚙️  Step 3: Configuring factory with takers...');
   
   const factoryArtifact = require(path.join(__dirname, '..', 'artifacts', 'contracts', 'factories', 'AjnaKeeperTakerFactory.sol', 'AjnaKeeperTakerFactory.json'));
   const factory = new ethers.Contract(factoryAddress, factoryArtifact.abi, deployer);
+  
+  // ✅ Get gas configuration for setTaker calls
+  const gasConfig = getGasConfig(chainId);
+  const txOptions = {
+    gasLimit: 200000,  // setTaker is a simple storage write, 200k is plenty
+    gasPrice: gasConfig.gasPrice || undefined
+  };
+  
+  console.log(`⛽ Using gas config for setTaker: limit=200000${gasConfig.gasPrice ? `, price=${gasConfig.gasPrice}` : ''}`);
  
   // Register UniswapV3 taker (LiquiditySource.UNISWAPV3 = 2)
   if (addresses.uniswapTaker) {
-    const setUniTakerTx = await factory.setTaker(2, addresses.uniswapTaker);
+    const setUniTakerTx = await factory.setTaker(2, addresses.uniswapTaker, txOptions);  // ✅ ADD txOptions
     console.log('✅ UniswapV3 configuration tx:', setUniTakerTx.hash);
     await setUniTakerTx.wait();
     console.log('🎉 Factory configured with UniswapV3 taker');
@@ -414,15 +431,14 @@ async function configureFactory(
   
   // Register SushiSwap taker (LiquiditySource.SUSHISWAP = 3)
   if (addresses.sushiTaker) {
-    const setSushiTakerTx = await factory.setTaker(3, addresses.sushiTaker);
+    const setSushiTakerTx = await factory.setTaker(3, addresses.sushiTaker, txOptions);  // ✅ ADD txOptions
     console.log('✅ SushiSwap configuration tx:', setSushiTakerTx.hash);
     await setSushiTakerTx.wait();
     console.log('🎉 Factory configured with SushiSwap taker');
   }
 
   if (addresses.uniswapV4) {
-    // 5 is the enum value for UniswapV4 (LiquiditySource.UNISWAPV4)
-    const tx = await factory.setTaker(5, addresses.uniswapV4);
+    const tx = await factory.setTaker(5, addresses.uniswapV4, txOptions);  // ✅ ADD txOptions
     console.log('  setTaker(UNISWAPV4):', tx.hash);
     await tx.wait();
     console.log('  ✅ Factory wired to UniswapV4 taker');
@@ -430,13 +446,13 @@ async function configureFactory(
 
   // Register Curve taker (LiquiditySource.CURVE = 4)
   if (addresses.curveTaker) {
-    const setCurveTakerTx = await factory.setTaker(4, addresses.curveTaker);
+    const setCurveTakerTx = await factory.setTaker(4, addresses.curveTaker, txOptions);  // ✅ ADD txOptions
     console.log('✅ Curve configuration tx:', setCurveTakerTx.hash);
     await setCurveTakerTx.wait();
     console.log('🎉 Factory configured with Curve taker');
   }
-  // ADD DELAY AFTER CONFIGURATION
-  await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+  
+  await new Promise(resolve => setTimeout(resolve, 1000));
 }
 
 async function verifyDeployment(
@@ -645,14 +661,19 @@ async function main() {
     }
 
     if (config.uniswapV4RouterOverrides) {
+      // ✅ Validate poolManager exists
+      if (!config.uniswapV4RouterOverrides.poolManager) {
+        throw new Error('Missing uniswapV4RouterOverrides.poolManager address');
+      }
+      
       addresses.uniswapV4 = await deployUniswapV4KeeperTaker(
         deployer,
         config.ajna.erc20PoolFactory,
-        addresses.factory!,                 // KeeperTakerFactory you just deployed
+        addresses.factory!,
+        config.uniswapV4RouterOverrides.poolManager,  // ✅ USE poolManager, not router!
         chainInfo.chainId
       );
-      // ADD DELAY AFTER UNISWAP DEPLOYMENT
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+      await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     // Deploy curve taker if configured
@@ -675,7 +696,7 @@ async function main() {
     if (!addresses.factory) {
       throw new Error('Missing factory address for configuration');
     }
-    await configureFactory(deployer, addresses.factory, addresses);
+    await configureFactory(deployer, addresses.factory, addresses, chainInfo.chainId);  // ✅ ADD chainInfo.chainId
     
     
 

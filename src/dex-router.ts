@@ -8,9 +8,10 @@ import { swapToWeth } from './uniswap';
 import { tokenChangeDecimals } from './utils';
 import { swapWithUniversalRouter } from './universal-router-module';
 import { swapWithSushiswapRouter } from './sushiswap-router-module';
-import { swapWithUniswapV4Adapter, UniV4PoolKey } from './uniswapV4-router-module';
+import { swapWithUniswapV4Adapter } from './uniswapV4-router-module';
 import { NonceTracker } from './nonce';
-import { PostAuctionDex, UniswapV4RouterOverrides } from './config-types';
+import { UniswapV4RouterOverrides, UniV4PoolKey, PostAuctionDex } from './config-types';
+import { UniswapV4QuoteProvider } from './dex-providers/uniswapV4-quote-provider';
 
 // TODO:
 // Why does this log errors and return failure rather than throwing exceptions?
@@ -21,17 +22,19 @@ export class DexRouter {
   private connectorTokens: string;
 
   private findV4PoolKeyForPair(
-    tokenIn: string,
-    tokenOut: string,
-    v4?: UniswapV4RouterOverrides
+    v4: UniswapV4RouterOverrides,
+    a: string,
+    b: string
   ): UniV4PoolKey | undefined {
-    if (!v4?.pools) return undefined;
-  
-    // Try direct address-key matches if you store with raw addresses in the key:
-    // e.g. key = `${tokenIn.toLowerCase()}-${tokenOut.toLowerCase()}`
-    const k1 = `${tokenIn.toLowerCase()}-${tokenOut.toLowerCase()}`;
-    const k2 = `${tokenOut.toLowerCase()}-${tokenIn.toLowerCase()}`;
-    return (v4.pools[k1] || v4.pools[k2]);
+    const pools = v4.pools || {};
+    for (const key of Object.keys(pools)) {
+      const k = pools[key] as UniV4PoolKey;
+      if (!k) continue;
+      const m1 = k.token0.toLowerCase() === a.toLowerCase() && k.token1.toLowerCase() === b.toLowerCase();
+      const m2 = k.token0.toLowerCase() === b.toLowerCase() && k.token1.toLowerCase() === a.toLowerCase();
+      if (m1 || m2) return k;
+    }
+    return undefined;
   }
 
   constructor(
@@ -485,22 +488,39 @@ export class DexRouter {
           combinedSettings?.sushiswap
         );
       
-      case PostAuctionDex.UNISWAP_V4: {
-          const v4 = combinedSettings?.uniswapV4;
-          if (!v4?.router) {
-            return { success: false, error: 'UniswapV4 router not configured' };
-          }
-          const poolKey = this.findV4PoolKeyForPair(tokenIn, tokenOut, v4);
-          if (!poolKey) {
-            return { success: false, error: 'No UniswapV4 poolKey configured for token pair' };
-          }
+        case PostAuctionDex.UNISWAP_V4: {
+          const v4 = combinedSettings?.uniswapV4 as UniswapV4RouterOverrides | undefined
+                  ?? (combinedSettings as any)?.uniswapV4 as UniswapV4RouterOverrides | undefined
+                  ?? undefined;
+          if (!v4?.router) return { success: false, error: 'V4 router not configured' };
+        
+          const poolKey = this.findV4PoolKeyForPair(v4, tokenIn, tokenOut);
+          if (!poolKey) return { success: false, error: 'No V4 poolKey configured for this pair' };
+        
+          // (optional) market check via quote provider
+          try {
+            const qp = new UniswapV4QuoteProvider(this.signer, v4);
+            const ok = await qp.initialize();
+            if (ok) {
+              const mr = await qp.getMarketPrice(
+                adjustedAmount,
+                tokenIn,
+                tokenOut,
+                await new Contract(tokenIn, ERC20_ABI, this.signer).decimals(),
+                await new Contract(tokenOut, ERC20_ABI, this.signer).decimals(),
+                poolKey
+              );
+              // you can enforce marketPriceFactor here similar to your V3/Sushi logic
+            }
+          } catch {}
+        
           return await swapWithUniswapV4Adapter(
             this.signer,
             tokenIn,
             adjustedAmount,
             tokenOut,
             slippage ?? v4.defaultSlippage ?? 0.5,
-            v4,
+            v4.router,           // <-- pass the STRING router address here
             poolKey,
             to
           );

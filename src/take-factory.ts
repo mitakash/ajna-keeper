@@ -828,7 +828,7 @@ async function takeWithUniswapV4Factory({
     : ethers.BigNumber.from(0);
 
   // if your solidity poolKey includes poolManager, inject it; else drop it from the tuple
-  const poolManager = v4.poolManager ?? ethers.constants.AddressZero;
+  // const poolManager = v4.poolManager ?? ethers.constants.AddressZero;
 
   const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
     [
@@ -839,7 +839,7 @@ async function takeWithUniswapV4Factory({
       'uint256',
     ],
     [
-      [poolKey.token0, poolKey.token1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks, poolManager],
+      [poolKey.token0, poolKey.token1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
       amountOutMin,
       sqrtPriceLimitX96,
       deadline,
