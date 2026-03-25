@@ -59,13 +59,13 @@ describe('NonceTracker', () => {
     expect(nextNonce).to.equal(10);
   });
 
-  it('preserves nonce on post-broadcast failure (pending nonce advanced)', async () => {
+  it('syncs nonce to network on post-broadcast failure (pending nonce advanced)', async () => {
     let callCount = 0;
     sinon.stub(signer, 'getTransactionCount').callsFake(async () => {
       callCount++;
       // First call: initial getNonce → 10
-      // Second call: handleFailedNonce check → return 11 (nonce was consumed)
-      return callCount <= 1 ? 10 : 11;
+      // Second call: handleFailedNonce check → return 13 (nonce consumed + other process sent txs)
+      return callCount <= 1 ? 10 : 13;
     });
 
     try {
@@ -78,10 +78,10 @@ describe('NonceTracker', () => {
       // expected
     }
 
-    // Post-broadcast: pending nonce (11) > used nonce (10), so nonce is NOT reset.
-    // Stored nonce was already incremented to 11 by getNonce.
+    // Post-broadcast: pending nonce (13) > used nonce (10), so syncs to 13
+    // (not just nonce+1=11, in case another process advanced the nonce further)
     const nextNonce = await NonceTracker.getNonce(signer);
-    expect(nextNonce).to.equal(11);
+    expect(nextNonce).to.equal(13);
   });
 
   it('serializes concurrent transactions for the same address', async function () {
@@ -130,6 +130,98 @@ describe('NonceTracker', () => {
     expect(result1).to.equal('failed');
     // Pre-broadcast failure: pending nonce (10) <= used nonce (10), so reset to 10
     expect(result2).to.equal(10);
+  });
+
+  it('preserves incremented nonce when RPC fails during error handling', async () => {
+    let callCount = 0;
+    sinon.stub(signer, 'getTransactionCount').callsFake(async () => {
+      callCount++;
+      if (callCount <= 1) return 10; // initial getNonce
+      // handleFailedNonce RPC call fails
+      throw new Error('RPC connection refused');
+    });
+
+    try {
+      await NonceTracker.queueTransaction(signer, async () => {
+        throw new Error('tx failed');
+      });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      // expected
+    }
+
+    // RPC failed during nonce check — conservative behavior: keep nonce+1 (11)
+    // rather than risk reusing nonce 10 which might be in the mempool
+    const nextNonce = await NonceTracker.getNonce(signer);
+    expect(nextNonce).to.equal(11);
+  });
+
+  it('recovers correctly through success-failure-success sequence', async function () {
+    this.timeout(10000);
+    // Always return 10 — simulates pre-broadcast failures (nonce never consumed)
+    sinon.stub(signer, 'getTransactionCount').resolves(10);
+
+    // tx1: success (nonce 10)
+    const r1 = await NonceTracker.queueTransaction(signer, async (nonce) => nonce);
+    expect(r1).to.equal(10);
+
+    // tx2: pre-broadcast failure (nonce 11 attempted, not consumed, resets to 10)
+    try {
+      await NonceTracker.queueTransaction(signer, async () => {
+        throw new Error('insufficient funds');
+      });
+    } catch (e) { /* expected */ }
+
+    // tx3: success — should reuse nonce 10 (since tx2 never consumed it)
+    // but getTransactionCount still returns 10, so reset landed at 10
+    const r3 = await NonceTracker.queueTransaction(signer, async (nonce) => nonce);
+    expect(r3).to.equal(10);
+  });
+
+  it('isolates queues between different signers', async function () {
+    this.timeout(10000);
+    const signer2: Signer = Wallet.createRandom();
+
+    sinon.stub(signer, 'getTransactionCount').resolves(10);
+    sinon.stub(signer2, 'getTransactionCount').resolves(50);
+
+    // Queue txs for both signers concurrently
+    const [r1, r2] = await Promise.all([
+      NonceTracker.queueTransaction(signer, async (nonce) => nonce),
+      NonceTracker.queueTransaction(signer2, async (nonce) => nonce),
+    ]);
+
+    expect(r1).to.equal(10);
+    expect(r2).to.equal(50);
+
+    // Second round — each should have independently incremented
+    const [r3, r4] = await Promise.all([
+      NonceTracker.queueTransaction(signer, async (nonce) => nonce),
+      NonceTracker.queueTransaction(signer2, async (nonce) => nonce),
+    ]);
+
+    expect(r3).to.equal(11);
+    expect(r4).to.equal(51);
+  });
+
+  it('resets when pendingNonce equals used nonce exactly (boundary)', async () => {
+    let callCount = 0;
+    sinon.stub(signer, 'getTransactionCount').callsFake(async () => {
+      callCount++;
+      // First call: getNonce init → 10
+      // Second call: handleFailedNonce → returns 10 (same as nonce used)
+      return 10;
+    });
+
+    try {
+      await NonceTracker.queueTransaction(signer, async () => {
+        throw new Error('gas estimation failed');
+      });
+    } catch (e) { /* expected */ }
+
+    // pendingNonce (10) == used nonce (10), so <= is true → resets to 10
+    const nextNonce = await NonceTracker.getNonce(signer);
+    expect(nextNonce).to.equal(10);
   });
 
   it('cleans up queue entries after settlement', async function () {

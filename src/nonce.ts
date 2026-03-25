@@ -137,9 +137,11 @@ export class NonceTracker {
     try {
       const pendingNonce = await signer.getTransactionCount('pending');
       if (pendingNonce > nonce) {
-        // Tx was broadcast — nonce is consumed. The stored nonce (nonce+1) is correct.
+        // Tx was broadcast — nonce is consumed. Sync to the network's pending nonce
+        // in case it advanced by more than one (e.g., another process sent txs).
+        this.nonces.set(address, pendingNonce);
         logger.warn(
-          `Nonce ${nonce} was consumed (pending=${pendingNonce}), keeping incremented nonce for ${address}`
+          `Nonce ${nonce} was consumed (pending=${pendingNonce}), syncing nonce for ${address}`
         );
       } else {
         // Tx was NOT broadcast — safe to reset so the nonce can be reused.
@@ -149,9 +151,9 @@ export class NonceTracker {
         this.nonces.set(address, pendingNonce);
       }
     } catch (rpcError) {
-      // If we can't query the network, fall back to resetting (original behavior).
-      // This is the conservative choice: a skipped nonce is recoverable,
-      // but a reused nonce after broadcast is dangerous.
+      // If we can't query the network, preserve the incremented nonce.
+      // A skipped nonce is recoverable (next cycle resyncs), but a reused
+      // nonce after broadcast risks replacing a live transaction.
       logger.warn(`Failed to check pending nonce for ${address}, preserving incremented nonce: ${rpcError}`);
     }
   }
