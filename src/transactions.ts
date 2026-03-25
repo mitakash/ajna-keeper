@@ -17,13 +17,13 @@ import {
 import { Liquidation } from '@ajna-finance/sdk/dist/classes/Liquidation';
 import { settle } from '@ajna-finance/sdk/dist/contracts/pool';
 import { getAllowanceOfErc20, getDecimalsErc20, convertWadToTokenDecimals } from './erc20';
-import { weiToDecimaled } from './utils';  //added these just in case we need extra logging for debugging
+import { weiToDecimaled } from './utils';
+import { logger } from './logging';
 
 export async function poolWithdrawBonds(pool: FungiblePool, signer: Signer) {
   const contractPoolWithSigner = pool.contract.connect(signer);
   const recipient = await signer.getAddress();
-  
-  // Use queueTransaction instead of manual nonce management
+
   await NonceTracker.queueTransaction(signer, async (nonce) => {
     const tx = await withdrawBonds(
       contractPoolWithSigner,
@@ -33,7 +33,9 @@ export async function poolWithdrawBonds(pool: FungiblePool, signer: Signer) {
         nonce: nonce.toString(),
       }
     );
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Withdrew bonds from pool ${pool.name} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -50,7 +52,9 @@ export async function bucketRemoveQuoteToken(
       bucket.index,
       { nonce: nonce.toString() }
     );
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Removed quote token from bucket ${bucket.index} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -67,7 +71,9 @@ export async function bucketRemoveCollateralToken(
       maxAmount,
       { nonce: nonce.toString() }
     );
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Removed collateral from bucket ${bucket.index} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -88,7 +94,9 @@ export async function poolQuoteApprove(
       denormalizedAllowance,
       { nonce: nonce.toString() }
     );
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Approved quote token for pool ${pool.name}, allowance: ${weiToDecimaled(allowance)} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -104,7 +112,9 @@ export async function poolKick(
     const tx = await kick(contractPoolWithSigner, borrower, limitIndex, {
       nonce: nonce.toString(),
     });
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Kicked borrower ${borrower.slice(0, 8)} in pool ${pool.name} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -124,7 +134,9 @@ export async function liquidationArbTake(
         nonce: nonce.toString(),
       }
     );
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Arb take on borrower ${liquidation.borrowerAddress.slice(0, 8)} at bucket ${bucketIndex} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -146,7 +158,9 @@ export async function poolSettle(
         gasLimit: 800000 // Conservative gas limit for settlement
       }
     );
-    return await tx.verifyAndSubmit();
+    const receipt = await tx.verifyAndSubmit();
+    logger.info(`Settled borrower ${borrower.slice(0, 8)} in pool ${pool.name} (depth: ${bucketDepth}) | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 

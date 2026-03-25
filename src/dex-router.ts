@@ -76,7 +76,7 @@ export class DexRouter {
           Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
         },
       });
-      console.log('1inch quote response:', response.data);
+      logger.debug(`1inch quote: ${amount} ${tokenIn} → ${response.data.dstAmount} ${tokenOut}`);
 
       return { success: true, dstAmount: response.data.dstAmount };
     } catch (error: Error | any) {
