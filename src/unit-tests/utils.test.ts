@@ -1,7 +1,10 @@
 import { FungiblePool } from '@ajna-finance/sdk';
 import { promises as fs } from 'fs';
-import { expect } from 'chai';
+import chai, { expect } from 'chai';
+import chaiAsPromised from 'chai-as-promised';
 import { BigNumber, providers, Wallet } from 'ethers';
+
+chai.use(chaiAsPromised);
 import { KeeperConfig } from '../config-types';
 import {
   overrideMulticall,
