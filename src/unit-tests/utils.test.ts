@@ -170,6 +170,22 @@ describe('tokenChangeDecimals', () => {
   testConvertDecimals('1000000', 6, 18, '1000000000000000000');
   testConvertDecimals('1000000000000000000', 18, 6, '1000000');
   testConvertDecimals('1000000000000000000', 18, 18, '1000000000000000000');
+
+  // Edge cases: dust amounts that truncate to zero (18 → 6)
+  testConvertDecimals('100', 18, 6, '0');
+  testConvertDecimals('0', 18, 6, '0');
+  testConvertDecimals('999999999999', 18, 6, '0');
+
+  // Edge case: value exactly at the boundary (10^12 in 18 decimals = 1 in 6 decimals)
+  testConvertDecimals('1000000000000', 18, 6, '1');
+  testConvertDecimals('1500000000000', 18, 6, '1');
+
+  // Edge cases: 18 → 8 (e.g., WBTC)
+  testConvertDecimals('50000000000', 18, 8, '5');
+  testConvertDecimals('100', 18, 8, '0');
+
+  // Edge case: 6 → 18 with zero
+  testConvertDecimals('0', 6, 18, '0');
 });
 
 describe('waitForConditionToBeTrue', () => {

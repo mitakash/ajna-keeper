@@ -122,7 +122,9 @@ export function tokenChangeDecimals(
     const zeroes = '0'.repeat(targetDecimals - currDecimals);
     return BigNumber.from(tokenWeiStr + zeroes);
   } else if (currDecimals > targetDecimals) {
-    return BigNumber.from(tokenWeiStr.slice(0, targetDecimals - currDecimals));
+    const charsToRemove = currDecimals - targetDecimals;
+    if (tokenWeiStr.length <= charsToRemove) return BigNumber.from(0);
+    return BigNumber.from(tokenWeiStr.slice(0, -charsToRemove));
   } else {
     return BigNumber.from(tokenWei.toString());
   }

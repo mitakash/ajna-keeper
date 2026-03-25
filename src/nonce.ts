@@ -1,12 +1,11 @@
-// Updated nonce.ts with simple universal RPC cache refresh delay
 import { Signer } from 'ethers';
 import { logger } from './logging';
 
 export class NonceTracker {
   private nonces: Map<string, number> = new Map();
-  private pendingTransactions: Map<string, Promise<void>> = new Map();
+  private queues: Map<string, Promise<unknown>> = new Map();
   private static instance: NonceTracker;
-  
+
   // Universal RPC cache refresh delay - applies to all chains
   private static readonly RPC_CACHE_REFRESH_DELAY = 1000; // 1000ms for aggressive RPC caching
 
@@ -30,7 +29,7 @@ export class NonceTracker {
   static clearNonces() {
     const tracker = new NonceTracker();
     tracker.nonces = new Map();
-    tracker.pendingTransactions = new Map();
+    tracker.queues = new Map();
     logger.debug('Cleared all nonce tracking data');
   }
 
@@ -40,71 +39,74 @@ export class NonceTracker {
   ): Promise<T> {
     const tracker = new NonceTracker();
     return tracker.queueTransaction(signer, txFunction);
-  }   
+  }
 
   public async getNonce(signer: Signer): Promise<number> {
     const address = await signer.getAddress();
     logger.debug(`Getting nonce for address: ${address}`);
-  
+
     // If we don't have a nonce stored, get it from the network
     if (this.nonces.get(address) === undefined) {
       await this.resetNonce(signer, address);
     }
-  
+
     // Get the current nonce value
     const currentNonce = this.nonces.get(address)!;
     logger.debug(`Using nonce: ${currentNonce}`);
-  
+
     // Increment the stored nonce for next time
     this.nonces.set(address, currentNonce + 1);
-  
+
     return currentNonce;
   }
-  
+
   public async resetNonce(signer: Signer, address: string) {
     // Get the latest nonce directly from the network
     const latestNonce = await signer.getTransactionCount('pending');
     logger.debug(`Reset nonce for ${address} to ${latestNonce}`);
     this.nonces.set(address, latestNonce);
     return latestNonce;
-  }  
-  
-  // Enhanced implementation with universal RPC cache refresh delay
+  }
+
+  /**
+   * Serializes transactions per address using a promise chain.
+   * Concurrent calls for the same address wait for prior transactions to complete
+   * before acquiring a nonce, preventing race conditions on failure/reset.
+   */
   public async queueTransaction<T>(
     signer: Signer,
     txFunction: (nonce: number) => Promise<T>
   ): Promise<T> {
     const address = await signer.getAddress();
     logger.debug(`Queueing transaction for ${address}`);
-    
-    try {
-      // Get nonce from our tracker
-      const nonce = await this.getNonce(signer);
-      logger.debug(`Executing transaction with nonce ${nonce}`);
-      
-      // Execute the transaction
-      try {
-        const result = await txFunction(nonce);
-        
-        // Universal RPC cache refresh delay after every transaction
-        // This prevents race conditions between transaction confirmation and subsequent reads
-        logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
-        await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
-        
-        logger.debug(`Transaction with nonce ${nonce} completed successfully`);
-        return result;
-      } catch (txError) {
-        logger.error(`Transaction with nonce ${nonce} failed: ${txError}`);
-        
-        // Reset nonce on failure
-        await this.resetNonce(signer, address);
-        
-        throw txError;
-      }
-    } catch (error) {
-      logger.error(`Error in queueTransaction: ${error}`);
-      throw error;
-    }
+
+    const previous = this.queues.get(address) || Promise.resolve();
+
+    const next = previous
+      .catch(() => {}) // Don't let a prior failure block the chain
+      .then(async () => {
+        const nonce = await this.getNonce(signer);
+        logger.debug(`Executing transaction with nonce ${nonce}`);
+
+        try {
+          const result = await txFunction(nonce);
+
+          // Universal RPC cache refresh delay after every transaction
+          logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
+          await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
+
+          logger.debug(`Transaction with nonce ${nonce} completed successfully`);
+          return result;
+        } catch (txError) {
+          logger.error(`Transaction with nonce ${nonce} failed: ${txError}`);
+          await this.resetNonce(signer, address);
+          throw txError;
+        }
+      });
+
+    this.queues.set(address, next.catch(() => {}));
+
+    return next;
   }
 
   /**

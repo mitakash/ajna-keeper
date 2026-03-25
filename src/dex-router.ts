@@ -459,6 +459,11 @@ export class DexRouter {
       `Converted ${amount.toString()} (WAD) to ${adjustedAmount.toString()} (${decimals} decimals) for token ${tokenIn}`
     );
 
+    if (adjustedAmount.isZero()) {
+      logger.debug(`Skipping swap: dust amount rounds to zero in ${decimals}-decimal token ${tokenIn}`);
+      return { success: false, error: `Amount too small for ${tokenIn} (rounds to zero)` };
+    }
+
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
     const balance = await erc20.balanceOf(fromAddress);
 

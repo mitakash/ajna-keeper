@@ -64,4 +64,51 @@ describe('NonceTracker', () => {
   const nextNonce = await NonceTracker.getNonce(signer);
   expect(nextNonce).to.equal(10);
   });
+
+  it('serializes concurrent transactions for the same address', async function () {
+    this.timeout(10000);
+    sinon.stub(signer, 'getTransactionCount').resolves(10);
+
+    const executionOrder: number[] = [];
+
+    // Queue two transactions concurrently — they should execute sequentially
+    const tx1 = NonceTracker.queueTransaction(signer, async (nonce) => {
+      executionOrder.push(nonce);
+      await new Promise(resolve => setTimeout(resolve, 50));
+      return `tx-${nonce}`;
+    });
+
+    const tx2 = NonceTracker.queueTransaction(signer, async (nonce) => {
+      executionOrder.push(nonce);
+      return `tx-${nonce}`;
+    });
+
+    const [result1, result2] = await Promise.all([tx1, tx2]);
+
+    expect(result1).to.equal('tx-10');
+    expect(result2).to.equal('tx-11');
+    // Nonces should have been assigned in order
+    expect(executionOrder).to.deep.equal([10, 11]);
+  });
+
+  it('does not corrupt nonce when concurrent transaction fails', async function () {
+    this.timeout(10000);
+    sinon.stub(signer, 'getTransactionCount').resolves(10);
+
+    // First transaction fails
+    const tx1 = NonceTracker.queueTransaction(signer, async () => {
+      throw new Error('tx1 failed');
+    }).catch(() => 'failed');
+
+    // Second transaction should get a valid nonce after reset
+    const tx2 = NonceTracker.queueTransaction(signer, async (nonce) => {
+      return nonce;
+    });
+
+    const [result1, result2] = await Promise.all([tx1, tx2]);
+
+    expect(result1).to.equal('failed');
+    // After tx1 failure resets nonce to 10, tx2 should get 10
+    expect(result2).to.equal(10);
+  });
 });

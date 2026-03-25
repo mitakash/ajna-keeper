@@ -25,7 +25,9 @@ export class JsonRpcProvider extends providers.JsonRpcProvider {
       this.getGasPrice().catch((error) => {
         return null;
       }),
-      this.getMaxPriorityFeePerGas(),
+      this.getMaxPriorityFeePerGas().catch(() => {
+        return null;
+      }),
     ]);
 
     let maxFeePerGas: null | BigNumber = null;
