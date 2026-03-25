@@ -186,6 +186,11 @@ describe('tokenChangeDecimals', () => {
 
   // Edge case: 6 → 18 with zero
   testConvertDecimals('0', 6, 18, '0');
+
+  // Negative values
+  testConvertDecimals('-1000000', 6, 18, '-1000000000000000000');
+  testConvertDecimals('-1000000000000000000', 18, 6, '-1000000');
+  testConvertDecimals('-100', 18, 6, '0');
 });
 
 describe('waitForConditionToBeTrue', () => {

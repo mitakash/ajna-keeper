@@ -284,6 +284,7 @@ export class RewardActionTracker {
         logger.debug(
           `Skipping dust reward transfer to ${rewardAction.to}, amountWad: ${weiToDecimaled(amountWad)}, tokenAddress: ${token}`
         );
+        this.removeToken(rewardAction, token, amountWad);
         return;
       }
       await transferErc20(this.signer, token, rewardAction.to, amount);
