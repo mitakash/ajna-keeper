@@ -72,6 +72,10 @@ export class NonceTracker {
    * Serializes transactions per address using a promise chain.
    * Concurrent calls for the same address wait for prior transactions to complete
    * before acquiring a nonce, preventing race conditions on failure/reset.
+   *
+   * On error, checks the network's pending nonce to determine if the tx was
+   * broadcast before deciding whether to reset. This prevents nonce reuse
+   * when a tx times out after being sent to the mempool.
    */
   public async queueTransaction<T>(
     signer: Signer,
@@ -80,33 +84,76 @@ export class NonceTracker {
     const address = await signer.getAddress();
     logger.debug(`Queueing transaction for ${address}`);
 
+    // Synchronous read-then-write: safe because no await between reading
+    // the queue and writing the new entry. For local Wallet signers,
+    // getAddress() above returns a resolved promise whose continuation
+    // runs atomically in a single microtask.
     const previous = this.queues.get(address) || Promise.resolve();
 
-    const next = previous
-      .catch(() => {}) // Don't let a prior failure block the chain
-      .then(async () => {
-        const nonce = await this.getNonce(signer);
-        logger.debug(`Executing transaction with nonce ${nonce}`);
+    const done = previous.catch(() => {}).then(async () => {
+      const nonce = await this.getNonce(signer);
+      logger.debug(`Executing transaction with nonce ${nonce}`);
 
-        try {
-          const result = await txFunction(nonce);
+      try {
+        const result = await txFunction(nonce);
 
-          // Universal RPC cache refresh delay after every transaction
-          logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
-          await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
+        // Universal RPC cache refresh delay after every transaction
+        logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
+        await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
 
-          logger.debug(`Transaction with nonce ${nonce} completed successfully`);
-          return result;
-        } catch (txError) {
-          logger.error(`Transaction with nonce ${nonce} failed: ${txError}`);
-          await this.resetNonce(signer, address);
-          throw txError;
-        }
-      });
+        logger.debug(`Transaction with nonce ${nonce} completed successfully`);
+        return result;
+      } catch (txError) {
+        logger.error(`Transaction with nonce ${nonce} failed: ${txError}`);
+        await this.handleFailedNonce(signer, address, nonce);
+        throw txError;
+      }
+    });
 
-    this.queues.set(address, next.catch(() => {}));
+    // Store a caught version so the chain never breaks.
+    // Clean up the entry when it settles to prevent unbounded growth.
+    const caught = done.catch(() => {});
+    this.queues.set(address, caught);
+    caught.then(() => {
+      if (this.queues.get(address) === caught) {
+        this.queues.delete(address);
+      }
+    });
 
-    return next;
+    return done;
+  }
+
+  /**
+   * After a failed transaction, check the network's pending nonce to decide
+   * whether the nonce was consumed (tx was broadcast) or not (pre-broadcast
+   * error like gas estimation failure or insufficient funds).
+   *
+   * - If pendingNonce > nonce: the tx reached the mempool. The stored nonce
+   *   (already incremented to nonce+1 by getNonce) is correct. Do NOT reset.
+   * - If pendingNonce <= nonce: the tx never made it to the mempool. Reset
+   *   to the network value so the nonce can be reused.
+   */
+  private async handleFailedNonce(signer: Signer, address: string, nonce: number) {
+    try {
+      const pendingNonce = await signer.getTransactionCount('pending');
+      if (pendingNonce > nonce) {
+        // Tx was broadcast — nonce is consumed. The stored nonce (nonce+1) is correct.
+        logger.warn(
+          `Nonce ${nonce} was consumed (pending=${pendingNonce}), keeping incremented nonce for ${address}`
+        );
+      } else {
+        // Tx was NOT broadcast — safe to reset so the nonce can be reused.
+        logger.debug(
+          `Nonce ${nonce} was not consumed (pending=${pendingNonce}), resetting nonce for ${address}`
+        );
+        this.nonces.set(address, pendingNonce);
+      }
+    } catch (rpcError) {
+      // If we can't query the network, fall back to resetting (original behavior).
+      // This is the conservative choice: a skipped nonce is recoverable,
+      // but a reused nonce after broadcast is dangerous.
+      logger.warn(`Failed to check pending nonce for ${address}, preserving incremented nonce: ${rpcError}`);
+    }
   }
 
   /**

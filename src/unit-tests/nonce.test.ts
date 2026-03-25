@@ -37,32 +37,51 @@ describe('NonceTracker', () => {
     expect(nonceAfterReset).equals(10);
   });
 
-  it('resets nonce when transaction fails', async () => {
-  const address = await signer.getAddress();
-  sinon.stub(signer, 'getTransactionCount').resolves(10);
-  
-  // First, let's get a nonce and increment it
-  await NonceTracker.getNonce(signer); // Should be 10
-  await NonceTracker.getNonce(signer); // Should be 11
-  
-  // Set up a transaction function that will fail
-  const txFunction = async (nonce: number) => {
-    throw new Error('Transaction failed');
-  };
+  it('resets nonce on pre-broadcast failure (pending nonce unchanged)', async () => {
+    // getTransactionCount always returns 10 — simulates nonce NOT consumed
+    sinon.stub(signer, 'getTransactionCount').resolves(10);
 
-  // Attempt transaction and expect it to fail
-  try {
-    await NonceTracker.queueTransaction(signer, txFunction);
-    // Should not reach here
-    expect.fail('Transaction should have failed');
-  } catch (error) {
-    // Expected to fail
-  }
+    // Advance stored nonce past 10
+    await NonceTracker.getNonce(signer); // 10
+    await NonceTracker.getNonce(signer); // 11
 
-  // Instead of checking if resetNonce was called, check if the nonce was actually reset
-  // by getting the next nonce - it should be 10 (reset) and not 12 (incremented)
-  const nextNonce = await NonceTracker.getNonce(signer);
-  expect(nextNonce).to.equal(10);
+    try {
+      await NonceTracker.queueTransaction(signer, async () => {
+        throw new Error('Gas estimation failed');
+      });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      // expected
+    }
+
+    // Pre-broadcast: pending nonce (10) <= used nonce (12), so it resets to 10
+    const nextNonce = await NonceTracker.getNonce(signer);
+    expect(nextNonce).to.equal(10);
+  });
+
+  it('preserves nonce on post-broadcast failure (pending nonce advanced)', async () => {
+    let callCount = 0;
+    sinon.stub(signer, 'getTransactionCount').callsFake(async () => {
+      callCount++;
+      // First call: initial getNonce → 10
+      // Second call: handleFailedNonce check → return 11 (nonce was consumed)
+      return callCount <= 1 ? 10 : 11;
+    });
+
+    try {
+      await NonceTracker.queueTransaction(signer, async () => {
+        // Simulate: tx was broadcast but confirmation timed out
+        throw new Error('Transaction confirmation timeout after 2 minutes');
+      });
+      expect.fail('Should have thrown');
+    } catch (error) {
+      // expected
+    }
+
+    // Post-broadcast: pending nonce (11) > used nonce (10), so nonce is NOT reset.
+    // Stored nonce was already incremented to 11 by getNonce.
+    const nextNonce = await NonceTracker.getNonce(signer);
+    expect(nextNonce).to.equal(11);
   });
 
   it('serializes concurrent transactions for the same address', async function () {
@@ -91,16 +110,17 @@ describe('NonceTracker', () => {
     expect(executionOrder).to.deep.equal([10, 11]);
   });
 
-  it('does not corrupt nonce when concurrent transaction fails', async function () {
+  it('does not corrupt nonce when concurrent transaction fails pre-broadcast', async function () {
     this.timeout(10000);
+    // getTransactionCount always returns 10 — nonce not consumed
     sinon.stub(signer, 'getTransactionCount').resolves(10);
 
-    // First transaction fails
+    // First transaction fails pre-broadcast
     const tx1 = NonceTracker.queueTransaction(signer, async () => {
       throw new Error('tx1 failed');
     }).catch(() => 'failed');
 
-    // Second transaction should get a valid nonce after reset
+    // Second transaction should get nonce 10 after reset
     const tx2 = NonceTracker.queueTransaction(signer, async (nonce) => {
       return nonce;
     });
@@ -108,7 +128,21 @@ describe('NonceTracker', () => {
     const [result1, result2] = await Promise.all([tx1, tx2]);
 
     expect(result1).to.equal('failed');
-    // After tx1 failure resets nonce to 10, tx2 should get 10
+    // Pre-broadcast failure: pending nonce (10) <= used nonce (10), so reset to 10
     expect(result2).to.equal(10);
+  });
+
+  it('cleans up queue entries after settlement', async function () {
+    this.timeout(10000);
+    sinon.stub(signer, 'getTransactionCount').resolves(10);
+
+    await NonceTracker.queueTransaction(signer, async () => 'done');
+
+    // Allow microtask for cleanup to run
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // Queue should be cleaned up — next call should work without chaining
+    const result = await NonceTracker.queueTransaction(signer, async (nonce) => nonce);
+    expect(result).to.equal(11);
   });
 });
