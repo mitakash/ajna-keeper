@@ -271,8 +271,8 @@ export interface KeeperConfig {
   multicallBlock?: number;
   /** Contract addresses passed to Ajna for this chain. See here for addresses https://faqs.ajna.finance/info/deployment-addresses-and-bridges */
   ajna: AjnaConfigParams;
-  /** Your API key for Coingecko.com */
-  coinGeckoApiKey: string;
+  /** Your API key for Coingecko.com (optional - will fallback to Alchemy Prices API if not provided) */
+  coinGeckoApiKey?: string;
   /** List of pool specific settings. */
   pools: PoolConfig[];
   /** Custom address overrides for Uniswap. Only need this if any of the collectLpRewards have the RewardAction: uniswap. */
@@ -353,7 +353,7 @@ export function assertIsValidConfig(
   expectProperty(config, 'subgraphUrl');
   expectProperty(config, 'keeperKeystore');
   expectProperty(config, 'ajna');
-  expectProperty(config, 'coinGeckoApiKey');
+  // coinGeckoApiKey is now optional - will fallback to Alchemy Prices API
   expectProperty(config, 'pools');
 }
 

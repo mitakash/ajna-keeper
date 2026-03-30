@@ -22,12 +22,15 @@ export async function startKeeperFromConfig(config: KeeperConfig) {
     config.keeperKeystore,
     config.ethRpcUrl
   );
+  const network = await provider.getNetwork();
+  const chainId = network.chainId;
+
   configureAjna(config.ajna);
   const ajna = new AjnaSDK(provider);
   logger.info('...and pools:');
   const poolMap = await getPoolsFromConfig(ajna, config);
 
-  kickPoolsLoop({ poolMap, config, signer });
+  kickPoolsLoop({ poolMap, config, signer, chainId });
   takePoolsLoop({ poolMap, config, signer });
   settlementLoop({ poolMap, config, signer });
   collectBondLoop({ poolMap, config, signer });
@@ -56,9 +59,10 @@ interface KeepPoolParams {
   poolMap: PoolMap;
   config: KeeperConfig;
   signer: Signer;
+  chainId?: number;
 }
 
-async function kickPoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
+async function kickPoolsLoop({ poolMap, config, signer, chainId }: KeepPoolParams) {
   const poolsWithKickSettings = config.pools.filter(hasKickSettings);
   while (true) {
     for (const poolConfig of poolsWithKickSettings) {
@@ -69,6 +73,7 @@ async function kickPoolsLoop({ poolMap, config, signer }: KeepPoolParams) {
           poolConfig,
           signer,
           config,
+          chainId,
         });
         await delay(config.delayBetweenActions);
       } catch (error) {

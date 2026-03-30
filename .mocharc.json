@@ -1,0 +1,7 @@
+{
+  "require": ["ts-node/register"],
+  "spec": "src/unit-tests/**/*.test.ts",
+  "node-option": ["loader=ts-node/esm"],
+  "extensions": ["ts"],
+  "loader": "ts-node/esm"
+}

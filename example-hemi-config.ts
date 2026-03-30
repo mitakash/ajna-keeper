@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import {
   KeeperConfig,
   RewardActionLabel,
@@ -10,9 +11,9 @@ import { FeeAmount } from '@uniswap/v3-sdk';
 
 const config: KeeperConfig = {
   dryRun: false,
-  ethRpcUrl: 'https://rpc.hemi.network/rpc', // THIS CURRENTLY WORKS FOR HEMI, BUT THEY MIGHT RATE LIMIT IN THE FUTURE
-  subgraphUrl: 'https://api.goldsky.com/api/public/project_YOUR_GOLDSKY_PROJECT_ID/subgraphs/ajna-hemi/1.0.0/gn', // YOU NEED TO CHANGE THIS
-  keeperKeystore: 'FULL_PATH/keystore.json', // YOU NEED TO CHANGE THIS
+  ethRpcUrl: 'https://rpc.hemi.network/rpc', // Hemi public RPC (may be rate limited in the future)
+  subgraphUrl: `https://gateway.thegraph.com/api/${process.env.GRAPH_API_KEY}/subgraphs/id/YOUR_HEMI_SUBGRAPH_ID`,
+  keeperKeystore: '/path/to/your/keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 484490,
   delayBetweenRuns: 2,  // IN SECONDS
@@ -66,7 +67,7 @@ const config: KeeperConfig = {
     burnWrapper: '',
     lenderHelper: '',
   },
-  coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY', // GET YOUR OWN COINGECKO API KEY
+  coinGeckoApiKey: process.env.COINGECKO_API_KEY, // Get a free key from https://www.coingecko.com/en/developers/dashboard
   pools: 
   [
     {   

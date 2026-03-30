@@ -11,13 +11,16 @@ import { logger } from './logging';
 // Retrieves the market price using the configured source
 export async function getPrice(
   priceOrigin: PriceOrigin,
-  coinGeckoApiKey: string = '',
-  poolPrices: PriceInfo
+  coinGeckoApiKey: string | undefined = '',
+  poolPrices: PriceInfo,
+  chainId?: number,
+  rpcUrl?: string,
+  tokenAddresses?: { [key: string]: string }
 ) {
   let price: number;
   switch (priceOrigin.source) {
     case PriceOriginSource.COINGECKO:
-      price = await getPriceCoinGecko(priceOrigin, coinGeckoApiKey);
+      price = await getPriceCoinGecko(priceOrigin, coinGeckoApiKey, chainId, rpcUrl, tokenAddresses);
       break;
     case PriceOriginSource.FIXED:
       price = priceOrigin.value;

@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import {
   KeeperConfig,
   RewardActionLabel,
@@ -10,9 +11,9 @@ import { FeeAmount } from '@uniswap/v3-sdk';
 
 const config: KeeperConfig = {
   dryRun: false,
-  ethRpcUrl: 'https://avax-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_API_KEY',  // GET YOUR OWN ALCHEMY URL
-  subgraphUrl: 'https://api.goldsky.com/api/public/YOUR_GOLDSKY_PROJECT_ID/subgraphs/ajna-avalanche/v0.1.9-rc10/gn', // GET GOLDSKY SUBGRAPH OR LOCAL SUBGRAPH
-  keeperKeystore: 'FULL_PATH/keystore.json', // YOU NEED FULL PATH TO YOUR KEYSTORE
+  ethRpcUrl: `https://avax-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+  subgraphUrl: `https://gateway.thegraph.com/api/${process.env.GRAPH_API_KEY}/subgraphs/id/YOUR_AVALANCHE_SUBGRAPH_ID`,
+  keeperKeystore: '/path/to/your/keystore.json',
   
   // 1inch Single Contract Setup for External Takes (deploy with scripts/query-1inch.ts --action deploy)
   keeperTaker: '0x[DEPLOY_WITH_query-1inch.ts]',  // Deploy smart contract using: yarn compile && scripts/query-1inch.ts --config [config] --action deploy
@@ -66,7 +67,7 @@ const config: KeeperConfig = {
     burnWrapper: '',
     lenderHelper: '',
   },
-  coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY', // YOU NEED TO GET A COINGECKO API KEY, IF NOT USING STATIC PRICES
+  coinGeckoApiKey: process.env.COINGECKO_API_KEY, // Get a free key from https://www.coingecko.com/en/developers/dashboard
   pools: 
   [
     {

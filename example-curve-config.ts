@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import {
   KeeperConfig,
   RewardActionLabel,
@@ -10,9 +11,9 @@ import {
 
 const config: KeeperConfig = {
   dryRun: false,
-  ethRpcUrl: 'YOUR_RPC_URL_HERE', // Replace with your RPC endpoint
-  subgraphUrl: 'YOUR_SUBGRAPH_URL_HERE', // Replace with your Goldsky subgraph URL
-  keeperKeystore: 'PUT_YOUR_FULL_PATH_HERE/keystore.json',
+  ethRpcUrl: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`, // Or use Base/Avalanche
+  subgraphUrl: `https://gateway.thegraph.com/api/${process.env.GRAPH_API_KEY}/subgraphs/id/YOUR_SUBGRAPH_ID`,
+  keeperKeystore: '/path/to/your/keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 11907934, // Adjust for your network
   delayBetweenRuns: 15,
@@ -76,7 +77,7 @@ const config: KeeperConfig = {
     lenderHelper: '',
   },
   
-  coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY', // Replace with your API key
+  coinGeckoApiKey: process.env.COINGECKO_API_KEY, // Get a free key from https://www.coingecko.com/en/developers/dashboard
   
   pools: [
     // Stablecoin pool example using Curve

@@ -25,8 +25,9 @@ interface HandleKickParams {
   signer: Signer;
   config: Pick<
     KeeperConfig,
-    'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'coinGeckoApiKey'
+    'dryRun' | 'subgraphUrl' | 'delayBetweenActions' | 'coinGeckoApiKey' | 'ethRpcUrl' | 'tokenAddresses'
   >;
+  chainId?: number;
 }
 
 const LIQUIDATION_BOND_MARGIN: number = 0.01; // How much extra margin to allow for liquidationBond. Expressed as a ratio (0 - 1).
@@ -36,11 +37,13 @@ export async function handleKicks({
   poolConfig,
   signer,
   config,
+  chainId,
 }: HandleKickParams) {
   for await (const loanToKick of getLoansToKick({
     pool,
     poolConfig,
     config,
+    chainId,
   })) {
     await kick({ signer, pool, loanToKick, config });
     await delay(config.delayBetweenActions);
@@ -56,14 +59,15 @@ interface LoanToKick {
 }
 
 interface GetLoansToKickParams
-  extends Pick<HandleKickParams, 'pool' | 'poolConfig'> {
-  config: Pick<KeeperConfig, 'subgraphUrl' | 'coinGeckoApiKey'>;
+  extends Pick<HandleKickParams, 'pool' | 'poolConfig' | 'chainId'> {
+  config: Pick<KeeperConfig, 'subgraphUrl' | 'coinGeckoApiKey' | 'ethRpcUrl' | 'tokenAddresses'>;
 }
 
 export async function* getLoansToKick({
   pool,
   config,
   poolConfig,
+  chainId,
 }: GetLoansToKickParams): AsyncGenerator<LoanToKick> {
   const { subgraphUrl } = config;
   const { loans } = await subgraph.getLoans(subgraphUrl, pool.poolAddress);
@@ -123,7 +127,10 @@ export async function* getLoansToKick({
     const limitPrice = await getPrice(
       poolConfig.price,
       config.coinGeckoApiKey,
-      poolPrices
+      poolPrices,
+      chainId,
+      config.ethRpcUrl,
+      config.tokenAddresses
     );
     if (
       weiToDecimaled(neutralPrice) * poolConfig.kick.priceFactor <

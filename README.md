@@ -21,6 +21,23 @@ You'll need `node` and related tools (`npm`, `yarn`). This was developed with no
 
 Download node here: https://nodejs.org/en Downloading `node` also installs `npm`.
 
+#### Quick Setup (using Makefile)
+
+The easiest way to get started:
+
+```bash
+# Install yarn globally
+npm install --global yarn
+
+# Complete setup (installs dependencies, compiles contracts, creates .env)
+make setup
+
+# View all available commands
+make help
+```
+
+#### Manual Setup
+
 Install `yarn` and dependencies:
 
 ```bash
@@ -57,23 +74,56 @@ The production guide covers the recommended approach using hosted services:
 
 *The production approach is more reliable and easier to maintain than running everything locally.*
 
+### Setup Environment Variables
+
+Create a `.env` file in the `ajna-keeper/` folder by copying `.env.example`:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` to add your API keys:
+
+#### Required API Keys
+
+**1. Alchemy API Key** (Required for RPC and price fallback)
+- Go to [Alchemy](https://alchemy.com) and create an account
+- Create an app with your desired network enabled (Base, Ethereum, Avalanche, etc.)
+- Copy your API key from the Apps > Networks tab
+- Add to `.env`: `ALCHEMY_API_KEY="your_key_here"`
+
+**2. The Graph API Key** (Required for subgraph queries)
+- Go to [The Graph Studio](https://thegraph.com/studio/)
+- Create a free account
+- Generate an API key from your dashboard
+- Add to `.env`: `GRAPH_API_KEY="your_key_here"`
+
+**3. CoinGecko API Key** (Optional but recommended)
+- Create an account at [CoinGecko](https://www.coingecko.com/en/developers/dashboard)
+- Click "Add New Key" to generate a new API key
+- Add to `.env`: `COINGECKO_API_KEY="CG-your_key_here"`
+- **Note**: CoinGecko is optional as the keeper will fallback to Alchemy Prices API if CoinGecko is unavailable
+
+#### Optional API Keys
+
+**4. 1inch API Key** (Optional - for DEX integration)
+- Get from [1inch Developer Portal](https://portal.1inch.dev/)
+- Add to `.env`: `ONEINCH_API_KEY="your_key_here"`
+
+Your `.env` file should look like:
+```env
+ALCHEMY_API_KEY="????????????????????????????????"
+GRAPH_API_KEY="????????????????????????????????????"
+COINGECKO_API_KEY="CG-????????????????????????????????????"
+ONEINCH_API="https://api.1inch.dev/swap/v6.0"
+ONEINCH_API_KEY="????????????????????????????????????"
+```
+
 ### Create a new config file
 
-Create a new `config.ts` file in the `ajna-keeper/` folder and copy the contents from `example-config.ts`.
+Create a new `config.ts` file in the `ajna-keeper/` folder and copy the contents from `example-config.ts` or `example-base-config.ts`.
 
-### Get Alchemy URL with API token.
-
-(Any RPC endpoint can be used. But, these instructions are for Alchemy.)
-Go to your acount on Alchemy.
-Make sure you have an app with your L2 network enabled.
-Navigate to the Apps > Networks tab and copy the url under your network. It will look something like: `https://avax-mainnet.g.alchemy.com/v2/asf...`
-Replace the `ethRpcUrl` in your `config.ts` file with the url you got from alchemy.
-
-### Get Coingecko token
-
-Create an account on Coingecko and go to the URL https://www.coingecko.com/en/developers/dashboard
-Here you will click "Add New Key" to add a new key.
-In your `config.ts` file replace `coinGeckoApiKey` with the key you just created.
+All example configs are now set up to automatically use environment variables from `.env`, so you don't need to manually replace API keys in your config file.
 
 ### Configure ajna
 
@@ -84,9 +134,15 @@ In `config.ts` for the section `ajna`, you will need to provide addresses for al
 In `config.ts` you may need to provide an address for `multicallAddress` for your specific chain. These addresses can be found here https://www.multicall3.com/deployments
 If you add `multicallAddress`, then you will also need to add `multicallBlock` which is the block that multicall was added.
 
-### Setup Ajna-Subgraph
+### Subgraph Setup
 
-In a different folder clone the ajna-finance repo. It is recommended that you checkout the develop branch so that you have the latests networks settings for L2s.
+**Recommended**: Use The Graph's hosted gateway (already configured in example configs)
+- The keeper uses The Graph's hosted subgraph gateway
+- Your `GRAPH_API_KEY` from `.env` is automatically used
+- No local subgraph setup needed
+
+**Alternative**: Run local subgraph (advanced)
+If you need to run your own subgraph:
 
 ```bash
 git clone https://github.com/ajna-finance/subgraph.git
@@ -94,18 +150,13 @@ cd subgraph
 git checkout develop
 ```
 
-Update your `ajna-subgraph/.env` file to contain your alchemy key.
-
-`ajna-subgraph/.env`
-
-```.env
-ETH_RPC_URL=https://avax-mainnet.g.alchemy.com/v2/asf.....
-ETH_NETWORK=avalanche:https://avax-mainnet.g.alchemy.com/v2/asf.....
+Update `ajna-subgraph/.env`:
+```env
+ETH_RPC_URL=https://avax-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
+ETH_NETWORK=avalanche:https://avax-mainnet.g.alchemy.com/v2/YOUR_ALCHEMY_KEY
 ```
 
-[Install docker](https://www.docker.com/).
-
-Follow the setup instructions in ajna-subgraph/README.
+[Install docker](https://www.docker.com/) and follow setup instructions in ajna-subgraph/README.
 
 ### Setting up a keystore.
 
@@ -117,8 +168,38 @@ Ensure that the generated wallet is saved in the directory specified by the `kee
 
 ### Execution
 
+#### Using Makefile (Recommended)
+
+```bash
+# Start keeper with your config
+make start config.ts
+
+# Or use a specific config
+make start base-config.ts
+
+# Dry-run mode (no transactions)
+make start-dry config.ts
+
+# Alternative syntax (also works)
+make start CONFIG=config.ts
+```
+
+#### Using Yarn
+
 ```bash
 yarn start --config config.ts
+```
+
+### Common Makefile Commands
+
+```bash
+make help           # Show all available commands
+make setup          # First-time setup
+make env-check      # Verify .env configuration
+make test-unit      # Run unit tests
+make test-prices    # Test price APIs
+make keystore       # Create new keystore
+make format         # Format code
 ```
 
 ## Requirements
@@ -189,11 +270,33 @@ See `example-config.ts` for reference.
 
 ### Price sources
 
-- [coingecko](https://www.coingecko.com/) - using their [simple price](https://docs.coingecko.com/v3.0.1/reference/simple-price) API
-- **fixed** - hardcoded number, useful for stable pools
-- **pool** - can use _lup_ or _htp_
+The keeper supports multiple price sources with automatic fallback:
+
+- **[CoinGecko](https://www.coingecko.com/)** - Primary source using their [simple price](https://docs.coingecko.com/v3.0.1/reference/simple-price) API
+  - Recommended for all tokens
+  - Requires `COINGECKO_API_KEY` in `.env`
+
+- **[Alchemy Prices API](https://www.alchemy.com/docs/data/prices-api)** - Automatic fallback
+  - Used automatically if CoinGecko API key is missing or CoinGecko request fails
+  - Supports a wide range of tokens (WETH, USDC, USDT, WBTC, and more)
+  - No additional API key needed (uses your existing `ALCHEMY_API_KEY`)
+
+- **fixed** - Hardcoded number, useful for stable pools or testing
+
+- **pool** - Uses pool's internal price (_lup_ or _htp_)
+
+**Price Fallback Chain**: CoinGecko → Alchemy Prices API → Error
 
 If the price source only has quote token priced in collateral, you may add `"invert": true` to `price` config to invert the configured price.
+
+**Example**: For a pool using CoinGecko price source:
+```typescript
+price: {
+  source: PriceOriginSource.COINGECKO,
+  query: 'price?ids=ethereum&vs_currencies=usd',
+}
+```
+The keeper will try CoinGecko first, then automatically fallback to Alchemy if needed.
 
 ### DEX Integration
 
@@ -870,23 +973,29 @@ Note: Like Uniswap V3, LP reward swaps can use **different fee tiers** than exte
 
 ## Testing
 
-Follow instructions for [Installation and Prequisites](#installation-and-prerequisites).
-Then [get your alchemy API token](#installation-and-prerequisites) and [your Goingecko API token](#installation-and-prerequisites).
+Follow instructions for [Installation and Prerequisites](#installation-and-prerequisites).
 
-### Add Alchemy API key and Coingecko API to .env
+### Setup .env for Testing
 
-Add your alchemy API key and coingecko API key to .env
+Create a `.env` file with your API keys (see [Setup Environment Variables](#setup-environment-variables) above):
 
-```.env
-ALCHEMY_API_KEY="<api_key>"
-COINGECKO_API_KEY="<api_key>"
+```env
+ALCHEMY_API_KEY="your_alchemy_key"
+COINGECKO_API_KEY="your_coingecko_key"
 ```
 
-Note: You will need to enable mainnet in Alchemy since hardhat queries from mainnet.
+**Note**: You will need to enable Ethereum mainnet in your Alchemy app since hardhat queries from mainnet for integration tests.
 
 ### Running tests
 
 #### Unit tests
+
+Using Makefile:
+```bash
+make test-unit
+```
+
+Or using yarn:
 ```bash
 yarn unit-tests
 ```
@@ -896,7 +1005,8 @@ yarn unit-tests
 In one terminal run a hardhat fork (defaults to Ethereum mainnet):
 
 ```bash
-npx hardhat node
+make fork-base
+# Or: npx hardhat node
 ```
 
 To fork a different network, set the `FORK_NETWORK` environment variable:
@@ -915,7 +1025,16 @@ yarn fork-base
 In a second terminal run:
 
 ```bash
-yarn integration-tests
+make test-integration
+# Or: yarn integration-tests
+```
+
+#### Price API tests
+
+Test the Alchemy and CoinGecko price integrations:
+
+```bash
+make test-prices
 ```
 
 ## Disclaimer

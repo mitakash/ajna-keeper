@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { FeeAmount } from '@uniswap/v3-sdk';
 import {
   KeeperConfig,
@@ -12,9 +13,9 @@ import {
 const config: KeeperConfig = {
   dryRun: true,
   logLevel: 'info',
-  ethRpcUrl: 'https://base-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
-  subgraphUrl: 'https://api.studio.thegraph.com/query/example_49479/ajna-base/version/latest_example',
-  keeperKeystore: '/home/anon/keystore-files/keeper-keystore.json',
+  ethRpcUrl: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+  subgraphUrl: `https://gateway.thegraph.com/api/${process.env.GRAPH_API_KEY}/subgraphs/id/9npza28cZyi8R94SJjm9Y3fuWeBZZK4CHr2r8NCvsr98`,
+  keeperKeystore: '/path/to/your/keystore.json',
   multicallAddress: '0xcA11bde05977b3631167028862bE2a173976CA11',
   multicallBlock: 5022,
   delayBetweenRuns: 15,
@@ -82,7 +83,7 @@ const config: KeeperConfig = {
     burnWrapper: '',
     lenderHelper: '',
   },
-  coinGeckoApiKey: 'YOUR_COINGECKO_API_KEY',
+  coinGeckoApiKey: process.env.COINGECKO_API_KEY,
   pools: [
     {
       name: 'wstETH / WETH',
