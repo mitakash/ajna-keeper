@@ -6,6 +6,25 @@ import "@nomicfoundation/hardhat-verify";
 
 dotenv.config();
 
+const forkConfigs: Record<string, { url: string; blockNumber?: number }> = {
+  mainnet: {
+    url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+    blockNumber: 21731352,
+  },
+  base: {
+    url: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+  },
+  avalanche: {
+    url: `https://avax-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+  },
+};
+
+const forkNetwork = process.env.FORK_NETWORK || 'mainnet';
+const forkConfig = forkConfigs[forkNetwork];
+if (!forkConfig) {
+  throw new Error(`Unknown FORK_NETWORK: "${forkNetwork}". Valid: ${Object.keys(forkConfigs).join(', ')}`);
+}
+
 const config: HardhatUserConfig = {
   //solidity: '0.8.28',
   solidity: {
@@ -27,8 +46,8 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 31337,
       forking: {
-        url: `https://eth-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
-        blockNumber: 21731352,
+        url: forkConfig.url,
+        ...(forkConfig.blockNumber ? { blockNumber: forkConfig.blockNumber } : {}),
       },
     },
     avalanche: {
@@ -40,15 +59,14 @@ const config: HardhatUserConfig = {
       url: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
     },
     hemi: {
-    url: "https://boldest-soft-moon.hemi-mainnet.quiknode.pro/${process.env.QUICKNODE_API_KEY}",
-    chainId: 43111, // Hemi mainnet chain ID
-    accounts: {
-      mnemonic: process.env.MNEMONIC || "your mnemonic here",
-      // Or use your keystore approach - whatever you prefer
+      url: `https://boldest-soft-moon.hemi-mainnet.quiknode.pro/${process.env.QUICKNODE_API_KEY}`,
+      chainId: 43111, // Hemi mainnet chain ID
+      accounts: {
+        mnemonic: process.env.MNEMONIC || "your mnemonic here",
+      },
+      gasPrice: 1000000000, // 1 gwei
+      gas: 8000000, // 8M gas limit
     },
-    gasPrice: 1000000000, // 1 gwei
-    gas: 8000000, // 8M gas limit
-  },
   },
   sourcify: { enabled: true },
   //etherscan: { apiKey: process.env.ETHERSCAN_API_KEY },

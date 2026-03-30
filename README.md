@@ -893,10 +893,23 @@ yarn unit-tests
 
 #### Integration tests
 
-In one terminal run:
+In one terminal run a hardhat fork (defaults to Ethereum mainnet):
 
 ```bash
 npx hardhat node
+```
+
+To fork a different network, set the `FORK_NETWORK` environment variable:
+
+```bash
+FORK_NETWORK=base npx hardhat node    # fork Base
+FORK_NETWORK=avalanche npx hardhat node  # fork Avalanche
+```
+
+Or use the shorthand:
+
+```bash
+yarn fork-base
 ```
 
 In a second terminal run:

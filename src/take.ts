@@ -189,7 +189,7 @@ async function checkIfArbTakeable(
   );
   if (collateral.lt(minCollateral)) {
     logger.debug(
-      `Collateral ${collateral} below minCollateral ${minCollateral} for pool: ${pool.name}`
+      `Collateral ${weiToDecimaled(collateral)} below minCollateral ${poolConfig.take.minCollateral} for pool: ${pool.name}`
     );
     return { isArbTakeable: false, hpbIndex: 0 };
   }
@@ -200,6 +200,7 @@ async function checkIfArbTakeable(
     minDeposit
   );
   if (buckets.length === 0) {
+    logger.debug(`No meaningful bucket found for pool ${pool.name} (minDeposit: ${minDeposit}), skipping arb take`);
     return { isArbTakeable: false, hpbIndex: 0 };
   }
 
@@ -208,8 +209,12 @@ async function checkIfArbTakeable(
     weiToDecimaled(pool.getBucketByIndex(hmbIndex).price)
   );
   const maxArbPrice = hmbPrice * poolConfig.take.hpbPriceFactor;
+  const arbTakeable = price < maxArbPrice;
+  logger.info(
+    `ArbTake check for pool ${pool.name}: hmbPrice=${hmbPrice.toFixed(6)}, maxArbPrice=${maxArbPrice.toFixed(6)}, auctionPrice=${price.toFixed(6)}, factor=${poolConfig.take.hpbPriceFactor} → ${arbTakeable ? 'ARB-TAKEABLE' : 'skip'}`
+  );
   return {
-    isArbTakeable: price < maxArbPrice,
+    isArbTakeable: arbTakeable,
     hpbIndex: hmbIndex,
   };
 }
@@ -297,11 +302,12 @@ async function checkIfTakeable(
     const marketPrice = quoteAmount / collateralAmount;
     const takeablePrice = marketPrice * poolConfig.take.marketPriceFactor;
 
-    logger.debug(
-      `Market price: ${marketPrice}, takeablePrice: ${takeablePrice}, liquidation price: ${price} for pool ${pool.name}`
+    const takeable = price <= takeablePrice;
+    logger.info(
+      `Take check for pool ${pool.name}: marketPrice=${marketPrice.toFixed(6)}, takeablePrice=${takeablePrice.toFixed(6)}, auctionPrice=${price.toFixed(6)}, collateral=${collateralAmount}, factor=${poolConfig.take.marketPriceFactor} → ${takeable ? 'TAKEABLE' : 'skip'}`
     );
 
-    return { isTakeable: price <= takeablePrice };
+    return { isTakeable: takeable };
   } catch (error) {
     logger.error(`Failed to fetch quote data for pool ${pool.name}: ${error}`);
     return { isTakeable: false };
@@ -365,7 +371,7 @@ export async function* getLiquidationsToTake({
         : !isTakeable && isArbTakeable ? 'arbTake'
         : isTakeable && isArbTakeable ? 'take and arbTake'
         : 'none';
-      logger.debug(`Found liquidation to ${strategyLog} - pool: ${pool.name}, borrower: ${borrower}, price: ${price}`);
+      logger.info(`Found liquidation to ${strategyLog} - pool: ${pool.name}, borrower: ${borrower}, auctionPrice: ${price.toFixed(6)}, collateral: ${weiToDecimaled(collateral)}`);
 
       yield {
         borrower,
@@ -464,12 +470,12 @@ export async function takeLiquidation({
           convertSwapApiResponseToDetailsBytes(swapData.data),
           { nonce: nonce.toString() }
           );
-          return await tx.wait();
+          const receipt = await tx.wait();
+          logger.info(
+            `Take successful - pool: ${pool.name}, borrower: ${borrower} | tx: ${receipt.transactionHash}`
+          );
+          return receipt;
         });
-	
-	logger.info(
-          `Take successful - poolAddress: ${pool.poolAddress}, borrower: ${borrower}`
-        );
       } catch (error) {
         logger.error(
           `Failed to Take. pool: ${pool.name}, borrower: ${borrower}`,

@@ -76,7 +76,7 @@ export class DexRouter {
           Authorization: `Bearer ${process.env.ONEINCH_API_KEY}`,
         },
       });
-      console.log('1inch quote response:', response.data);
+      logger.debug(`1inch quote: ${amount} ${tokenIn} → ${response.data.dstAmount} ${tokenOut}`);
 
       return { success: true, dstAmount: response.data.dstAmount };
     } catch (error: Error | any) {
@@ -458,6 +458,11 @@ export class DexRouter {
     logger.debug(
       `Converted ${amount.toString()} (WAD) to ${adjustedAmount.toString()} (${decimals} decimals) for token ${tokenIn}`
     );
+
+    if (adjustedAmount.isZero()) {
+      logger.debug(`Skipping swap: dust amount rounds to zero in ${decimals}-decimal token ${tokenIn}`);
+      return { success: false, error: `Amount too small for ${tokenIn} (rounds to zero)` };
+    }
 
     const erc20 = new Contract(tokenIn, ERC20_ABI, provider);
     const balance = await erc20.balanceOf(fromAddress);

@@ -280,6 +280,13 @@ export class RewardActionTracker {
       );
       const decimals = await getDecimalsErc20(this.signer, token);
       const amount = tokenChangeDecimals(amountWad, 18, decimals);
+      if (amount.isZero()) {
+        logger.debug(
+          `Skipping dust reward transfer to ${rewardAction.to}, amountWad: ${weiToDecimaled(amountWad)}, tokenAddress: ${token}`
+        );
+        this.removeToken(rewardAction, token, amountWad);
+        return;
+      }
       await transferErc20(this.signer, token, rewardAction.to, amount);
       this.removeToken(rewardAction, token, amountWad);
       logger.info(

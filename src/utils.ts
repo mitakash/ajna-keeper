@@ -117,15 +117,20 @@ export function tokenChangeDecimals(
   currDecimals: number,
   targetDecimals: number = 18
 ) {
-  const tokenWeiStr = tokenWei.toString();
+  const isNegative = tokenWei.isNegative();
+  const absStr = isNegative ? tokenWei.abs().toString() : tokenWei.toString();
+  let result: BigNumber;
   if (currDecimals < targetDecimals) {
     const zeroes = '0'.repeat(targetDecimals - currDecimals);
-    return BigNumber.from(tokenWeiStr + zeroes);
+    result = BigNumber.from(absStr + zeroes);
   } else if (currDecimals > targetDecimals) {
-    return BigNumber.from(tokenWeiStr.slice(0, targetDecimals - currDecimals));
+    const charsToRemove = currDecimals - targetDecimals;
+    if (absStr.length <= charsToRemove) return BigNumber.from(0);
+    result = BigNumber.from(absStr.slice(0, -charsToRemove));
   } else {
-    return BigNumber.from(tokenWei.toString());
+    result = BigNumber.from(absStr);
   }
+  return isNegative ? result.mul(-1) : result;
 }
 
 export async function getProviderAndSigner(

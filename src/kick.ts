@@ -104,7 +104,7 @@ export async function* getLoansToKick({
     // if loan debt is lower than configured fixed value (denominated in quote token), skip it
     if (weiToDecimaled(debt) < poolConfig.kick.minDebt) {
       logger.debug(
-        `Not kicking loan since debt is too low. borrower: ${borrower}, debt: ${debt}`
+        `Not kicking loan since debt is too low. pool: ${pool.name}, borrower: ${borrower}, debt: ${weiToDecimaled(debt)}, minDebt: ${poolConfig.kick.minDebt}`
       );
       continue;
     }

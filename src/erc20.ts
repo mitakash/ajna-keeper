@@ -3,6 +3,7 @@ import { BigNumber, Contract, ethers } from 'ethers';
 import Erc20Abi from './abis/erc20.abi.json';
 import { NonceTracker } from './nonce';
 import { TransactionResponse } from '@ethersproject/abstract-provider';
+import { logger } from './logging';
 
 // TODO: Remove caching. This performance improvement is not worth the complexity.
 const cachedDecimals: Map<string, number> = new Map(); // Map of address to int decimals.
@@ -47,15 +48,18 @@ export async function getAllowanceOfErc20(
 
 
 export async function approveErc20(
-  signer: Signer, 
-  tokenAddress: string, 
-  allowedAddress: string, 
+  signer: Signer,
+  tokenAddress: string,
+  allowedAddress: string,
   amount: BigNumber) {
+  logger.debug(`Approving ${amount.toString()} of token ${tokenAddress} for spender ${allowedAddress}`);
   return await NonceTracker.queueTransaction(signer, async (nonce: number) => {
     const contractUnconnected = new Contract(tokenAddress, Erc20Abi, signer);
     const contract = contractUnconnected.connect(signer);
     const tx = await contract.approve(allowedAddress, amount, { nonce: nonce.toString() });
-    return await tx.wait();
+    const receipt = await tx.wait();
+    logger.info(`Approved token ${tokenAddress} for ${allowedAddress} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
@@ -65,13 +69,16 @@ export async function transferErc20(
   recipient: string,
   amount: BigNumber
 ) {
+  logger.debug(`Transferring ${amount.toString()} of token ${tokenAddress} to ${recipient}`);
   return await NonceTracker.queueTransaction(signer, async (nonce: number) => {
     const contractUnconnected = new Contract(tokenAddress, Erc20Abi, signer);
     const contract = contractUnconnected.connect(signer);
-    const tx = await contract.transfer(recipient, amount, { 
-      nonce: nonce.toString() 
+    const tx = await contract.transfer(recipient, amount, {
+      nonce: nonce.toString()
     });
-    return await tx.wait();
+    const receipt = await tx.wait();
+    logger.info(`Transferred ${amount.toString()} of token ${tokenAddress} to ${recipient} | tx: ${receipt.transactionHash}`);
+    return receipt;
   });
 }
 
