@@ -6,6 +6,7 @@ import {
 import { getPriceCoinGecko } from './coingecko';
 import { weiToDecimaled } from './utils';
 import { PriceInfo } from '@ajna-finance/sdk';
+import { logger } from './logging';
 
 // Retrieves the market price using the configured source
 export async function getPrice(
@@ -31,8 +32,11 @@ export async function getPrice(
       throw new Error('Unknown price provider:' + (priceOrigin as any).source);
   }
   if (priceOrigin.invert) {
-    return price !== 0 ? 1 / price : 0;
+    const inverted = price !== 0 ? 1 / price : 0;
+    logger.debug(`Price resolved: ${inverted} (source: ${priceOrigin.source}, inverted from ${price})`);
+    return inverted;
   } else {
+    logger.debug(`Price resolved: ${price} (source: ${priceOrigin.source})`);
     return price;
   }
 }

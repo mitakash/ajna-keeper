@@ -5,6 +5,7 @@ import { BigNumber } from 'ethers';
 // duplicate definition - InvalidMsgValue()
 import genericRouterABI from './abis/1inch-genericrouter.abi.json';
 import { AjnaKeeperTaker, SwapDescriptionStructOutput } from '../typechain-types/contracts/AjnaKeeperTaker';
+import { logger } from './logging';
 
 export interface SwapCalldata {
   aggregationExecutor: string;
@@ -13,7 +14,7 @@ export interface SwapCalldata {
 }
 
 export function decodeSwapCalldata(apiResponse: any): SwapCalldata {
-  console.log('API response:', apiResponse);
+  logger.debug('1inch API response received');
   const routerInterface = new ethers.utils.Interface(genericRouterABI);
   const decoded = routerInterface.decodeFunctionData('swap', apiResponse.data)
   return {
@@ -27,7 +28,7 @@ export function convertSwapApiResponseToDetails(
   apiResponse: any,
 ): AjnaKeeperTaker.OneInchSwapDetailsStruct {
   const swapCalldata: SwapCalldata = decodeSwapCalldata(apiResponse);
-  console.log('Decoded swap calldata:', swapCalldata);
+  logger.debug(`1inch swap decoded: executor=${swapCalldata.aggregationExecutor.slice(0, 10)}`);
   return {
     aggregationExecutor: swapCalldata.aggregationExecutor,
     swapDescription: swapCalldata.swapDescription,
@@ -39,7 +40,7 @@ export function convertSwapApiResponseToDetailsBytes(
   apiResponse: any,
 ): string {
   const details = convertSwapApiResponseToDetails(apiResponse);
-  console.log('Details:', details);
+  logger.debug('1inch swap details encoded');
   return ethers.utils.defaultAbiCoder.encode(
     ['(address,(address,address,address,address,uint256,uint256,uint256),bytes)'],
     [Object.values(details)],
