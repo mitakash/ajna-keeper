@@ -233,9 +233,12 @@ export interface UniV4PoolKey {
 }
 
 export interface UniswapV4RouterOverrides {
-  router: string;                     // V4 router/adapter you’ll call
+  router: string;                     // V4 Universal Router address
   defaultSlippage: number;            // e.g., 0.5
-  poolManager?: string;
+  poolManager?: string;               // V4 PoolManager address (required for quotes)
+  // AUDIT FIX H-03: Make V4 addresses configurable per chain instead of hardcoded
+  stateView?: string;                 // V4 StateView address for pool state queries
+  permit2?: string;                   // Permit2 address for token approvals
   pools: Record<string, UniV4PoolKey>;// e.g., { 'WETH-USDC': { … } }
 }
 
@@ -459,6 +462,45 @@ export function validateTakeSettings(config: TakeSettings, keeperConfig: KeeperC
       if (!keeperConfig.uniswapV4RouterOverrides.poolManager) {
           logger.warn('TakeSettings: poolManager address recommended for V4');
         }
+
+      // AUDIT FIX: Validate V4 poolKey configurations
+      const v4Pools = keeperConfig.uniswapV4RouterOverrides.pools;
+      const STANDARD_TICK_SPACINGS: Record<number, number> = {
+        100: 1,     // 0.01% fee -> tickSpacing 1
+        500: 10,    // 0.05% fee -> tickSpacing 10
+        3000: 60,   // 0.30% fee -> tickSpacing 60
+        10000: 200, // 1.00% fee -> tickSpacing 200
+      };
+      const DYNAMIC_FEE_FLAG = 0x800000; // LPFeeLibrary.DYNAMIC_FEE_FLAG
+
+      for (const [poolName, poolKey] of Object.entries(v4Pools)) {
+        // Check currency ordering (warn only - we normalize at runtime)
+        if (poolKey.token0.toLowerCase() > poolKey.token1.toLowerCase()) {
+          logger.warn(`V4 Pool ${poolName}: token0 > token1 - will be normalized at runtime`);
+        }
+
+        // Check fee/tickSpacing consistency
+        const isDynamicFee = (poolKey.fee & DYNAMIC_FEE_FLAG) !== 0;
+        if (!isDynamicFee) {
+          const expectedTickSpacing = STANDARD_TICK_SPACINGS[poolKey.fee];
+          if (expectedTickSpacing !== undefined && poolKey.tickSpacing !== expectedTickSpacing) {
+            logger.warn(
+              `V4 Pool ${poolName}: fee=${poolKey.fee} typically uses tickSpacing=${expectedTickSpacing}, ` +
+              `but configured with tickSpacing=${poolKey.tickSpacing}`
+            );
+          }
+        }
+
+        // Check valid fee range (V4 fees are in hundredths of a basis point, max 1000000 = 100%)
+        if (poolKey.fee < 0 || poolKey.fee > 1000000) {
+          throw new Error(`V4 Pool ${poolName}: invalid fee ${poolKey.fee} (must be 0-1000000)`);
+        }
+
+        // Check hooks address format
+        if (!poolKey.hooks || !poolKey.hooks.startsWith('0x') || poolKey.hooks.length !== 42) {
+          throw new Error(`V4 Pool ${poolName}: invalid hooks address format`);
+        }
+      }
     }
 
    

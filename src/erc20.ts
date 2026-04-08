@@ -9,7 +9,7 @@ const cachedDecimals: Map<string, number> = new Map(); // Map of address to int 
 export async function getDecimalsErc20(
   signer: SignerOrProvider,
   tokenAddress: string
-) {
+): Promise<number> {  // ← ADD THIS LINE
   if (!cachedDecimals.has(tokenAddress)) {
     const decimals = await _getDecimalsErc20(signer, tokenAddress);
     cachedDecimals.set(tokenAddress, decimals);
@@ -20,10 +20,18 @@ export async function getDecimalsErc20(
 async function _getDecimalsErc20(
   signer: SignerOrProvider,
   tokenAddress: string
-) {
+): Promise<number> {
   const contract = new Contract(tokenAddress, Erc20Abi, signer);
   const decimals = await contract.decimals();
-  return decimals;
+  
+  // Ensure we always return a number
+  if (typeof decimals === 'number') {
+    return decimals;
+  } else if (decimals && typeof decimals.toNumber === 'function') {
+    return decimals.toNumber();
+  } else {
+    throw new Error(`Unexpected decimals type for token ${tokenAddress}: ${typeof decimals}`);
+  }
 }
 
 export async function getBalanceOfErc20(

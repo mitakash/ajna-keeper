@@ -22,6 +22,11 @@ interface UtilsType {
 let Utils: UtilsType;
 
 export async function askPassword() {
+  // Support non-interactive mode for pm2/background processes
+  if (process.env.KEEPER_PASSWORD) {
+    return process.env.KEEPER_PASSWORD;
+  }
+
   const pswd = await password({
     message: 'Please enter your keystore password',
     mask: '*',
@@ -37,7 +42,8 @@ export async function addAccountFromKeystore(
   // read the keystore file, confirming it exists
   const jsonKeystore = (await fs.readFile(keystorePath)).toString();
 
-  const pswd = await password({
+  // Support non-interactive mode for pm2/background processes
+  const pswd = process.env.KEEPER_PASSWORD || await password({
     message: 'Please enter your keystore password',
     mask: '*',
   });
@@ -116,15 +122,22 @@ export function tokenChangeDecimals(
   tokenWei: BigNumber,
   currDecimals: number,
   targetDecimals: number = 18
-) {
+): BigNumber {
+  if (currDecimals === targetDecimals) {
+    // No conversion needed
+    return tokenWei;
+  }
+  
   const tokenWeiStr = tokenWei.toString();
+  
   if (currDecimals < targetDecimals) {
+    // Scale up: add zeros
     const zeroes = '0'.repeat(targetDecimals - currDecimals);
     return BigNumber.from(tokenWeiStr + zeroes);
-  } else if (currDecimals > targetDecimals) {
-    return BigNumber.from(tokenWeiStr.slice(0, targetDecimals - currDecimals));
   } else {
-    return BigNumber.from(tokenWei.toString());
+    // Scale down: divide by 10^(currDecimals - targetDecimals)
+    const divisor = BigNumber.from(10).pow(currDecimals - targetDecimals);
+    return tokenWei.div(divisor);
   }
 }
 

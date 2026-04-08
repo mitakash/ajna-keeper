@@ -196,8 +196,8 @@ async function checkIfTakeableFactory(
     if (poolConfig.take.liquiditySource === LiquiditySource.SUSHISWAP) {
       return await checkSushiSwapQuote(pool, price, collateral, poolConfig, config, signer);
     }
-    
-    if (poolConfig.take.liquiditySource == LiquiditySource.UNISWAPV4){
+
+    if (poolConfig.take.liquiditySource === LiquiditySource.UNISWAPV4){
       return await checkUniswapV4Quote(pool, price, collateral, poolConfig, config, signer)
     }
     // Future: Add other DEX sources here
@@ -410,7 +410,42 @@ async function checkSushiSwapQuote(
   }
 }
 
-async function checkUniswapV4Quote(
+// AUDIT FIX NEW-04: Module-level provider cache keyed by poolManager+stateView+chainId.
+// Previously a fresh UniswapV4QuoteProvider was instantiated (+ initialize() called) for
+// EVERY liquidation candidate in a pool, generating O(n) redundant getCode() RPC calls per
+// keeper cycle. Now we re-use a single initialized instance per unique V4 config.
+const _v4QuoteProviderCache = new Map<string, UniswapV4QuoteProvider>();
+
+async function getOrCreateV4QuoteProvider(
+  signer: Signer,
+  v4: UniswapV4RouterOverrides
+): Promise<UniswapV4QuoteProvider | null> {
+  const cacheKey = `${v4.poolManager}:${v4.stateView ?? 'default'}`;
+
+  if (_v4QuoteProviderCache.has(cacheKey)) {
+    const cached = _v4QuoteProviderCache.get(cacheKey)!;
+    if (cached.isAvailable()) return cached;
+    // Provider exists but failed to initialize previously - retry
+  }
+
+  const qp = new UniswapV4QuoteProvider(signer, {
+    poolManager: v4.poolManager!,
+    defaultSlippage: v4.defaultSlippage ?? 0.5,
+    pools: v4.pools!,
+    stateView: v4.stateView,
+  });
+
+  const ok = await qp.initialize();
+  if (!ok) {
+    logger.error(`Factory: V4 QuoteProvider failed to initialize (poolManager=${v4.poolManager})`);
+    return null;
+  }
+
+  _v4QuoteProviderCache.set(cacheKey, qp);
+  return qp;
+}
+
+export async function checkUniswapV4Quote(
   pool: FungiblePool,
   auctionPrice: number,
   collateral: BigNumber,
@@ -438,21 +473,22 @@ async function checkUniswapV4Quote(
 
   try {
     const collateralDecimals = await getDecimalsErc20(signer, tokenIn);
-    const quoteDecimals      = await getDecimalsErc20(signer, tokenOut);
     const inAmtTokenDec      = convertWadToTokenDecimals(collateral, collateralDecimals);
 
-    const qp = new UniswapV4QuoteProvider(signer, {
-      router: v4.router,
-      defaultSlippage: v4.defaultSlippage ?? 0.5,
-      pools: v4.pools
-    });
+    // AUDIT FIX H-04: Do NOT fallback poolManager to router - they are different contracts!
+    if (!v4.poolManager) {
+      logger.error(`Factory: V4 poolManager address not configured - required for quote provider`);
+      return false;
+    }
+
+    // AUDIT FIX NEW-04: Use cached provider to avoid redundant initialize() RPC calls
+    const qp = await getOrCreateV4QuoteProvider(signer, v4);
+    if (!qp) return false;
 
     const mr = await qp.getMarketPrice(
       inAmtTokenDec,
       tokenIn,
       tokenOut,
-      collateralDecimals,
-      quoteDecimals,
       poolKey
     );
 
@@ -476,7 +512,8 @@ async function checkUniswapV4Quote(
 }
 
 // helper: pick poolKey from overrides by address pair
-function findV4PoolKeyForPair(
+// IMPORTANT: Returns a NORMALIZED poolKey where currency0 < currency1 (V4 requirement)
+export function findV4PoolKeyForPair(
   v4: UniswapV4RouterOverrides,
   a: string,
   b: string
@@ -487,11 +524,33 @@ function findV4PoolKeyForPair(
   const bLc = b.toLowerCase();
 
   const entries: UniV4PoolKey[] = Object.values(v4.pools); // now typed
-  return entries.find(k => {
+  const found = entries.find(k => {
     const t0 = k.token0.toLowerCase();
     const t1 = k.token1.toLowerCase();
     return (t0 === aLc && t1 === bLc) || (t0 === bLc && t1 === aLc);
   });
+
+  if (!found) return undefined;
+
+  // CRITICAL: Normalize the poolKey so currency0 < currency1 (V4 requirement)
+  // V4 pools are keyed by ordered addresses - wrong order = different/nonexistent pool
+  const token0Lc = found.token0.toLowerCase();
+  const token1Lc = found.token1.toLowerCase();
+
+  if (token0Lc < token1Lc) {
+    // Already normalized
+    return found;
+  } else {
+    // Need to swap - return normalized copy
+    return {
+      token0: found.token1,
+      token1: found.token0,
+      fee: found.fee,
+      tickSpacing: found.tickSpacing,
+      hooks: found.hooks,
+      sqrtPriceLimitX96: found.sqrtPriceLimitX96,
+    };
+  }
 }
 
 
@@ -534,10 +593,23 @@ async function checkIfArbTakeableFactory(
 
   const hmbIndex = buckets[0].bucketIndex;
   const hmbPrice = Number(weiToDecimaled(pool.getBucketByIndex(hmbIndex).price));
-  const maxArbPrice = hmbPrice * poolConfig.take.hpbPriceFactor;
-  
+
+  // FIXED: Ajna requires auctionPrice <= bucketPrice (strict)
+  // hpbPriceFactor should be <= 1.0 to provide a safety margin
+  // E.g., 0.99 means only attempt when auction is 1% BELOW bucket price
+  // If user configured > 1.0 (too aggressive), clamp to 1.0 to avoid guaranteed failures
+  const safeFactor = Math.min(poolConfig.take.hpbPriceFactor, 1.0);
+  const maxArbPrice = hmbPrice * safeFactor;
+
+  const isArbTakeable = price < maxArbPrice;
+
+  if (!isArbTakeable && price < hmbPrice * 1.01) {
+    // Close but not safe - log for visibility
+    logger.debug(`Factory: ArbTake skipped - price ${price.toFixed(6)} too close to bucket ${hmbPrice.toFixed(6)} (need < ${maxArbPrice.toFixed(6)})`);
+  }
+
   return {
-    isArbTakeable: price < maxArbPrice,
+    isArbTakeable,
     hpbIndex: hmbIndex,
   };
 }
@@ -776,7 +848,7 @@ async function takeWithSushiSwapFactory({
   }
 }
 
-async function takeWithUniswapV4Factory({
+export async function takeWithUniswapV4Factory({
   pool,
   poolConfig,
   signer,
@@ -807,43 +879,43 @@ async function takeWithUniswapV4Factory({
     return;
   }
 
-  // Minimal out (trust Ajna core to enforce profitability); or compute with slippage if you prefer
-  const amountOutMin = ethers.BigNumber.from(1);
-  const deadline     = Math.floor(Date.now() / 1000) + 30 * 60; // 30m
+  // Defensive check: Ensure auction price is not zero
+  if (liquidation.auctionPrice.isZero()) {
+    logger.error(`Factory: Cannot take with zero auction price - auction may have decayed completely. pool=${pool.name}, borrower=${liquidation.borrower}`);
+    return;
+  }
 
-  /**
-   * IMPORTANT: The ABI layout here MUST MATCH your UniswapV4KeeperTaker.sol.
-   * Adjust the tuple types/ordering to exactly what that contract `abi.decode(...)` expects.
-   *
-   * Example layout (common pattern):
-   *   struct V4SwapDetails {
-   *     PoolKey poolKey;              // (token0, token1, fee, tickSpacing, hooks, poolManager)
-   *     uint256 amountOutMinimum;
-   *     uint160 sqrtPriceLimitX96;
-   *     uint256 deadline;
-   *   }
-   */
-  const sqrtPriceLimitX96 = poolKey.sqrtPriceLimitX96
-    ? ethers.BigNumber.from(poolKey.sqrtPriceLimitX96)
-    : ethers.BigNumber.from(0);
+  // AUDIT FIX #20: Calculate minQuoteOut as EXACTLY what Ajna needs
+  // The V4 swap MUST give us enough quote tokens to pay Ajna's take() function
+  // quoteNeeded = ceil(collateral * auctionPrice / quoteScale)
+  //
+  // NOTE: The audit recommends DECREASING amountOutMin for "slippage tolerance".
+  // However, this is INCORRECT for our atomic swap use case because:
+  // 1. If swap succeeds but gives us less than Ajna needs → Ajna fails with "transfer amount exceeds balance"
+  // 2. If swap reverts because it can't provide quoteNeeded → clean failure, no wasted gas on Ajna
+  //
+  // Therefore, amountOutMin = quoteNeeded (no buffer). The profitability check ensures
+  // market price is favorable enough to expect more than quoteNeeded.
+  const expectedQuoteWad = liquidation.collateral.mul(liquidation.auctionPrice).div(ethers.constants.WeiPerEther);
+  const quoteDecimals = await getDecimalsErc20(signer, tokenOut);
+  const quoteScale = ethers.BigNumber.from(10).pow(18 - quoteDecimals);
+  // Use ceiling division to ensure we don't undershoot (matches contract's _ceilDiv)
+  const amountOutMin = expectedQuoteWad.add(quoteScale.sub(1)).div(quoteScale);
 
-  // if your solidity poolKey includes poolManager, inject it; else drop it from the tuple
-  // const poolManager = v4.poolManager ?? ethers.constants.AddressZero;
+  logger.debug(`V4 Take: quoteNeeded=${amountOutMin.toString()} (exact, no buffer - profitability check ensures margin)`);
 
+  // FIXED: Encoding must match new contract's abi.decode:
+  // (PoolKey memory key, uint256 minQuoteOut) = abi.decode(swapDetails, (PoolKey, uint256));
+  //
+  // Currency is now a UDVT (type Currency is address), which ABI-encodes as plain address.
+  // PoolKey = (address, address, uint24, int24, address)
+  // Just 2 top-level values: PoolKey tuple + uint256
   const encodedSwapDetails = ethers.utils.defaultAbiCoder.encode(
-    [
-      // tuple: token0, token1, fee, tickSpacing, hooks, poolManager
-      'tuple(address,address,uint24,int24,address,address)',
-      'uint256',
-      'uint160',
-      'uint256',
-    ],
+    ['tuple(address,address,uint24,int24,address)', 'uint256'],
     [
       [poolKey.token0, poolKey.token1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
       amountOutMin,
-      sqrtPriceLimitX96,
-      deadline,
-    ],
+    ]
   );
 
   logger.debug(
@@ -854,21 +926,29 @@ async function takeWithUniswapV4Factory({
     `  poolKey=(${poolKey.token0}, ${poolKey.token1}, fee=${poolKey.fee}, ts=${poolKey.tickSpacing}, hooks=${poolKey.hooks})`
   );
 
-  await NonceTracker.queueTransaction(signer, async (nonce: number) => {
-    const tx = await factory.takeWithAtomicSwap(
-      pool.poolAddress,
-      liquidation.borrower,
-      liquidation.auctionPrice,      // WAD
-      liquidation.collateral,        // WAD
-      Number(LiquiditySource.UNISWAPV4), // 5
-      v4.router,                     // swapRouter param
-      encodedSwapDetails,
-      { nonce: nonce.toString() }
-    );
-    return await tx.wait();
-  });
+  // AUDIT FIX H-02: Add try/catch to prevent keeper crashes on V4 take failures
+  // Matches pattern used in takeWithUniswapV3Factory and takeWithSushiSwapFactory
+  try {
+    await NonceTracker.queueTransaction(signer, async (nonce: number) => {
+      // V4 taker ignores swapRouter param (uses poolManager from constructor)
+      // But we pass v4.router for logging/consistency with other takers
+      const tx = await factory.takeWithAtomicSwap(
+        pool.poolAddress,
+        liquidation.borrower,
+        liquidation.auctionPrice,      // WAD
+        liquidation.collateral,        // WAD
+        Number(LiquiditySource.UNISWAPV4), // 5
+        v4.router,                     // Unused by V4 taker, but required by interface
+        encodedSwapDetails,
+        { nonce: nonce.toString() }
+      );
+      return await tx.wait();
+    });
 
-  logger.info(`Factory Uni v4 take successful - pool=${pool.poolAddress}, borrower=${liquidation.borrower}`);
+    logger.info(`Factory Uni v4 take successful - pool=${pool.poolAddress}, borrower=${liquidation.borrower}`);
+  } catch (error) {
+    logger.error(`Factory: Failed to Uni v4 Take. pool: ${pool.name}, borrower: ${liquidation.borrower}`, error);
+  }
 }
 
 /**

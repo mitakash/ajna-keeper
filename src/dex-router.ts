@@ -1,6 +1,6 @@
 import axios from 'axios';
 import 'dotenv/config';
-import { BigNumber, Contract, Signer, providers } from 'ethers';
+import { BigNumber, Contract, Signer, providers , ethers} from 'ethers';
 import ERC20_ABI from './abis/erc20.abi.json';
 import { approveErc20, getAllowanceOfErc20, getDecimalsErc20 } from './erc20';
 import { logger } from './logging';
@@ -21,18 +21,48 @@ export class DexRouter {
   private oneInchRouters: { [chainId: number]: string };
   private connectorTokens: string;
 
+  /**
+   * AUDIT FIX C-04: Find and NORMALIZE V4 pool key for token pair
+   * V4 requires currency0 < currency1 (lexicographic ordering)
+   * Returns normalized poolKey or undefined if not found
+   */
   private findV4PoolKeyForPair(
     v4: UniswapV4RouterOverrides,
     a: string,
     b: string
   ): UniV4PoolKey | undefined {
     const pools = v4.pools || {};
+    const aLc = a.toLowerCase();
+    const bLc = b.toLowerCase();
+
     for (const key of Object.keys(pools)) {
       const k = pools[key] as UniV4PoolKey;
       if (!k) continue;
-      const m1 = k.token0.toLowerCase() === a.toLowerCase() && k.token1.toLowerCase() === b.toLowerCase();
-      const m2 = k.token0.toLowerCase() === b.toLowerCase() && k.token1.toLowerCase() === a.toLowerCase();
-      if (m1 || m2) return k;
+
+      const t0 = k.token0.toLowerCase();
+      const t1 = k.token1.toLowerCase();
+
+      const m1 = t0 === aLc && t1 === bLc;
+      const m2 = t0 === bLc && t1 === aLc;
+
+      if (m1 || m2) {
+        // CRITICAL: Normalize the poolKey so currency0 < currency1 (V4 requirement)
+        // V4 pools are keyed by ordered addresses - wrong order = different/nonexistent pool
+        if (t0 < t1) {
+          // Already normalized
+          return k;
+        } else {
+          // Need to swap - return normalized copy
+          return {
+            token0: k.token1,
+            token1: k.token0,
+            fee: k.fee,
+            tickSpacing: k.tickSpacing,
+            hooks: k.hooks,
+            sqrtPriceLimitX96: k.sqrtPriceLimitX96,
+          };
+        }
+      }
     }
     return undefined;
   }
@@ -328,6 +358,150 @@ export class DexRouter {
     }
   }
 
+  private async swapWithUniswapV4(
+    chainId: number,
+    amount: BigNumber,
+    tokenIn: string,
+    tokenOut: string,
+    to: string,
+    slippage: number,
+    uniswapV4Settings?: UniswapV4RouterOverrides,
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (!uniswapV4Settings) {
+        return {
+          success: false,
+          error: 'Uniswap V4 configuration not found'
+        };
+      }
+  
+      if (!uniswapV4Settings.router) {
+        return {
+          success: false,
+          error: 'Uniswap V4 router address not configured'
+        };
+      }
+  
+      // Find the pool key for this token pair
+      const poolKey = this.findV4PoolKeyForPair(
+        uniswapV4Settings,
+        tokenIn,
+        tokenOut
+      );
+  
+      if (!poolKey) {
+        return {
+          success: false,
+          error: `No V4 pool configured for pair ${tokenIn}-${tokenOut}`
+        };
+      }
+  
+      logger.info(`Using Uniswap V4 pool: ${poolKey.token0.slice(0, 8)}.../${poolKey.token1.slice(0, 8)}... (fee: ${poolKey.fee})`);
+  
+      // Get token decimals for price calculation
+      const ERC20_ABI = ['function decimals() view returns (uint8)'];
+      const tokenInContract = new Contract(tokenIn, ERC20_ABI, this.signer);
+      const tokenOutContract = new Contract(tokenOut, ERC20_ABI, this.signer);
+
+      const tokenInDecimalsRaw = await tokenInContract.decimals();
+      const tokenOutDecimalsRaw = await tokenOutContract.decimals();
+
+      const tokenInDecimals = typeof tokenInDecimalsRaw === 'number'
+        ? tokenInDecimalsRaw
+        : tokenInDecimalsRaw.toNumber();
+      const tokenOutDecimals = typeof tokenOutDecimalsRaw === 'number'
+        ? tokenOutDecimalsRaw
+        : tokenOutDecimalsRaw.toNumber();
+
+      // Initialize quote provider and get market price
+      try {
+        // Ensure poolManager is defined for V4Config
+        if (!uniswapV4Settings.poolManager) {
+          return {
+            success: false,
+            error: 'Uniswap V4 poolManager address not configured'
+          };
+        }
+
+        // AUDIT FIX H-03: Pass through stateView for multi-chain support
+        const v4Config = {
+          poolManager: uniswapV4Settings.poolManager,
+          defaultSlippage: uniswapV4Settings.defaultSlippage,
+          pools: uniswapV4Settings.pools,
+          stateView: uniswapV4Settings.stateView,
+        };
+
+        const quoteProvider = new UniswapV4QuoteProvider(this.signer, v4Config);
+        const initialized = await quoteProvider.initialize();
+
+        if (initialized) {
+          logger.info('✅ V4 QuoteProvider initialized successfully');
+          logger.info(`   PoolManager: ${quoteProvider.getPoolManagerAddress()}`);
+
+          // Get market price from the pool (4 arguments: amountIn, tokenIn, tokenOut, poolKey)
+          const marketResult = await quoteProvider.getMarketPrice(
+            amount,
+            tokenIn,
+            tokenOut,
+            poolKey
+          );
+
+          if (marketResult.success && marketResult.price) {
+            logger.info(`📊 V4 Market Price: ${marketResult.price.toFixed(8)} ${tokenOut}/${tokenIn}`);
+
+            // Calculate expected output - amount is already in native decimals
+            const amountInFormatted = parseFloat(ethers.utils.formatUnits(amount, tokenInDecimals));
+            const expectedOutputValue = amountInFormatted * marketResult.price;
+
+            logger.info(`💰 Expected output: ~${expectedOutputValue.toFixed(6)} ${tokenOut} tokens`);
+
+            // Optional: Add price validation here
+            // Example: Check if price is reasonable
+            if (marketResult.price <= 0) {
+              logger.warn(`⚠️  Market price is ${marketResult.price} - this seems wrong!`);
+              return {
+                success: false,
+                error: `Invalid market price: ${marketResult.price}`
+              };
+            }
+
+          } else {
+            logger.warn(`⚠️  V4 market price unavailable: ${marketResult.error || 'Unknown error'}`);
+            logger.info('Proceeding with swap anyway (quote is informational)');
+          }
+        } else {
+          logger.warn('⚠️  V4 QuoteProvider failed to initialize');
+          logger.info('Proceeding without price check (quote provider is optional)');
+        }
+      } catch (quoteError) {
+        const errorMsg = quoteError instanceof Error ? quoteError.message : String(quoteError);
+        logger.warn(`⚠️  V4 quote provider error: ${errorMsg}`);
+        logger.info('Proceeding with swap anyway (quote is informational only)');
+      }
+  
+      // Execute the swap
+      logger.info('🔄 Executing V4 swap...');
+      const result = await swapWithUniswapV4Adapter(
+        this.signer,
+        tokenIn,
+        amount,
+        tokenOut,
+        slippage ?? uniswapV4Settings.defaultSlippage ?? 1.0,
+        uniswapV4Settings.router,
+        poolKey,
+        to
+      );
+  
+      return result;
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        error: `Uniswap V4 swap failed: ${errorMsg}`
+      };
+    }
+  }
+
   // MAJOR CHANGE: Update method signature and replace boolean logic with switch/case
   public async swap(
     chainId: number,
@@ -488,43 +662,16 @@ export class DexRouter {
           combinedSettings?.sushiswap
         );
       
-        case PostAuctionDex.UNISWAP_V4: {
-          const v4 = combinedSettings?.uniswapV4 as UniswapV4RouterOverrides | undefined
-                  ?? (combinedSettings as any)?.uniswapV4 as UniswapV4RouterOverrides | undefined
-                  ?? undefined;
-          if (!v4?.router) return { success: false, error: 'V4 router not configured' };
-        
-          const poolKey = this.findV4PoolKeyForPair(v4, tokenIn, tokenOut);
-          if (!poolKey) return { success: false, error: 'No V4 poolKey configured for this pair' };
-        
-          // (optional) market check via quote provider
-          try {
-            const qp = new UniswapV4QuoteProvider(this.signer, v4);
-            const ok = await qp.initialize();
-            if (ok) {
-              const mr = await qp.getMarketPrice(
-                adjustedAmount,
-                tokenIn,
-                tokenOut,
-                await new Contract(tokenIn, ERC20_ABI, this.signer).decimals(),
-                await new Contract(tokenOut, ERC20_ABI, this.signer).decimals(),
-                poolKey
-              );
-              // you can enforce marketPriceFactor here similar to your V3/Sushi logic
-            }
-          } catch {}
-        
-          return await swapWithUniswapV4Adapter(
-            this.signer,
-            tokenIn,
+        case PostAuctionDex.UNISWAP_V4:
+          return await this.swapWithUniswapV4(
+            chainId,
             adjustedAmount,
+            tokenIn,
             tokenOut,
-            slippage ?? v4.defaultSlippage ?? 0.5,
-            v4.router,           // <-- pass the STRING router address here
-            poolKey,
-            to
+            to,
+            slippage,
+            combinedSettings?.uniswapV4
           );
-        }
 
       default:
         return {

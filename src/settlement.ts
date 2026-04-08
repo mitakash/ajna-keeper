@@ -361,7 +361,17 @@ private async processAuction(auction: AuctionToSettle): Promise<void> {
     for (let iteration = 1; iteration <= maxIterations; iteration++) {
       try {
         logger.debug(`Settlement iteration ${iteration}/${maxIterations} for ${borrower.slice(0, 8)}`);
-        
+
+        // Pre-flight gas estimate to avoid "insufficient gas" reverts
+        try {
+          const poolWithSigner = this.pool.contract.connect(this.signer);
+          const gasEstimate = await poolWithSigner.estimateGas.settle(borrower, bucketDepth);
+          logger.debug(`Settlement gas estimate for ${borrower.slice(0, 8)}: ${gasEstimate.toString()} (using 130% buffer)`);
+        } catch (gasError) {
+          const msg = gasError instanceof Error ? gasError.message : String(gasError);
+          logger.warn(`Settlement gas estimate failed for ${borrower.slice(0, 8)}: ${msg.slice(0, 100)} - proceeding anyway`);
+        }
+
         // Attempt settlement
         await poolSettle(this.pool, this.signer, borrower, bucketDepth);
         

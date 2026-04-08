@@ -72,20 +72,21 @@ const config: KeeperConfig = {
     defaultSlippage: 2.0,   // 2% slippage tolerance (conservative for SushiSwap)
   },
 
+  // Uniswap V4 configuration
   uniswapV4RouterOverrides: {
-    router: '0xYOUR_V4_ROUTER_OR_ADAPTER',
-    // poolManager: '0xOPTIONAL_POOL_MANAGER',
+      // <— verify this on Basescan / official docs before using in prod
+    router: '0x6ff5693b99212da76ad316178a184ab56d299b43',
     defaultSlippage: 0.5,
     pools: {
+      // Example: WETH/USDC pool key you’ll use for quotes
       'WETH-USDC': {
-        token0: '0x4200000000000000000000000000000000000006',
-        token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+        token0: '0x4200000000000000000000000000000000000006', // WETH
+        token1: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', // USDC
         fee: 3000,
         tickSpacing: 60,
-        hooks: '0x0000000000000000000000000000000000000000',
-        sqrtPriceLimitX96: '0'
-      },
-    },
+        hooks: '0x0000000000000000000000000000000000000000'
+      }
+    }
   },
   
   ajna: {

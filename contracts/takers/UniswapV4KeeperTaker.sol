@@ -1,27 +1,34 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.26;
+pragma solidity 0.8.28;
 
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+// OpenZeppelin
+import { ReentrancyGuard } from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-// Ajna interfaces
-interface IAjnaPool {
-    function take(
-        address borrower,
-        uint256 collateral,
-        address taker,
-        bytes calldata data
-    ) external returns (uint256 collateralTaken, uint256 t0RepayAmount, uint256 t0BondChange, uint256 t0DebtInAuctionChange);
+// Project imports
+import { IERC20Pool, PoolDeployer } from "../AjnaInterfaces.sol";
+import { IERC20 } from "../OneInchInterfaces.sol";
+import { IAjnaKeeperTaker } from "../interfaces/IAjnaKeeperTaker.sol";
 
-    function collateralScale() external view returns (uint256);
-    function quoteTokenScale() external view returns (uint256);
-}
+/// @dev Uniswap v4 "Currency" UDVT. Matches canonical V4 ABI.
+type Currency is address;
 
-// V4 Core Types
-struct Currency {
-    address addr;
+using { CurrencyLibrary.unwrap } for Currency;
+using { CurrencyLibrary.isNative } for Currency;
+
+library CurrencyLibrary {
+    function unwrap(Currency currency) internal pure returns (address) {
+        return Currency.unwrap(currency);
+    }
+    function isNative(Currency currency) internal pure returns (bool) {
+        return Currency.unwrap(currency) == address(0);
+    }
+    function toId(Currency currency) internal pure returns (uint256) {
+        return uint256(uint160(Currency.unwrap(currency)));
+    }
+    function fromId(uint256 id) internal pure returns (Currency) {
+        return Currency.wrap(address(uint160(id)));
+    }
 }
 
 struct PoolKey {
@@ -32,325 +39,370 @@ struct PoolKey {
     address hooks;
 }
 
-struct SwapParams {
-    bool zeroForOne;
-    int256 amountSpecified;
-    uint160 sqrtPriceLimitX96;
+/// @dev BalanceDelta is a packed int256 in V4 (not a struct!)
+/// Upper 128 bits = amount0, Lower 128 bits = amount1
+type BalanceDelta is int256;
+
+library BalanceDeltaLibrary {
+    function amount0(BalanceDelta balanceDelta) internal pure returns (int128) {
+        return int128(int256(BalanceDelta.unwrap(balanceDelta)) >> 128);
+    }
+    function amount1(BalanceDelta balanceDelta) internal pure returns (int128) {
+        return int128(int256(BalanceDelta.unwrap(balanceDelta)));
+    }
 }
 
-struct BalanceDelta {
-    int128 amount0;
-    int128 amount1;
-}
+using BalanceDeltaLibrary for BalanceDelta global;
 
-// V4 Core interfaces
+/// @dev Minimal subset of Uniswap v4 PoolManager we need.
 interface IPoolManager {
+    struct SwapParams {
+        bool zeroForOne;
+        int256 amountSpecified; // exact input if negative
+        uint160 sqrtPriceLimitX96;
+    }
+
     function unlock(bytes calldata data) external returns (bytes memory);
-    function swap(PoolKey memory key, SwapParams memory params, bytes calldata hookData) 
-        external returns (BalanceDelta memory swapDelta);
-    function take(Currency memory currency, address to, uint256 amount) external;
-    function settle() external payable returns (uint256 paid);
+
+    function swap(PoolKey calldata key, SwapParams calldata params, bytes calldata hookData)
+        external
+        returns (BalanceDelta);
+
+    // V4 settle takes a currency argument
+    function settle(Currency currency) external payable returns (uint256 paid);
+
+    function take(Currency currency, address to, uint256 amount) external;
+
+    // AUDIT FIX: sync() required before ERC-20 settlement
+    // Snapshots the current balance so settle() can calculate the delta
+    function sync(Currency currency) external;
 }
 
-interface IUnlockCallback {
-    function unlockCallback(bytes calldata data) external returns (bytes memory);
-}
-
-/**
- * UniswapV4KeeperTaker - Atomic liquidation + swap using Uniswap V4
- * 
- * ARCHITECTURE:
- * V4 uses a singleton PoolManager with an unlock/callback pattern:
- * 1. Call PoolManager.unlock() to begin transaction
- * 2. PoolManager calls back to unlockCallback()
- * 3. In callback, perform all pool operations (swap, take, settle)
- * 4. PoolManager verifies all balances net to zero before unlocking
- * 
- * FLASH ACCOUNTING:
- * - All balance changes tracked as "deltas" during unlock
- * - Only net changes settled at end of transaction
- * - Enables complex multi-step operations without intermediate transfers
- */
-contract UniswapV4KeeperTaker is Ownable, ReentrancyGuard, IUnlockCallback {
+/// @notice Uniswap V4 implementation for Ajna keeper takes using V4 flash accounting
+/// @dev AUDIT FIXES: Aligned with SushiSwap pattern - immutable owner, pool validation, token recovery
+contract UniswapV4KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
-    // Core addresses
-    address public immutable ajnaErc20PoolFactory;
+    // ============================================================================
+    // AUDIT FIX #1: Use immutable owner like SushiSwap (not Ownable)
+    // ============================================================================
+
+    /// @dev Hash used for all ERC20 pools, used for pool validation
+    bytes32 public constant ERC20_NON_SUBSET_HASH = keccak256("ERC20_NON_SUBSET_HASH");
+    /// @dev Actor allowed to take auctions using this contract
+    address public immutable owner;
+    /// @dev Identifies the Ajna deployment, used to validate pools
+    PoolDeployer public immutable poolFactory;
+    /// @dev Factory contract authorized to call takeWithAtomicSwap
     address public immutable authorizedFactory;
+
     IPoolManager public immutable poolManager;
 
-    // Swap execution context
-    struct V4SwapContext {
-        PoolKey poolKey;
-        address ajnaPool;
+    // sqrtPriceX96 limits
+    uint160 internal constant MIN_SQRT_RATIO = 4295128739;
+    uint160 internal constant MAX_SQRT_RATIO = 1461446703485210103287273052203988822378723970342;
+
+    struct CallbackCtx {
+        bool active;
+        IERC20Pool ajnaPool;
         address borrower;
-        uint256 collateralAmount;
-        uint256 quoteAmountDue;
-        uint256 amountOutMinimum;
-        uint160 sqrtPriceLimitX96;
-        uint256 deadline;
-        bool isActive;
+        uint256 collateralWad;
+        uint256 auctionPriceWad;
+        SwapDetails details;
     }
 
-    V4SwapContext private swapContext;
+    struct SwapDetails {
+        PoolKey poolKey;
+        uint256 amountOutMinimum; // quote token minimum
+        uint160 sqrtPriceLimitX96;
+    }
 
-    // Events
-    event TakeWithSwap(
-        address indexed pool,
-        address indexed borrower,
-        uint256 collateralTaken,
-        uint256 quoteRepaid,
-        uint256 profit
-    );
+    CallbackCtx private ctx;
 
-    event EmergencyWithdraw(address indexed token, uint256 amount);
+    event V4SwapExecuted(address indexed tokenIn, address indexed tokenOut, uint256 amountIn, uint256 amountOut);
+    event TakeExecuted(address indexed pool, address indexed borrower, uint256 collateralAmount, uint256 quoteAmount);
 
-    // Custom errors
-    error UnauthorizedCaller();
+    error InvalidUnlockCaller();
     error InvalidPool();
     error SwapFailed(string reason);
-    error InsufficientOutput();
-    error DeadlineExceeded();
-    error InvalidSwapContext();
+    error SourceNotSupported();
+    error Unauthorized();
 
-    constructor(
-        address _ajnaErc20PoolFactory,
-        address _authorizedFactory,
-        address _poolManager
-    ) {
-        ajnaErc20PoolFactory = _ajnaErc20PoolFactory;
-        authorizedFactory = _authorizedFactory;
+    /// @param _poolManager Uniswap V4 PoolManager address
+    /// @param _poolFactory Ajna ERC20 pool factory for pool validation
+    /// @param _authorizedFactory Factory contract that can call takeWithAtomicSwap
+    constructor(address _poolManager, PoolDeployer _poolFactory, address _authorizedFactory) {
         poolManager = IPoolManager(_poolManager);
+        poolFactory = _poolFactory;
+        authorizedFactory = _authorizedFactory;
+        owner = msg.sender;
     }
 
-    modifier onlyAuthorizedFactory() {
-        if (msg.sender != authorizedFactory) revert UnauthorizedCaller();
-        _;
-    }
+    // ----------------------------
+    // IAjnaKeeperTaker
+    // ----------------------------
 
-    function isSourceSupported(uint8 source) external pure returns (bool) {
-        // 5 = LiquiditySource.UNISWAPV4
-        return source == 5;
-    }
-
-    /// @notice Returns the owner of this taker
-    function owner() public view override returns (address) {
-        return super.owner(); // Uses Ownable's owner()
-    }
-
-    /// @notice Owner may call to recover legitimate ERC20 tokens sent to this contract
-    function recover(address token) external onlyOwner {
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance > 0) {
-            IERC20(token).safeTransfer(owner(), balance);
-        }
-    }
-
-    /**
-     * Take liquidation with atomic V4 swap
-     * Called by AjnaKeeperTakerFactory
-     */
     function takeWithAtomicSwap(
-        address pool,
-        address borrower,
-        uint256 limitPrice,
-        uint256 collateral,
-        address swapRouter, // This is actually the PoolManager address
-        bytes calldata swapData
-    ) external onlyAuthorizedFactory nonReentrant {
-        
-        // Decode V4 swap parameters
-        (
-            PoolKey memory poolKey,
-            uint256 amountOutMinimum,
-            uint160 sqrtPriceLimitX96,
-            uint256 deadline
-        ) = abi.decode(swapData, (PoolKey, uint256, uint160, uint256));
+        IERC20Pool pool,
+        address borrowerAddress,
+        uint256 auctionPrice,
+        uint256 maxAmount, // collateral WAD
+        LiquiditySource source,
+        address /* swapRouter */, // Ignored, we use immutable poolManager
+        bytes calldata swapDetails
+    ) external override onlyOwnerOrFactory nonReentrant {
+        if (source != LiquiditySource.UniswapV4) revert SourceNotSupported();
 
-        // Validate deadline
-        if (block.timestamp > deadline) revert DeadlineExceeded();
+        // AUDIT FIX #2: Validate pool is from our Ajna deployment
+        if (!_validatePool(pool)) revert InvalidPool();
 
-        // Prepare callback context for V4's unlock pattern
-        bytes memory unlockData = abi.encode(
-            pool,           // Ajna pool address
-            borrower,       // Borrower being liquidated
-            collateral,     // Collateral amount to take
-            poolKey,        // V4 pool identification
-            amountOutMinimum,
-            sqrtPriceLimitX96
-        );
+        // Decode V4 specific details
+        (PoolKey memory key, uint256 minQuoteOut) = abi.decode(swapDetails, (PoolKey, uint256));
 
-        // Trigger V4 unlock -> callback -> swap sequence
-        // This will call our unlockCallback function
-        poolManager.unlock(unlockData);
-    }
-
-    /**
-     * V4 Unlock Callback - Core execution logic
-     * 
-     * Called by PoolManager during unlock sequence
-     * Must perform all operations and ensure balance deltas net to zero
-     */
-    function unlockCallback(bytes calldata data) external returns (bytes memory) {
-        // Only PoolManager can call this
-        if (msg.sender != address(poolManager)) revert UnauthorizedCaller();
-
-        // Decode callback parameters
-        (
-            address ajnaPool,
-            address borrower,
-            uint256 collateralToTake,
-            PoolKey memory poolKey,
-            uint256 amountOutMinimum,
-            uint160 sqrtPriceLimitX96
-        ) = abi.decode(data, (address, address, uint256, PoolKey, uint256, uint160));
-
-        // Store context for Ajna callback
-        swapContext = V4SwapContext({
-            poolKey: poolKey,
-            ajnaPool: ajnaPool,
-            borrower: borrower,
-            collateralAmount: 0, // Will be set by Ajna callback
-            quoteAmountDue: 0,   // Will be set by Ajna callback  
-            amountOutMinimum: amountOutMinimum,
-            sqrtPriceLimitX96: sqrtPriceLimitX96,
-            deadline: block.timestamp + 1800,
-            isActive: true
+        ctx = CallbackCtx({
+            active: true,
+            ajnaPool: pool,
+            borrower: borrowerAddress,
+            collateralWad: maxAmount,
+            auctionPriceWad: auctionPrice,
+            details: SwapDetails({
+                poolKey: key,
+                amountOutMinimum: minQuoteOut,
+                sqrtPriceLimitX96: 0 // Will be set in unlockCallback
+            })
         });
 
-        // Trigger Ajna liquidation -> this calls our auctionTake callback
-        IAjnaPool(ajnaPool).take(borrower, collateralToTake, address(this), "");
+        // Trigger the flash-swap flow via unlock
+        poolManager.unlock("");
 
-        // Clean up context
-        swapContext.isActive = false;
+        // AUDIT FIX #10: Reset approval after take (security)
+        _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
+
+        // AUDIT FIX #9: Recover leftover tokens (profit) to owner
+        _recoverToken(IERC20(pool.collateralAddress()));
+        _recoverToken(IERC20(pool.quoteTokenAddress()));
+
+        // Cleanup
+        delete ctx;
+    }
+
+    function recover(IERC20 token) external override onlyOwnerOrFactory {
+        _recoverToken(token);
+    }
+
+    // Note: The IAjnaKeeperTaker interface expects owner() but we use immutable owner
+    // The immutable variable serves as the getter automatically
+
+    function getSupportedSources() external pure override returns (LiquiditySource[] memory) {
+        LiquiditySource[] memory sources = new LiquiditySource[](1);
+        sources[0] = LiquiditySource.UniswapV4;
+        return sources;
+    }
+
+    function isSourceSupported(LiquiditySource source) external pure override returns (bool) {
+        return source == LiquiditySource.UniswapV4;
+    }
+
+    // ----------------------------
+    // IERC20Taker (Ajna)
+    // ----------------------------
+
+    /// @notice Called by Ajna pool during take - INTENTIONALLY A NO-OP in V4 flow
+    /// @dev AUDIT FIX M-04: This function is intentionally empty (except for pool validation).
+    ///
+    /// V4 ARCHITECTURE EXPLANATION:
+    /// Unlike V3/SushiSwap where atomicSwapCallback performs the swap AFTER receiving collateral,
+    /// V4 uses flash accounting with an inverted flow:
+    ///
+    /// V3/SushiSwap flow:
+    ///   1. takeWithAtomicSwap() -> 2. pool.take() -> 3. atomicSwapCallback() performs swap -> 4. Done
+    ///
+    /// V4 flow (this contract):
+    ///   1. takeWithAtomicSwap() -> 2. poolManager.unlock() -> 3. unlockCallback() {
+    ///      a. V4 swap executes (we owe collateral, receive quote)
+    ///      b. pool.take() -> atomicSwapCallback() (NO-OP, just validates pool)
+    ///      c. Settle collateral to V4 PoolManager
+    ///   } -> 4. Done
+    ///
+    /// The actual swap logic lives in unlockCallback(), NOT here.
+    /// This callback only validates the pool for security and receives collateral passively.
+    /// All three parameters (collateralAmount, quoteAmountDue, data) are intentionally unused.
+    function atomicSwapCallback(
+        uint256 /* collateralAmount */,
+        uint256 /* quoteAmountDue */,
+        bytes calldata /* data */
+    ) external override {
+        // SECURITY: Validate caller is a valid Ajna pool from our deployment
+        IERC20Pool pool = IERC20Pool(msg.sender);
+        if (!_validatePool(pool)) revert InvalidPool();
+
+        // NO-OP: Collateral is automatically transferred to this contract by Ajna.
+        // The V4 unlockCallback will settle this collateral to the PoolManager.
+        // DO NOT add swap logic here - it would conflict with the V4 flash accounting flow.
+    }
+
+    // ----------------------------
+    // IPoolManager Callback
+    // ----------------------------
+
+    function unlockCallback(bytes calldata) external returns (bytes memory) {
+        if (msg.sender != address(poolManager)) revert InvalidUnlockCaller();
+        if (!ctx.active) revert SwapFailed("no ctx");
+
+        IERC20Pool pool = ctx.ajnaPool;
+        address collateralToken = pool.collateralAddress();
+        address quoteToken = pool.quoteTokenAddress();
+        PoolKey memory key = ctx.details.poolKey;
+
+        // Validate poolKey matches Ajna tokens and derive direction
+        bool cIs0 = key.currency0.unwrap() == collateralToken;
+        bool cIs1 = key.currency1.unwrap() == collateralToken;
+        bool qIs0 = key.currency0.unwrap() == quoteToken;
+        bool qIs1 = key.currency1.unwrap() == quoteToken;
+
+        if (!(cIs0 || cIs1) || !(qIs0 || qIs1) || (cIs0 && qIs0) || (cIs1 && qIs1)) {
+            revert SwapFailed("poolKey tokens mismatch");
+        }
+
+        bool zeroForOne = cIs0 && qIs1; // if collateral is currency0, we sell currency0
+
+        uint160 sqrtLimit = ctx.details.sqrtPriceLimitX96;
+        if (sqrtLimit == 0) {
+            sqrtLimit = zeroForOne ? (MIN_SQRT_RATIO + 1) : (MAX_SQRT_RATIO - 1);
+        }
+
+        // Scale WAD (18 decimals) down to Native Token Decimals
+        uint256 collateralScale = ctx.ajnaPool.collateralScale();
+        uint256 collateralIn = ctx.collateralWad / collateralScale;
+
+        if (collateralIn == 0) revert SwapFailed("collateral=0");
+
+        // ================================================================
+        // V4 FLASH ACCOUNTING FLOW
+        // This uses V4's deferred settlement model:
+        // 1. Swap records delta (we owe collateral, receive quote)
+        // 2. Take quote from PM (we now have quote tokens)
+        // 3. Pay Ajna (quote -> collateral via pool.take)
+        // 4. Settle collateral to PM (balance our debt)
+        // ================================================================
+
+        // 1) Swap - records that we OWE collateral and RECEIVE quote
+        BalanceDelta delta = poolManager.swap(
+            key,
+            IPoolManager.SwapParams({
+                zeroForOne: zeroForOne,
+                amountSpecified: -int256(collateralIn), // exact input (negative)
+                sqrtPriceLimitX96: sqrtLimit
+            }),
+            ""
+        );
+
+        // Extract deltas
+        int128 collateralDelta = zeroForOne ? delta.amount0() : delta.amount1();
+        int128 quoteDelta      = zeroForOne ? delta.amount1() : delta.amount0();
+
+        // Validate: we PAY collateral (negative), RECEIVE quote (positive)
+        if (collateralDelta >= 0) revert SwapFailed("collateralDelta>=0");
+        if (quoteDelta <= 0) revert SwapFailed("quoteDelta<=0");
+
+        uint256 collateralOwed = uint256(int256(-collateralDelta));
+        uint256 quoteOut       = uint256(int256(quoteDelta));
+
+        // AUDIT FIX: Allow 1-wei tolerance for V4 rounding dust
+        // V4's internal arithmetic can produce 1-wei residuals that would otherwise cause
+        // CurrencyNotSettled reverts at unlock exit
+        if (collateralOwed > collateralIn + 1) revert SwapFailed("paid>specified");
+        if (quoteOut < ctx.details.amountOutMinimum) revert SwapFailed("out<min");
+
+        // 2) Pull quote OUT of PoolManager into this contract
+        poolManager.take(Currency.wrap(quoteToken), address(this), quoteOut);
+
+        emit V4SwapExecuted(collateralToken, quoteToken, collateralOwed, quoteOut);
+
+        // 3) Pre-approve Ajna to pull quote
+        // AUDIT FIX C-03: Calculate quoteNeeded first, then guard quoteOut >= quoteNeeded.
+        // Using requested amounts for the ceiling calc matches Ajna's internal computation.
+        // If the V4 swap didn't produce enough quote tokens to cover what Ajna will pull,
+        // revert NOW with a clear error rather than letting Ajna's transferFrom fail silently.
+        uint256 quoteScale = pool.quoteTokenScale();
+        // AUDIT FIX L-01: Guard against zero quoteScale (should never happen, but defensive)
+        if (quoteScale == 0) revert SwapFailed("quoteTokenScale=0");
+        uint256 quoteNeeded = _ceilDiv(_ceilWmul(ctx.collateralWad, ctx.auctionPriceWad), quoteScale);
+        if (quoteOut < quoteNeeded) revert SwapFailed("V4 output insufficient for Ajna take");
+
+        _safeApproveWithReset(IERC20(quoteToken), address(pool), quoteNeeded);
+
+        // 4) Ajna take (Collateral comes in via atomicSwapCallback)
+        // AUDIT FIX C-01: Track actual collateral delivered by Ajna to detect partial fills.
+        // If Ajna delivers less collateral than collateralOwed (which V4 flash accounting requires
+        // us to settle), we revert here with a clear diagnostic instead of failing in settlement.
+        uint256 collateralBefore = IERC20(collateralToken).balanceOf(address(this));
+        pool.take(ctx.borrower, ctx.collateralWad, address(this), "");
+        uint256 collateralReceived = IERC20(collateralToken).balanceOf(address(this)) - collateralBefore;
+        if (collateralReceived < collateralOwed) {
+            revert SwapFailed("partial fill: collateral received < V4 debt");
+        }
+
+        // 5) Settle collateral owed to V4
+        _settleToPoolManager(collateralToken, collateralOwed);
+
+        emit TakeExecuted(address(pool), ctx.borrower, ctx.collateralWad, quoteOut);
 
         return "";
     }
 
-    /**
-     * Ajna Callback - Executes the V4 swap
-     * 
-     * Called when Ajna liquidation occurs
-     * Receives collateral, must return quote tokens
-     */
-    function auctionTake(
-        uint256 collateralAmount,    // Amount of collateral received (token decimals)
-        uint256 quoteAmountDue,      // Amount of quote tokens we owe (token decimals)
-        bytes calldata               // Unused
-    ) external {
-        V4SwapContext memory ctx = swapContext;
-        
-        if (!ctx.isActive) revert InvalidSwapContext();
-        if (msg.sender != ctx.ajnaPool) revert UnauthorizedCaller();
+    // ----------------------------
+    // Internals
+    // ----------------------------
 
-        // Update context with actual amounts
-        swapContext.collateralAmount = collateralAmount;
-        swapContext.quoteAmountDue = quoteAmountDue;
+    /// @dev AUDIT FIX: Correct V4 ERC-20 settlement pattern: sync -> transfer -> settle
+    /// For ETH: settle with value (no sync needed)
+    /// For ERC-20: sync() snapshots balance, transfer adds tokens, settle() credits the delta
+    function _settleToPoolManager(address token, uint256 amount) internal {
+        if (amount == 0) return;
 
-        // Get token addresses from pool key
-        address collateralToken = ctx.poolKey.currency0.addr;
-        address quoteToken = ctx.poolKey.currency1.addr;
+        Currency currency = Currency.wrap(token);
 
-        // Determine swap direction
-        // If collateral is token0, we swap token0 -> token1 (zeroForOne = true)
-        // If collateral is token1, we swap token1 -> token0 (zeroForOne = false)
-        bool zeroForOne = (collateralToken != address(0)) && 
-                         (collateralToken < quoteToken || quoteToken == address(0));
-
-        // For exact input swap, amountSpecified is negative
-        SwapParams memory swapParams = SwapParams({
-            zeroForOne: zeroForOne,
-            amountSpecified: -int256(collateralAmount), // Negative for exact input
-            sqrtPriceLimitX96: ctx.sqrtPriceLimitX96
-        });
-
-        // Execute V4 swap
-        BalanceDelta memory delta = poolManager.swap(ctx.poolKey, swapParams, "");
-
-        // Calculate actual output amount from delta
-        uint256 amountOut;
-        if (zeroForOne) {
-            // Swapped token0 -> token1, output is in amount1 
-            amountOut = uint256(uint128(-delta.amount1)); // Convert to positive
+        if (token == address(0)) {
+            // ETH: just settle with value
+            poolManager.settle{ value: amount }(currency);
         } else {
-            // Swapped token1 -> token0, output is in amount0
-            amountOut = uint256(uint128(-delta.amount0)); // Convert to positive
-        }
-
-        // Verify minimum output
-        if (amountOut < ctx.amountOutMinimum) {
-            revert InsufficientOutput();
-        }
-
-        if (amountOut < quoteAmountDue) {
-            revert SwapFailed("Insufficient swap output for liquidation");
-        }
-
-        // Settle V4 balance (pay what we owe for the swap)
-        if (collateralToken == address(0)) {
-            // Native ETH
-            poolManager.settle{value: collateralAmount}();
-        } else {
-            // ERC20 token
-            IERC20(collateralToken).safeTransfer(address(poolManager), collateralAmount);
-            poolManager.settle();
-        }
-
-        // Take our output tokens from V4
-        if (quoteToken == address(0)) {
-            // Native ETH output
-            poolManager.take(Currency(address(0)), address(this), amountOut);
-        } else {
-            // ERC20 output
-            poolManager.take(Currency(quoteToken), address(this), amountOut);
-        }
-
-        // Pay back Ajna pool
-        if (quoteToken == address(0)) {
-            // Native ETH payment to Ajna
-            payable(ctx.ajnaPool).transfer(quoteAmountDue);
-        } else {
-            // ERC20 payment to Ajna
-            IERC20(quoteToken).safeTransfer(ctx.ajnaPool, quoteAmountDue);
-        }
-
-        // Calculate and transfer profit to owner
-        uint256 profit = amountOut - quoteAmountDue;
-        if (profit > 0) {
-            if (quoteToken == address(0)) {
-                payable(owner()).transfer(profit);
-            } else {
-                IERC20(quoteToken).safeTransfer(owner(), profit);
-            }
-        }
-
-        emit TakeWithSwap(
-            ctx.ajnaPool,
-            ctx.borrower,
-            collateralAmount,
-            quoteAmountDue,
-            profit
-        );
-    }
-
-    /**
-     * Emergency functions for stuck tokens/ETH
-     */
-    function emergencyWithdraw(address token) external onlyOwner {
-        uint256 balance = IERC20(token).balanceOf(address(this));
-        if (balance > 0) {
-            IERC20(token).safeTransfer(owner(), balance);
-            emit EmergencyWithdraw(token, balance);
+            // ERC-20: sync -> transfer -> settle (AUDIT FIX for correct settlement)
+            poolManager.sync(currency);  // Snapshot current balance
+            IERC20(token).safeTransfer(address(poolManager), amount);
+            poolManager.settle(currency);  // Credits delta = new balance - synced balance
         }
     }
 
-    function emergencyWithdrawETH() external onlyOwner {
-        uint256 balance = address(this).balance;
-        if (balance > 0) {
-            payable(owner()).transfer(balance);
-        }
+    /// @dev AUDIT FIX #9: Recovers token balance to owner
+    function _recoverToken(IERC20 token) private {
+        uint256 bal = token.balanceOf(address(this));
+        if (bal > 0) token.safeTransfer(owner, bal);
     }
 
-    // Required to receive ETH from V4 operations
-    receive() external payable {}
+    /// @dev AUDIT FIX #2: Validates that the pool is from our Ajna deployment (matches SushiSwap)
+    function _validatePool(IERC20Pool pool) private view returns(bool) {
+        return poolFactory.deployedPools(ERC20_NON_SUBSET_HASH, pool.collateralAddress(), pool.quoteTokenAddress()) == address(pool);
+    }
+
+    /// @dev AUDIT FIX #10: Safe approval that handles non-zero to non-zero allowance issue
+    function _safeApproveWithReset(IERC20 token, address spender, uint256 amount) private {
+        uint256 currentAllowance = token.allowance(address(this), spender);
+        if (currentAllowance != 0) token.safeApprove(spender, 0);
+        if (amount != 0) token.safeApprove(spender, amount);
+    }
+
+    function _ceilWmul(uint256 x, uint256 y) internal pure returns (uint256) {
+        return (x * y + 1e18 - 1) / 1e18;
+    }
+
+    function _ceilDiv(uint256 x, uint256 y) internal pure returns (uint256) {
+        return (x + y - 1) / y;
+    }
+
+    // AUDIT FIX #1: Access control modifier matching SushiSwap pattern
+    modifier onlyOwnerOrFactory() {
+        if (msg.sender != owner && msg.sender != authorizedFactory) revert Unauthorized();
+        _;
+    }
 }

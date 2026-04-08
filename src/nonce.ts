@@ -1,12 +1,39 @@
-// Updated nonce.ts with simpler promise handling
+// Updated nonce.ts with mutex-based concurrency control
 import { Signer } from 'ethers';
 import { logger } from './logging';
+
+/**
+ * Simple mutex to prevent concurrent nonce allocations from
+ * the parallel keeper loops (kick, take, settle, collect, LP).
+ */
+class Mutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+
+  async acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return;
+    }
+    return new Promise<void>(resolve => this.queue.push(resolve));
+  }
+
+  release(): void {
+    const next = this.queue.shift();
+    if (next) {
+      next();
+    } else {
+      this.locked = false;
+    }
+  }
+}
 
 export class NonceTracker {
   private nonces: Map<string, number> = new Map();
   private pendingTransactions: Map<string, Promise<void>> = new Map();
   private static instance: NonceTracker;
-  
+  private mutex = new Mutex();
+
   // Universal RPC cache refresh delay - applies to all chains
   private static readonly RPC_CACHE_REFRESH_DELAY = 1000; // 1000ms for aggressive RPC caching
 
@@ -69,41 +96,49 @@ export class NonceTracker {
     return latestNonce;
   }  
   
-  // Simplified implementation that focuses just on managing nonces correctly
+  // Mutex-guarded transaction queue to prevent concurrent nonce collisions
+  // from the parallel keeper loops (kick, take, settle, collect, LP)
   public async queueTransaction<T>(
     signer: Signer,
     txFunction: (nonce: number) => Promise<T>
   ): Promise<T> {
     const address = await signer.getAddress();
     logger.debug(`Queueing transaction for ${address}`);
-    
+
+    // Acquire mutex - only one transaction can allocate a nonce at a time
+    await this.mutex.acquire();
+
+    let nonce: number;
     try {
-      // Get nonce from our tracker
-      const nonce = await this.getNonce(signer);
+      nonce = await this.getNonce(signer);
       logger.debug(`Executing transaction with nonce ${nonce}`);
-      
-      // Execute the transaction
-      try {
-        const result = await txFunction(nonce);
-
-        // Universal RPC cache refresh delay after every transaction
-        // This prevents race conditions between transaction confirmation and subsequent reads
-        logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
-        await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
-
-        logger.debug(`Transaction with nonce ${nonce} completed successfully`);
-        return result;
-      } catch (txError) {
-        logger.error(`Transaction with nonce ${nonce} failed: ${txError}`);
-        
-        // Reset nonce on failure
-        await this.resetNonce(signer, address);
-        
-        throw txError;
-      }
     } catch (error) {
-      logger.error(`Error in queueTransaction: ${error}`);
+      this.mutex.release();
       throw error;
+    }
+
+    // Release mutex after nonce allocation so other loops can proceed
+    // while this transaction is in-flight
+    this.mutex.release();
+
+    try {
+      const result = await txFunction(nonce);
+
+      // Universal RPC cache refresh delay after every transaction
+      logger.debug(`Transaction with nonce ${nonce} completed, adding ${NonceTracker.RPC_CACHE_REFRESH_DELAY}ms RPC cache refresh delay`);
+      await this.delay(NonceTracker.RPC_CACHE_REFRESH_DELAY);
+
+      logger.debug(`Transaction with nonce ${nonce} completed successfully`);
+      return result;
+    } catch (txError) {
+      logger.error(`Transaction with nonce ${nonce} failed: ${txError}`);
+
+      // Acquire mutex for the reset to prevent race with other loops
+      await this.mutex.acquire();
+      await this.resetNonce(signer, address);
+      this.mutex.release();
+
+      throw txError;
     }
   }
   /**

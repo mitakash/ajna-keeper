@@ -322,9 +322,8 @@ async function deploySushiSwapTaker(
 
 async function deployUniswapV4KeeperTaker(
   deployer: ethers.Wallet,
-  ajnaErc20PoolFactory: string,
-  keeperTakerFactory: string,
-  poolManagerAddress: string,  // ✅ ADD THIS
+  poolManagerAddress: string,
+  authorizedFactoryAddress: string,
   chainId: number
 ): Promise<string> {
   console.log('\n📦 Deploying UniswapV4KeeperTaker…');
@@ -337,23 +336,24 @@ async function deployUniswapV4KeeperTaker(
 
   const Factory = new ethers.ContractFactory(art.abi, art.bytecode, deployer);
 
+  // Gas configuration
   const gasConfig = getGasConfig(chainId);
-  const deployOptions: any = {
-    gasLimit: gasConfig.gasLimit,
-  };
-  
-  if (gasConfig.gasPrice) {
-    deployOptions.gasPrice = gasConfig.gasPrice;
-  }
+  const deployOptions: any = { gasLimit: gasConfig.gasLimit };
+  if (gasConfig.gasPrice) deployOptions.gasPrice = gasConfig.gasPrice;
 
-  // ✅ ADD poolManagerAddress parameter
+  // UniswapV4KeeperTaker constructor takes 2 arguments:
+  // constructor(address _poolManager, address _authorizedFactory)
+  // Owner is set to msg.sender (deployer) in constructor
+  console.log('  constructor args:');
+  console.log('   - poolManager       :', poolManagerAddress);
+  console.log('   - authorizedFactory :', authorizedFactoryAddress);
+
   const taker = await Factory.deploy(
-    ajnaErc20PoolFactory, 
-    keeperTakerFactory, 
-    poolManagerAddress,  // ✅ ADD THIS
-    deployOptions
+    poolManagerAddress,        // First arg: _poolManager (V4 PoolManager)
+    authorizedFactoryAddress,  // Second arg: _authorizedFactory (factory that can call takeWithAtomicSwap)
+    deployOptions              // overrides (last)
   );
-  
+
   console.log('  tx:', taker.deployTransaction.hash);
   await taker.deployed();
   console.log('  ✅ UniswapV4KeeperTaker at', taker.address);
@@ -665,12 +665,14 @@ async function main() {
       if (!config.uniswapV4RouterOverrides.poolManager) {
         throw new Error('Missing uniswapV4RouterOverrides.poolManager address');
       }
-      
+      if (!addresses.factory) {
+        throw new Error('Factory must be deployed before UniswapV4KeeperTaker');
+      }
+
       addresses.uniswapV4 = await deployUniswapV4KeeperTaker(
         deployer,
-        config.ajna.erc20PoolFactory,
-        addresses.factory!,
-        config.uniswapV4RouterOverrides.poolManager,  // ✅ USE poolManager, not router!
+        config.uniswapV4RouterOverrides.poolManager,
+        addresses.factory,  // Pass factory address for authorization
         chainInfo.chainId
       );
       await new Promise(resolve => setTimeout(resolve, 2000));

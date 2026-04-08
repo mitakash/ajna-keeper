@@ -131,19 +131,20 @@ contract AjnaKeeperTakerFactory {
         address[] memory takers
     ) {
         // Count non-zero takers
+        // FIXED: Include UniswapV4 (source 5) - loop through all sources
         uint256 count = 0;
-        for (uint8 i = 1; i < 5; i++) { // Skip None(0), check OneInch(1) through Curve(4)
+        for (uint8 i = 1; i <= 5; i++) { // Skip None(0), check OneInch(1) through UniswapV4(5)
             if (takerContracts[IAjnaKeeperTaker.LiquiditySource(i)] != address(0)) {
                 count++;
             }
         }
-        
+
         // Populate arrays
         sources = new IAjnaKeeperTaker.LiquiditySource[](count);
         takers = new address[](count);
         uint256 index = 0;
-        
-        for (uint8 i = 1; i < 5; i++) {
+
+        for (uint8 i = 1; i <= 5; i++) { // FIXED: Include UniswapV4 (source 5)
             address takerAddr = takerContracts[IAjnaKeeperTaker.LiquiditySource(i)];
             if (takerAddr != address(0)) {
                 sources[index] = IAjnaKeeperTaker.LiquiditySource(i);

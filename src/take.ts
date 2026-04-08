@@ -326,6 +326,15 @@ export async function* getLiquidationsToTake({
     const price = Number(weiToDecimaled(liquidationStatus.price));
     const collateral = liquidationStatus.collateral;
 
+    // Skip auctions with zero or effectively zero price (auction has decayed too far)
+    // This can happen after ~72+ hours when the Dutch auction price reaches 0
+    if (price <= 0 || liquidationStatus.price.isZero()) {
+      logger.debug(
+        `Skipping auction for borrower ${borrower} - price has decayed to 0 (auction likely needs settlement)`
+      );
+      continue;
+    }
+
     let isTakeable = false;
     let isArbTakeable = false;
     let arbHpbIndex = 0;

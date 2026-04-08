@@ -62,7 +62,9 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         LiquiditySource source,
         address swapRouter,
         bytes calldata swapDetails
-    ) external onlyOwnerOrFactory {
+    // AUDIT FIX M-03: Add nonReentrant to match V4 pattern and prevent re-entrancy
+    // via a malicious/compromised Ajna pool between takeWithAtomicSwap and atomicSwapCallback
+    ) external onlyOwnerOrFactory nonReentrant {
         // Basic validation (like 1inch)
         if (source != LiquiditySource.UniswapV3) revert UnsupportedSource();
         if (!_validatePool(pool)) revert InvalidPool();
@@ -89,8 +91,10 @@ contract UniswapV3KeeperTaker is IAjnaKeeperTaker, ReentrancyGuard {
         // SECURITY FIX: Reset allowance to prevent future misuse
         _safeApproveWithReset(IERC20(pool.quoteTokenAddress()), address(pool), 0);
 
-        // Send profit to owner
+        // AUDIT FIX NEW-02: Recover BOTH tokens - collateral may have dust from partial swaps
+        // Previously only quote tokens were recovered; leftover collateral would be stuck
         _recoverToken(IERC20(pool.quoteTokenAddress()));
+        _recoverToken(IERC20(pool.collateralAddress()));
     }
 
     /// @notice Called by Pool to swap collateral for quote tokens

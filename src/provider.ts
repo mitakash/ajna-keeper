@@ -34,10 +34,20 @@ export class JsonRpcProvider extends providers.JsonRpcProvider {
 
     // These are the recommended EIP-1559 heuristics for fee data
     if (block && block.baseFeePerGas) {
+      // Use a more reasonable priority fee for low-fee chains like Base
+      // Default to 10% of base fee or 0.1 gwei, whichever is higher
+      const minPriorityFee = BigNumber.from('100000000'); // 0.1 gwei
+      const tenPercentOfBase = block.baseFeePerGas.div(10);
+      const defaultPriorityFee = tenPercentOfBase.gt(minPriorityFee)
+        ? tenPercentOfBase
+        : minPriorityFee;
+
       maxPriorityFeePerGas =
-        priorityFee != null ? priorityFee : BigNumber.from('1000000000');
+        priorityFee != null ? priorityFee : defaultPriorityFee;
       lastBaseFeePerGas = block.baseFeePerGas;
-      maxFeePerGas = wmul(block.baseFeePerGas, decimaledToWei(2)).add(
+
+      // Use 1.5x multiplier instead of 2x for more reasonable gas estimates
+      maxFeePerGas = wmul(block.baseFeePerGas, decimaledToWei(1.5)).add(
         maxPriorityFeePerGas
       );
     }

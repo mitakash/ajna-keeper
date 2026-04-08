@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { HardhatUserConfig } from "hardhat/config";
 import '@typechain/hardhat'
-import '@nomicfoundation/hardhat-ethers'
+import "@nomiclabs/hardhat-ethers";
 import "@nomicfoundation/hardhat-verify";
 
 dotenv.config();
@@ -15,6 +15,7 @@ const config: HardhatUserConfig = {
         enabled: true,
         runs: 200
       },
+      viaIR: true,  // Fix "Stack too deep" errors
       metadata: {
       bytecodeHash: "none"  // Helps with verification
       },
@@ -37,7 +38,10 @@ const config: HardhatUserConfig = {
     },
     base: {
       chainId: 8453,
-      url: `https://base-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+      url: 'https://base-mainnet.g.alchemy.com/v2/BGrpE_7pmP_VQwKMWN6hz',
+      accounts: {
+        mnemonic: process.env.MNEMONIC || "your mnemonic here",
+      },
     },
     hemi: {
     url: "https://boldest-soft-moon.hemi-mainnet.quiknode.pro/${process.env.QUICKNODE_API_KEY}",

@@ -78,7 +78,7 @@ export async function poolQuoteApprove(
   const denormalizedAllowance = allowance.div(
     await quoteTokenScale(pool.contract)
   );
-  
+
   await NonceTracker.queueTransaction(signer, async (nonce) => {
     const tx = await approve(
       signer,
@@ -87,7 +87,12 @@ export async function poolQuoteApprove(
       denormalizedAllowance,
       { nonce: nonce.toString() }
     );
-    return await tx.verifyAndSubmit();
+    // Get transaction response to wait for mining
+    const txResponse = await tx.verifyAndSubmitResponse();
+    // Wait for transaction to be mined (1 confirmation) before returning
+    // This prevents "insufficient allowance" errors when kick executes before approval is on-chain
+    await txResponse.wait(1);
+    return txResponse;
   });
 }
 
